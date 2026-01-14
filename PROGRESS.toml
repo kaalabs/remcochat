@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T13:40:05Z"
+updated_at = "2026-01-14T13:46:07Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -861,4 +861,12 @@ type = "ui"
 summary = "Increase spacing between model label and temp toggle"
 details = "Increased the gap between the model label and the temp-mode lock button in the header for better visual breathing room."
 tests = ["npm run build (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T13:46:07Z"
+type = "ui"
+summary = "Color temp lock toggle by mode"
+details = "Updated the header temp-mode lock toggle styling so it is green in normal mode (unlocked) and red in temporary chat mode (locked), while keeping the icon-only affordance."
+tests = ["npm run build (pass)", "npm run lint (pass; warnings)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]

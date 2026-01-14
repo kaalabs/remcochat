@@ -1498,12 +1498,17 @@ export function HomeClient({
               </div>
               <Button
                 aria-label={isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"}
-                className="h-8 w-9 px-0"
+                className={
+                  "h-8 w-9 px-0 " +
+                  (isTemporaryChat
+                    ? "border-destructive/40 text-destructive hover:bg-destructive/10"
+                    : "border-emerald-400/50 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10")
+                }
                 data-testid="chat:temporary-toggle"
                 onClick={() => toggleTemporaryChat()}
                 title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
                 type="button"
-                variant={isTemporaryChat ? "secondary" : "outline"}
+                variant="outline"
               >
                 {isTemporaryChat ? (
                   <LockIcon className="size-4" />
