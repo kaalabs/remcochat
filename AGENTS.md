@@ -2,6 +2,12 @@
 
 This repository is operated by a single developer with a deliberate preference for the lightest possible Git workflow and minimal automation. The agent must adhere to the operational procedures below without introducing additional branching models, CI/CD complexity, or “helpful” automations unless explicitly instructed.
 
+## Project Plan
+
+The current implementation plan and product scope for RemcoChat lives in `PLAN.md`. Keep `PLAN.md` up-to-date as decisions change during development.
+
+Progress / audit trail lives in `PROGRESS.toml`. Treat it as append-only and historical: after completing a canonical task from `PLAN.md`, append a record describing what was completed, the challenges/decisions, and what tests were run.
+
 ## 1. Objectives and constraints
 
 1. Maintain strict separation of environments:
@@ -74,4 +80,3 @@ When proposing changes or generating code:
 4. Ensure secrets are never committed and templates are used for configuration.
 5. Assume the developer will run tests manually and will manually promote by push/merge.
 6. If a recommendation would increase automation or process overhead, present it as optional and do not implement it unless explicitly instructed.
-

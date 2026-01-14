@@ -1,0 +1,749 @@
+schema_version = 1
+project = "RemcoChat"
+plan_file = "PLAN.md"
+created_at = "2026-01-13T15:34:03Z"
+updated_at = "2026-01-14T05:30:21Z"
+
+# PROGRESS.toml is an append-only, historical audit trail.
+# Do not pre-create tasks, statuses, or future work items here.
+#
+# After completing a canonical task from `PLAN.md`, append a new `[[events]]`
+# record that describes what was done and why, including:
+# - task: a short label or PLAN.md roadmap step reference
+# - summary: one-line outcome
+# - challenges: what went wrong / tricky parts
+# - solutions: how it was solved and why
+# - tests: exact commands run + outcome
+# - files: notable files changed
+
+[[events]]
+ts = "2026-01-13T15:34:03Z"
+type = "meta"
+summary = "Initialized planning docs and progress tracking"
+files = ["PLAN.md", "AGENTS.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T15:34:31Z"
+type = "meta"
+summary = "Documented PROGRESS.toml workflow in AGENTS.md"
+files = ["AGENTS.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T15:38:19Z"
+type = "meta"
+summary = "Refactored PROGRESS.toml to be historical-only (append-only)"
+details = "Removed forward-looking task status tracking; PROGRESS.toml now records only completed work after the fact."
+files = ["PROGRESS.toml", "AGENTS.md"]
+
+[[events]]
+ts = "2026-01-13T15:47:35Z"
+type = "task"
+task = "Implementation Roadmap 1: Scaffold Next.js + Tailwind + shadcn/ui; install AI SDK; install AI Elements"
+summary = "Bootstrapped a Next.js (App Router) project with Tailwind v4, installed Vercel AI SDK + AI Elements, and ensured lint/build succeed."
+challenges = [
+  "create-next-app refused to initialize in the repo root due to npm package naming restrictions (repo directory contains capital letters).",
+  "AI Elements generated components that failed TypeScript build due to unused '@ts-expect-error' directives.",
+  "AI Elements generated components that triggered strict React Hooks ESLint rules from the default Next.js flat config.",
+]
+solutions = [
+  "Scaffolded in a lowercase subdirectory and then moved the Next.js project files into the repo root.",
+  "Removed unused '@ts-expect-error' directives in AI Elements components so TypeScript compilation passes with the installed AI SDK version.",
+  "Added ESLint flat-config overrides to relax selected rules for vendored AI Elements code (kept rules enabled for the rest of the app).",
+]
+decisions = [
+  "Kept the app stack on latest versions (Next 16.x / React 19.x / Tailwind 4.x / AI SDK 6.x) to match AI Elements expectations.",
+  "Did not delete unused AI Elements component files; they are present but will only be used selectively per MVP scope.",
+]
+tests = [
+  "npm run lint (pass; warnings from ai-elements remain)",
+  "npm run build (pass)",
+]
+files = [
+  ".gitignore",
+  "eslint.config.mjs",
+  "package.json",
+  "package-lock.json",
+  "next.config.ts",
+  "postcss.config.mjs",
+  "tsconfig.json",
+  "src/**",
+  "public/**",
+  "src/components/ai-elements/confirmation.tsx",
+  "src/components/ai-elements/tool.tsx",
+  "components.json",
+]
+
+[[events]]
+ts = "2026-01-13T15:51:02Z"
+type = "task"
+task = "Implementation Roadmap 2: Build base layout + theme toggle"
+summary = "Replaced the starter landing page with a RemcoChat shell (sidebar + main area) and added a working light/dark theme toggle."
+challenges = [
+  "next-themes type import path used in some examples was not present in the installed next-themes version.",
+  "Default Next.js ESLint rules flagged the common 'mounted' pattern used to avoid theme hydration mismatches.",
+]
+solutions = [
+  "Typed ThemeProvider props via React ComponentProps instead of importing from an internal next-themes path.",
+  "Scoped an ESLint override to disable the overly-strict hook rule for theme-toggle while keeping it enabled elsewhere.",
+]
+tests = [
+  "npm run lint (pass; warnings remain in ai-elements vendored code)",
+  "npm run build (pass)",
+]
+files = [
+  "src/app/layout.tsx",
+  "src/app/page.tsx",
+  "src/components/theme-provider.tsx",
+  "src/components/theme-toggle.tsx",
+  "eslint.config.mjs",
+  "package.json",
+  "package-lock.json",
+]
+
+[[events]]
+ts = "2026-01-13T15:52:48Z"
+type = "task"
+task = "Implementation Roadmap 3: Add model allowlist + per-chat model selector"
+summary = "Added a model allowlist and a minimal model selector UI in the header (currently persisted as a global default in localStorage until chats/profiles are implemented)."
+decisions = [
+  "Initial allowlist set to: openai/gpt-5, openai/gpt-4.1-mini, anthropic/claude-sonnet-4.5 (easy to adjust later).",
+  "Persisted selection in localStorage as 'remcochat:modelId' as an interim default; will move to per-chat storage once chats exist.",
+]
+tests = [
+  "npm run lint (pass; warnings remain in ai-elements vendored code)",
+  "npm run build (pass)",
+]
+files = [
+  "src/lib/models.ts",
+  "src/components/model-picker.tsx",
+  "src/app/page.tsx",
+  "PLAN.md",
+]
+
+[[events]]
+ts = "2026-01-13T15:57:25Z"
+type = "task"
+task = "Implementation Roadmap 4: Implement streaming /api/chat + Stop (abort)"
+summary = "Implemented `/api/chat` streaming via AI SDK + AI Gateway, wired a basic chat UI using `useChat` with streaming, and added a Stop button."
+challenges = [
+  "AI Elements `PromptInput` requires an `onSubmit` prop and expects the textarea to provide a `name` for form submission.",
+  "`useChat` helper in the installed `@ai-sdk/react` version exposes `regenerate` (not `reload`) for retry behavior.",
+]
+solutions = [
+  "Switched from a custom `<form>` wrapper to `PromptInput`'s built-in form and provided `onSubmit` plus `name=\"message\"` on the textarea.",
+  "Used `regenerate()` for retry in the error UI and `stop()` to abort streaming.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in ai-elements vendored code)",
+]
+files = [
+  ".env.example",
+  "src/app/api/chat/route.ts",
+  "src/app/page.tsx",
+]
+
+[[events]]
+ts = "2026-01-13T16:04:21Z"
+type = "task"
+task = "Implementation Roadmap 5: Add profiles (create/switch) + profileId routing"
+summary = "Added server-side profiles backed by SQLite, profile list/create/update APIs, and a profile switcher UI; chat requests now include the active profileId."
+challenges = [
+  "Needed a minimal persistence layer without introducing heavy migration tooling.",
+  "better-sqlite3 required separate TypeScript types to keep `next build` green.",
+]
+solutions = [
+  "Implemented a tiny SQLite bootstrapper (`src/server/db.ts`) that creates the `profiles` table on first run (DB stored under `data/`, ignored by git).",
+  "Added `@types/better-sqlite3` and typed DB rows explicitly to avoid `any` and satisfy strict lint rules.",
+]
+decisions = [
+  "Active profile selection is stored client-side in localStorage (`remcochat:profileId`), but profile definitions live on the server and are shared on the LAN.",
+  "Moved 'default model' to be profile-backed (PATCH `/api/profiles/:id`), aligning with the plan’s profile-based defaults.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in ai-elements vendored code)",
+]
+files = [
+  ".gitignore",
+  "src/server/db.ts",
+  "src/server/profiles.ts",
+  "src/app/api/profiles/route.ts",
+  "src/app/api/profiles/[profileId]/route.ts",
+  "src/app/home-client.tsx",
+  "src/app/page.tsx",
+  "src/lib/types.ts",
+  "package.json",
+  "package-lock.json",
+]
+
+[[events]]
+ts = "2026-01-13T16:05:30Z"
+type = "meta"
+summary = "Added minimal README run instructions"
+files = ["README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:16:52Z"
+type = "meta"
+summary = "Require AI Gateway key from shell for npm run dev/start"
+details = "Added a small preflight script so `npm run dev`/`npm run start` fail fast unless `VERCEL_AI_GATEWAY_API_KEY` (or `AI_GATEWAY_API_KEY`) is exported in the shell."
+tests = ["npm run build (pass)", "npm run lint (pass)"]
+files = ["scripts/check-env.mjs", "package.json", "README.md", ".env.example", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:25:55Z"
+type = "fix"
+summary = "Prevent prompt composer from scrolling off-screen"
+details = "Constrained layout to viewport, forced scroll to stay in the message list, and capped textarea growth so the composer stays visible while older messages scroll upward."
+tests = ["npm run build (pass)", "npm run lint (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:29:18Z"
+type = "fix"
+summary = "Fix hydration mismatch in model selector label"
+details = "Removed localStorage-dependent state initialization during the first render; active profile is now updated from localStorage only after mount, avoiding SSR/CSR mismatch."
+tests = ["npm run build (pass)", "npm run lint (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:34:29Z"
+type = "fix"
+summary = "Auto-scroll chat to bottom while streaming"
+details = "Wrapped the message list in `StickToBottom` so streaming updates keep the view anchored to the bottom (older messages scroll off the top once the viewport fills), without fighting the user if they scroll up."
+tests = ["npm run build (pass)", "npm run lint (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:37:45Z"
+type = "feat"
+summary = "Add 'Thinking…' indicator while waiting for response"
+details = "Shows a small spinner + 'Thinking…' assistant bubble while the request is submitted (or streaming before first token), so users get immediate feedback that the model is working."
+tests = ["npm run build (pass)", "npm run lint (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T16:55:35Z"
+type = "task"
+task = "Implementation Roadmap 6: Add SQLite persistence (chats + messages) + sidebar history"
+summary = "Implemented per-profile chat history backed by SQLite (chats + messages), wired chat switching/loading/saving in the UI, and ensured streaming stays pinned to the bottom while the composer remains fixed."
+challenges = [
+  "A previously-created local SQLite DB had an older `messages` table schema, causing Next.js build/prerender to fail when creating an index on a missing `position` column.",
+  "Auto-scroll during streaming was unreliable because the stick-to-bottom scroll container was not the actual element holding the scrollRef.",
+]
+solutions = [
+  "Adjusted schema initialization to run the `position` column migration before creating the `idx_messages_chat_position` index, so older DBs upgrade cleanly.",
+  "Restructured the chat scroll area so `use-stick-to-bottom` owns the scrollable element, and applied padding to the content container instead of the wrapper.",
+]
+decisions = [
+  "Persist messages as AI SDK `UIMessage.parts` JSON (`parts_json`) to keep storage aligned with UI rendering and future multi-part messages.",
+  "Persist active chat selection per profile in localStorage (`remcochat:chatId:<profileId>`), while chats/messages live on the server and are shared on the LAN.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = [
+  "src/server/db.ts",
+  "src/server/chats.ts",
+  "src/app/api/chats/route.ts",
+  "src/app/api/chats/[chatId]/route.ts",
+  "src/app/api/chats/[chatId]/messages/route.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/home-client.tsx",
+  "src/app/page.tsx",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T17:07:56Z"
+type = "task"
+task = "Implementation Roadmap 7: Add regenerate + response variants"
+summary = "Added Regenerate and a per-turn variants pager; unselected assistant responses are persisted and can be swapped back in as the selected response."
+challenges = [
+  "`useChat().regenerate()` replaces the assistant message in-place, so variant history would be lost unless captured and stored separately.",
+  "Variant ordering/association needed to be stable across reloads (which user message a response belongs to, and when it was created).",
+]
+solutions = [
+  "Introduced a `message_variants` table to store unselected assistant responses keyed by the user message they answer; the selected assistant response remains in the main `messages` stream.",
+  "Added message metadata (`createdAt`, `turnUserMessageId`) via AI SDK `messageMetadata` on the server and persisted metadata on reload via DB columns + response payload.",
+  "Changed chat state saving to be a full sync (upsert + delete missing) so regenerated messages don’t leave stale rows behind in SQLite.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = [
+  "src/server/db.ts",
+  "src/server/chats.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/api/chats/[chatId]/messages/route.ts",
+  "src/app/home-client.tsx",
+  "src/lib/types.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T17:48:34Z"
+type = "fix"
+summary = "Restore message list scrolling + resilient DB migrations"
+challenges = [
+  "The message list did not scroll because the stick-to-bottom content container was forced to `h-full`, preventing the scroll area from growing its scrollHeight.",
+  "Next dev hot-reload can keep the SQLite connection alive, so new migrations may not run if schema init only happens on first connection creation.",
+]
+solutions = [
+  "Removed the `h-full` constraint from the chat scroll content so the scroll container can measure content height and auto-scroll during streaming.",
+  "Re-ran schema init/migrations on every `getDb()` call (idempotent) so new columns/tables become available even when the DB connection is reused across reloads.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = ["src/app/home-client.tsx", "src/server/db.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T17:56:43Z"
+type = "fix"
+summary = "Prevent reload from overwriting persisted chat state with empty messages"
+challenges = [
+  "On reload, the auto-save effect could run before the initial messages fetch finished, sending an empty `{messages: []}` payload that wiped chat history in SQLite.",
+]
+solutions = [
+  "Added a per-chat 'loaded' guard so saving only happens after the initial chat state for the active chat has been fetched and applied.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T18:01:36Z"
+type = "fix"
+summary = "Suppress Radix hydration warnings for Select/ModelPicker trigger ids"
+details = "Radix generates dynamic `aria-controls` ids that can differ between SSR and client hydration; we suppress hydration warnings on the affected trigger elements to keep the console clean."
+tests = ["npm run build (pass)"]
+files = ["src/app/home-client.tsx", "src/components/model-picker.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T18:14:19Z"
+type = "task"
+task = "Implementation Roadmap 8: Edit + branch (fork chat from a user message)"
+summary = "Added per-user-message Edit that forks a new chat from that point, copies prior context, and re-runs the conversation from the edited message."
+challenges = [
+  "Need to preserve history while ensuring the original chat remains unchanged (fork semantics).",
+  "SQLite schema migrations must upgrade existing LAN DBs without breaking older installs.",
+]
+solutions = [
+  "Implemented `forkChatFromUserMessage` that creates a new chat with fork metadata and saves a sliced/edited message stream; variants are carried over only for turns before the edit point.",
+  "Added nullable fork metadata columns to the `chats` table with idempotent migrations.",
+  "Added a dedicated API endpoint for forking and a minimal dialog UI to edit text and create the fork.",
+]
+tests = ["npm run build (pass)", "npm run lint (pass; warnings remain in vendored ai-elements code)"]
+files = [
+  "src/server/db.ts",
+  "src/server/chats.ts",
+  "src/app/api/chats/[chatId]/fork/route.ts",
+  "src/app/home-client.tsx",
+  "src/lib/types.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T18:25:20Z"
+type = "task"
+task = "Implementation Roadmap 9: Instructions + memory + temporary chat"
+summary = "Added profile custom instructions, per-chat instructions, explicit “Memorize this” memory capture with management, and temporary chat mode that bypasses history and memory."
+challenges = [
+  "Memory must be explicit-only (no automatic summarization) and must not leak into temporary chats.",
+  "Temporary chat needed to work with the existing `/api/chat` transport that previously required a persisted chat id.",
+]
+solutions = [
+  "Added `profile_memory` table + memory APIs and injected saved memory into the system prompt only when `memory_enabled` is on and the request is not temporary.",
+  "Extended `/api/chat` to accept `temporary: true` and skip chat/profile DB coupling while still streaming via AI Gateway.",
+  "Added UI: profile settings dialog (custom instructions + memory toggle + memory list/delete), chat settings dialog (per-chat instructions), and a “Memorize this” action on user messages.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = [
+  "src/server/db.ts",
+  "src/server/memory.ts",
+  "src/app/api/profiles/[profileId]/memory/route.ts",
+  "src/app/api/profiles/[profileId]/memory/[memoryId]/route.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/home-client.tsx",
+  "src/lib/types.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T18:26:10Z"
+type = "fix"
+summary = "Temp chat inherits current model selection"
+details = "When entering temporary chat, it now starts with the currently selected model instead of resetting to a hardcoded default."
+tests = ["npm run build (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T18:46:52Z"
+type = "fix"
+summary = "Make instructions + memory behave consistently"
+challenges = [
+  "Profile/chat instructions appeared to apply inconsistently across multiple turns, and “Memorize this” was not discoverable enough in the message UI.",
+]
+solutions = [
+  "Prepended the assembled system prompt as an explicit system message in the model message list for every request, and added an explicit priority rule (chat > profile > memory).",
+  "Made per-user-message actions (including “Memorize this”) visible by default at low opacity instead of only on hover.",
+]
+tests = ["npm run build (pass)", "npm run lint (pass; warnings remain in vendored ai-elements code)"]
+files = ["src/app/api/chat/route.ts", "src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T19:01:53Z"
+type = "fix"
+summary = "Use official AI Gateway provider and add “Memorize this,” command"
+challenges = [
+  "Profile/chat system instructions were not applied reliably across turns when using a plain string `modelId` without the AI Gateway provider.",
+  "Memory capture required too much manual UI interaction; MVP requires command-style memory capture.",
+]
+solutions = [
+  "Added `@ai-sdk/gateway` and switched `/api/chat` to `model: gateway('<provider>/<model>')`, restoring reliable system prompt handling for both profile and per-chat instructions.",
+  "Implemented a lightweight command parser for user messages starting with “Memorize this,”; when memory is enabled and chat is non-temporary, it saves directly to `profile_memory` and returns a synthetic streamed assistant confirmation without calling the model.",
+]
+tests = [
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+]
+files = [
+  "package.json",
+  "package-lock.json",
+  "src/app/api/chat/route.ts",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T19:39:54Z"
+type = "fix"
+summary = "Make chat instructions override profile instructions"
+details = "Reworked system prompt assembly so Chat instructions are explicitly highest priority and included last, preventing profile-level instructions from overriding per-chat behavior."
+tests = ["npm run build (pass)", "npm run lint (pass; warnings remain in vendored ai-elements code)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T20:35:02Z"
+type = "investigation"
+summary = "Investigated Claude instruction persistence across turns"
+challenges = [
+  "User reported that on anthropic/claude-sonnet-4.5 profile instructions apply only to the first prompt; follow-up prompts ignore them (OpenAI models behaved consistently).",
+  "The issue reproduced when instructions were phrased like “Reply with exactly: …”.",
+]
+solutions = [
+  "Adjusted system prompt wording to explicitly scope both Profile + Chat instructions as constraints that apply to every assistant response (not just the first reply).",
+  "Verified via a local scripted reproduction calling `/api/chat` twice in the same conversation with the Claude model id; behavior became consistent (PROFILE-OK on both turns).",
+]
+tests = ["npm run build (pass)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T20:42:23Z"
+type = "fix"
+summary = "Make chat instruction changes apply mid-chat even with profile instructions present"
+challenges = [
+  "User reported that updating Chat instructions mid-chat had no effect; it only worked when starting a new chat after setting Chat instructions.",
+  "Local reproduction showed chat instructions failed to override profile instructions when both were present, depending on prompt section ordering.",
+]
+solutions = [
+  "Reordered system prompt sections so Memory is included first (lowest priority), Profile instructions next, and Chat instructions last (highest priority) to reduce ordering-related ambiguity across providers.",
+  "Kept explicit priority guidance in the system prompt while also aligning section order with that priority.",
+]
+tests = ["npm run build (pass)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T20:48:43Z"
+type = "fix"
+summary = "Stabilize repeated mid-chat instruction updates (Claude) with exact-response mode"
+challenges = [
+  "Claude could continue outputting the previous instruction's exact token (e.g. CHAT-OK) even after chat instructions were updated again mid-chat (e.g. CHAT-NEW), despite the server sending the updated system prompt.",
+  "This was easiest to reproduce using test-style instructions like “Reply with exactly: …”, where the model tended to follow prior assistant outputs as an implicit pattern.",
+]
+solutions = [
+  "Added lightweight parsing for common “exact response” instruction patterns in profile/chat instructions and injected an explicit “Exact-response mode” directive into the system prompt, including guidance to ignore outdated prior assistant messages.",
+  "Kept prompt section ordering aligned with declared priority (Memory → Profile → Chat).",
+]
+tests = [
+  "node (manual script) to create profile+chat, PATCH chat instructions twice mid-chat, and call /api/chat 3 turns (pass for anthropic/claude-sonnet-4.5 and openai/gpt-4.1-mini)",
+  "npm run build (pass)",
+]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T21:02:43Z"
+type = "refactor"
+summary = "Replace instruction pattern-matching with revisioned instruction framing"
+challenges = [
+  "Pattern-matching on instruction text (e.g. 'Reply with exactly: …') made the system less flexible and felt like hard-coded policy instead of a general agentic approach.",
+  "Need a provider-agnostic way to make mid-chat instruction updates take effect even when prior assistant messages set a conflicting pattern.",
+]
+solutions = [
+  "Added revision counters for profile and chat instructions in the DB (`custom_instructions_revision`, `chat_instructions_revision`) and increment them only when instructions change.",
+  "Reworked system prompt assembly to include both a plain-text 'Current instructions' section and a structured `<instruction_frame>` block containing revisions; instruct the model to treat newer revisions as authoritative and ignore conflicting prior assistant messages as outdated examples.",
+  "Removed the prior instruction text parsing / exact-response mode logic from the server; the model now interprets instructions naturally within the revisioned frame.",
+]
+tests = [
+  "node (manual script) to PATCH chat instructions twice mid-chat and call /api/chat for 3 turns (pass for anthropic/claude-sonnet-4.5 and openai/gpt-4.1-mini)",
+  "npm run build (pass)",
+]
+files = [
+  "src/server/db.ts",
+  "src/server/profiles.ts",
+  "src/server/chats.ts",
+  "src/lib/types.ts",
+  "src/app/api/chat/route.ts",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-13T21:14:35Z"
+type = "investigation"
+summary = "Added debug headers to /api/chat to diagnose instruction update issues in the UI"
+details = "Response headers now include api version plus profile/chat instruction revision numbers so UI tests can confirm whether requests are hitting the updated server code and whether instruction updates are observed by the backend."
+tests = ["npm run build (pass)", "node (manual script) verified x-remcochat-* headers and chat instruction rev increments 1→2→3 (pass)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T21:25:37Z"
+type = "fix"
+summary = "Prevent sending messages against the wrong chat when activeChatId is stale"
+challenges = [
+  "UI reports of 'mid-chat instructions not applying' correlated with chats not showing an incremented chatInstructionsRevision, suggesting the UI may be editing one chat while sending messages to another due to fallback selection behavior.",
+]
+solutions = [
+  "Removed the fallback that silently selected chats[0] when activeChatId was missing or invalid; activeChat is now null in that case.",
+  "Aligned useChat session key to activeChat.id and added an effect to restore a valid activeChatId when chats exist, ensuring chat settings and /api/chat requests refer to the same chat consistently.",
+  "After saving chat settings, re-fetch chats from the server to keep client state aligned with persisted chat instruction revisions.",
+]
+tests = ["npm run build (pass)", "node (manual script) verified mid-chat chat instruction changes still apply (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T21:37:51Z"
+type = "ux"
+summary = "Clarify when instruction edits take effect and avoid editing while a response is in-flight"
+details = "Chat/Profile settings buttons are disabled while the assistant is streaming/submitted, and the Chat settings dialog now states that changes apply starting with the next assistant response."
+tests = ["npm run build (pass)"]
+files = ["src/app/home-client.tsx", "src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-13T21:43:10Z"
+type = "fix"
+summary = "Pin Chat Settings edits to the chat that was opened"
+details = "Captures the chatId when opening Chat Settings and uses that id for saving, preventing background chat list refreshes from switching the active chat and causing instruction edits to apply to a different chat than the user expects."
+tests = ["npm run build (pass)", "node (manual script) mid-chat instructions update PROFILE-OK→CHAT-OK→CHAT-NEW (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T03:04:30Z"
+type = "task"
+task = "Testing: Add Playwright WebKit E2E + fix instruction updates"
+summary = "Added Playwright (WebKit/Safari engine) end-to-end testing and fixed instruction update behavior for Claude by tracking instruction revisions per assistant message and filtering stale assistant messages after instruction updates."
+challenges = [
+  "Claude would continue following earlier instruction patterns after mid-chat instruction changes, even when the server system prompt reflected updated instruction revisions.",
+  "Strict 'exact output' assertions made real-LLM E2E flaky (providers sometimes add extra text or repeat lines despite temperature=0).",
+]
+solutions = [
+  "Included `profileInstructionsRevision`/`chatInstructionsRevision` in assistant message metadata and persisted them in SQLite so the server can drop assistant messages created under older instruction revisions when building the next model request.",
+  "Added stable `data-testid` selectors and made the E2E assertions focus on inclusion/exclusion of the expected instruction token instead of exact-match output.",
+]
+decisions = [
+  "E2E runs against a dedicated DB (`data/remcochat-e2e.sqlite`) and uses Playwright WebKit to approximate Safari behavior.",
+  "Kept the existing fast-fail requirement for `VERCEL_AI_GATEWAY_API_KEY`; E2E is intended to run with real LLM access (no mocks).",
+]
+tests = [
+  "npx playwright install webkit (pass)",
+  "npm run build (pass)",
+  "npm run lint (pass; warnings remain in vendored ai-elements code)",
+  "npm run test:e2e (pass)",
+]
+files = [
+  "playwright.config.ts",
+  "e2e/instructions.spec.ts",
+  "scripts/reset-e2e-db.mjs",
+  "package.json",
+  "package-lock.json",
+  "src/app/home-client.tsx",
+  "src/components/model-picker.tsx",
+  "src/app/api/chat/route.ts",
+  "src/server/db.ts",
+  "src/server/chats.ts",
+  "src/lib/types.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-14T03:07:16Z"
+type = "chore"
+summary = "Ignore Playwright artifacts and reduce a new hook lint warning"
+tests = ["npm run lint (pass; warnings remain in vendored ai-elements code)"]
+files = [".gitignore", "src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T03:07:58Z"
+type = "meta"
+summary = "Documented Playwright E2E commands in README"
+files = ["README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T03:20:59Z"
+type = "fix"
+summary = "Regenerate now yields a new response variant instead of repeating the same answer"
+details = "The client now marks regenerate requests explicitly; the server drops the prior assistant message being regenerated from context and uses a slightly higher temperature with a regeneration hint. This increases diversity while still respecting profile/chat instruction constraints."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "src/app/api/chat/route.ts", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T03:30:00Z"
+type = "fix"
+summary = "Reduce A/B oscillation when regenerating by avoiding all prior variants"
+details = "Regenerate now snapshots variants with unique ids, and the server includes the selected answer + stored variants for the turn in a 'do not repeat' list. This pushes the model to produce a genuinely new variant across multiple regenerate clicks."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "src/app/api/chat/route.ts", "src/server/chats.ts", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T03:43:14Z"
+type = "fix"
+summary = "Fix edit+fork dialog crash (PromptInputTextarea outside provider) and add E2E regression"
+details = "Replaced the edit dialog's PromptInputTextarea with a plain Textarea and added test selectors; added a WebKit E2E test that regenerates variants, then edits and forks a message without runtime errors."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T04:08:17Z"
+type = "fix"
+summary = "Regenerate after fork now answers the edited (unanswered) user message"
+details = "When a forked chat ends on a user message with no assistant response yet, the Regenerate button now calls `regenerate()` without a messageId so AI SDK generates the assistant response for the last user message, matching user expectations."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T04:17:40Z"
+type = "fix"
+summary = "Forked chats retain variants for earlier turns"
+details = "Fork now flushes the source chat state (including variants) to the server before forking so the server-side fork can copy the latest variants; added variant pager testids and expanded WebKit E2E to assert the pager is present in the forked chat."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T04:34:59Z"
+type = "fix"
+summary = "Fork preserves the edited turn’s fork-source response variants"
+details = "When editing a past user message and forking, the server previously dropped all variants for that edited turn, so after regenerating the edited message in the fork there was no variants pager to return to the original (pre-edit) assistant responses. Fork now carries over the edited turn’s stored variants and also captures the original turn’s assistant response(s) as fork-source variants, aligning with ChatGPT-like branching behavior."
+tests = ["npm run test:e2e (pass)", "npm run build (pass)"]
+files = ["src/server/chats.ts", "e2e/instructions.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T04:49:21Z"
+type = "task"
+task = "Implementation Roadmap 10: Add archive/delete + export endpoints"
+summary = "Added archive/unarchive and soft-delete chat actions in the sidebar, plus chat export to Markdown and JSON."
+challenges = [
+  "Needed a reliable, non-manual way to validate the full archive/delete/export flow end-to-end in a Safari-like browser.",
+]
+solutions = [
+  "Implemented dedicated API routes for archive/unarchive, delete, and export; wired them into a minimal dropdown action menu per chat and added a WebKit Playwright E2E that exercises export + archive/unarchive + delete.",
+]
+decisions = [
+  "Delete is implemented as a soft delete (sets deleted_at) and removed from normal chat listings; archiving is reversible (archived_at NULL/ISO timestamp).",
+  "Export JSON includes messages plus per-turn unselected variants; Export Markdown includes an appendix for variants.",
+]
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = [
+  "src/server/chats.ts",
+  "src/app/api/chats/[chatId]/route.ts",
+  "src/app/api/chats/[chatId]/archive/route.ts",
+  "src/app/api/chats/[chatId]/export/route.ts",
+  "src/app/home-client.tsx",
+  "e2e/instructions.spec.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-14T04:53:18Z"
+type = "fix"
+summary = "Suppress Radix dropdown trigger hydration mismatch on refresh"
+details = "Safari/Next reported hydration attribute mismatches on Radix DropdownMenu trigger ids after refresh. Added suppressHydrationWarning to the sidebar chat menu trigger buttons (similar to the existing SelectTrigger mitigation) to prevent noisy console errors."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:01:45Z"
+type = "ux"
+summary = "Archived chats section is collapsible and collapsed by default"
+details = "Moved archived chats under a Radix Collapsible section so they don't clutter the sidebar. The section is collapsed by default, auto-expands after archiving a chat, and auto-collapses when there are no archived chats left."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:07:38Z"
+type = "polish"
+summary = "Added global keyboard shortcuts and improved focus behavior"
+details = "Added global shortcuts: Esc stops streaming, Cmd/Ctrl+/ focuses the composer, Cmd/Ctrl+Shift+N creates a new chat (avoids the browser's Cmd/Ctrl+N new-window shortcut), and Cmd/Ctrl+Shift+L toggles theme. The composer now auto-focuses after chat switches and after closing dialogs to keep the flow fast."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "src/components/theme-toggle.tsx", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:16:39Z"
+type = "ui"
+summary = "Introduce a subtle brand accent color per theme"
+details = "Updated the shadcn/Tailwind CSS variables to use a subtle blue accent: primary buttons, focus rings, hover accents, and sidebar active/hover states now inherit that single accent color per theme (with light/dark tuned OKLCH values)."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/globals.css", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:19:45Z"
+type = "ui"
+summary = "Increase light-theme accent contrast"
+details = "Adjusted light-theme OKLCH values (primary/accent/ring and sidebar equivalents) to make the accent more noticeable while keeping it minimal."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/globals.css", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:24:11Z"
+type = "ui"
+summary = "Use an icon-only regenerate button"
+details = "Replaced the composer 'Regenerate' text button with an icon-only button and added an aria-label/title for clarity; updated WebKit E2E to target it via data-testid."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:26:12Z"
+type = "ui"
+summary = "Use an icon-only chat settings button"
+details = "Replaced the composer 'Chat' settings text button with an icon-only button (aria-label/title kept)."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:28:34Z"
+type = "ui"
+summary = "Make composer send button wider"
+details = "Increased the PromptInput submit button width (and matched height to the other composer icon buttons) to give it more visual weight in the composer toolbar."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T05:30:21Z"
+type = "ui"
+summary = "Add right padding to composer action row"
+details = "Added a small right padding to the composer action button row so the send button doesn't sit flush against the input group border."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
