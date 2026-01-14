@@ -9,6 +9,10 @@ export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
+  const requestComposerFocus = () => {
+    window.dispatchEvent(new Event("remcochat:focus-composer"));
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -26,6 +30,7 @@ export function ThemeToggle() {
       e.preventDefault();
       const isDark = resolvedTheme === "dark";
       setTheme(isDark ? "light" : "dark");
+      requestComposerFocus();
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -49,7 +54,10 @@ export function ThemeToggle() {
     <Button
       aria-label="Toggle theme"
       className="h-8 w-8"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={() => {
+        setTheme(isDark ? "light" : "dark");
+        requestComposerFocus();
+      }}
       size="icon"
       variant="ghost"
     >

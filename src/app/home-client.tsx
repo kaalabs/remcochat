@@ -702,6 +702,35 @@ export function HomeClient({
   ]);
 
   useEffect(() => {
+    const onFocusRequested = () => {
+      if (status !== "ready") return;
+      if (createOpen) return;
+      if (editOpen) return;
+      if (settingsOpen) return;
+      if (chatSettingsOpen) return;
+      if (memorizeOpen) return;
+      if (deleteChatOpen) return;
+      if (adminOpen) return;
+      focusComposer({ toEnd: true });
+    };
+
+    window.addEventListener("remcochat:focus-composer", onFocusRequested);
+    return () => {
+      window.removeEventListener("remcochat:focus-composer", onFocusRequested);
+    };
+  }, [
+    adminOpen,
+    chatSettingsOpen,
+    createOpen,
+    deleteChatOpen,
+    editOpen,
+    focusComposer,
+    memorizeOpen,
+    settingsOpen,
+    status,
+  ]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
 

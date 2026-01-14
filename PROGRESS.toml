@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T15:00:53Z"
+updated_at = "2026-01-14T15:09:26Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -941,3 +941,14 @@ type = "meta"
 summary = "Roadmap 11 (Polish) confirmed complete"
 details = "Marked Implementation Roadmap step 11 (Polish) as done in PLAN.md after user confirmation."
 files = ["PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T15:09:26Z"
+type = "fix"
+summary = "Theme toggle returns focus to composer"
+details = "Toggling the theme (click or Cmd/Ctrl+Shift+L) now requests composer focus so the typing flow continues uninterrupted. Implemented via a small app-level custom event that HomeClient handles while respecting open dialogs."
+tests = [
+  "npm run build (pass)",
+  "npx playwright test e2e/instructions.spec.ts -g \"Theme toggle restores composer focus\" (pass)",
+]
+files = ["src/components/theme-toggle.tsx", "src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]

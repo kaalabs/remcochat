@@ -387,6 +387,23 @@ test("New chat uses last selected model (WebKit)", async ({ page }) => {
   expect(body).toMatchObject({ modelId: target });
 });
 
+test("Theme toggle restores composer focus (WebKit)", async ({ page }) => {
+  await page.goto("/");
+
+  const themeToggle = page.getByLabel("Toggle theme");
+  await expect(themeToggle).toBeVisible();
+  await expect(themeToggle.locator("svg")).toHaveCount(1);
+
+  const composer = page.getByTestId("composer:textarea");
+  await expect(composer).toBeVisible();
+
+  await themeToggle.click();
+  await expect(composer).toBeFocused();
+
+  await themeToggle.click();
+  await expect(composer).toBeFocused();
+});
+
 test("Archive/delete and export work (WebKit)", async ({ page }) => {
   const profileName = `E2E Archive ${Date.now()}`;
 
