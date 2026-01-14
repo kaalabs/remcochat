@@ -43,17 +43,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { MessageActions, MessageAction } from "@/components/ai-elements/message";
 import {
-  ArchiveIcon,
-  BookmarkIcon,
-  ChevronDownIcon,
-  ShieldIcon,
-  DownloadIcon,
-  MoreVerticalIcon,
-  PencilIcon,
-  LockIcon,
-  LockOpenIcon,
-  RotateCcwIcon,
-  SettingsIcon,
+	  ArchiveIcon,
+	  BookmarkIcon,
+	  ChevronDownIcon,
+	  ShieldIcon,
+	  DownloadIcon,
+	  MoreVerticalIcon,
+	  PlusIcon,
+	  PencilIcon,
+	  LockIcon,
+	  LockOpenIcon,
+	  RotateCcwIcon,
+	  SettingsIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
   Undo2Icon,
@@ -1456,16 +1457,18 @@ export function HomeClient({
                 </SelectContent>
               </Select>
 
-              <Button
-                className="h-9 px-3"
-                data-testid="profile:new"
-                onClick={() => setCreateOpen(true)}
-                type="button"
-                variant="secondary"
-              >
-                New
-              </Button>
-            </div>
+	              <Button
+	                aria-label="New profile"
+	                className="h-9 w-9 px-0"
+	                data-testid="profile:new"
+	                onClick={() => setCreateOpen(true)}
+	                title="New profile"
+	                type="button"
+	                variant="secondary"
+	              >
+	                <PlusIcon className="size-4" />
+	              </Button>
+	            </div>
 
             <div className="mt-3 flex items-center gap-2">
               <Button
