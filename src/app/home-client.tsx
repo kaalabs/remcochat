@@ -1498,12 +1498,12 @@ export function HomeClient({
               </div>
               <Button
                 aria-label={isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"}
-                className={
-                  "h-8 w-9 px-0 " +
-                  (isTemporaryChat
-                    ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
-                    : "border-input text-muted-foreground bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50")
-                }
+	                className={
+	                  "h-8 w-9 px-0 " +
+	                  (isTemporaryChat
+	                    ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
+	                    : "border-input text-muted-foreground bg-transparent hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 dark:hover:text-foreground")
+	                }
                 data-testid="chat:temporary-toggle"
                 onClick={() => toggleTemporaryChat()}
                 title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
