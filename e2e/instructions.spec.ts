@@ -604,8 +604,8 @@ test("Temporary toggle uses consistent colored elements (WebKit)", async ({
     await expect(toggle).toHaveAttribute("title", "Temporary chat (off)");
   }
 
-  await expect(toggle).toHaveClass(/border-input/);
-  await expect(toggle).toHaveClass(/text-muted-foreground/);
+  await expect(toggle).toHaveClass(/border-ring/);
+  await expect(toggle).toHaveClass(/text-ring/);
   await expect(toggle).toHaveClass(/bg-transparent/);
 
   await toggle.click();
@@ -618,7 +618,7 @@ test("Temporary toggle uses consistent colored elements (WebKit)", async ({
   await toggle.click();
   await expect(toggle).toHaveAttribute("title", "Temporary chat (off)");
 
-  await expect(toggle).toHaveClass(/border-input/);
-  await expect(toggle).toHaveClass(/text-muted-foreground/);
+  await expect(toggle).toHaveClass(/border-ring/);
+  await expect(toggle).toHaveClass(/text-ring/);
   await expect(toggle).toHaveClass(/bg-transparent/);
 });
