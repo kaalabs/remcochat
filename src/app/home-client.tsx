@@ -270,6 +270,7 @@ export function HomeClient({
   const [deleteChatError, setDeleteChatError] = useState<string | null>(null);
 
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [profileSelectOpen, setProfileSelectOpen] = useState(false);
 
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -689,6 +690,7 @@ export function HomeClient({
     if (memorizeOpen) return;
     if (deleteChatOpen) return;
     if (adminOpen) return;
+    if (profileSelectOpen) return;
     focusComposer({ toEnd: true });
   }, [
     activeChatId,
@@ -700,6 +702,7 @@ export function HomeClient({
     focusComposer,
     isTemporaryChat,
     memorizeOpen,
+    profileSelectOpen,
     settingsOpen,
     status,
   ]);
@@ -714,6 +717,7 @@ export function HomeClient({
       if (memorizeOpen) return;
       if (deleteChatOpen) return;
       if (adminOpen) return;
+      if (profileSelectOpen) return;
       focusComposer({ toEnd: true });
     };
 
@@ -729,6 +733,7 @@ export function HomeClient({
     editOpen,
     focusComposer,
     memorizeOpen,
+    profileSelectOpen,
     settingsOpen,
     status,
   ]);
@@ -745,7 +750,8 @@ export function HomeClient({
         chatSettingsOpen ||
         memorizeOpen ||
         deleteChatOpen ||
-        adminOpen
+        adminOpen ||
+        profileSelectOpen
       ) {
         return;
       }
@@ -788,6 +794,7 @@ export function HomeClient({
     editOpen,
     focusComposer,
     memorizeOpen,
+    profileSelectOpen,
     settingsOpen,
     status,
     stop,
@@ -1440,6 +1447,11 @@ export function HomeClient({
             </div>
             <div className="flex items-center gap-2">
               <Select
+                onOpenChange={(open) => {
+                  setProfileSelectOpen(open);
+                  if (open) return;
+                  window.setTimeout(() => focusComposer({ toEnd: true }), 0);
+                }}
                 onValueChange={setActiveProfileId}
                 value={activeProfile?.id ?? ""}
               >

@@ -395,6 +395,24 @@ test("App shows version (WebKit)", async ({ page }) => {
   );
 });
 
+test("Profile reselect restores composer focus (WebKit)", async ({ page }) => {
+  await page.goto("/");
+
+  const composer = page.getByTestId("composer:textarea");
+  await expect(composer).toBeVisible();
+
+  const trigger = page.getByTestId("profile:select-trigger");
+  const current = (await trigger.innerText()).trim();
+  expect(current).not.toBe("");
+
+  await trigger.click();
+  const option = page.getByRole("option", { name: current });
+  await expect(option).toBeVisible();
+  await option.click();
+
+  await expect(composer).toBeFocused();
+});
+
 test("Theme toggle restores composer focus (WebKit)", async ({ page }) => {
   await page.goto("/");
 
