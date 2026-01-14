@@ -5,13 +5,9 @@ export type ModelOption = {
 };
 
 export const MODEL_ALLOWLIST: ModelOption[] = [
-  { id: "openai/gpt-5", label: "GPT-5", description: "OpenAI" },
-  { id: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini", description: "OpenAI" },
-  {
-    id: "anthropic/claude-sonnet-4.5",
-    label: "Claude Sonnet 4.5",
-    description: "Anthropic",
-  },
+  { id: "openai/gpt-5.2-chat", label: "GPT 5.2 Chat", description: "OpenAI" },
+  { id: "openai/gpt-4o-mini", label: "GPT 4o Mini", description: "OpenAI" },
+  { id: "openai/gpt-5.2-pro", label: "GPT 5.2 PRO", description: "OpenAI" },
 ];
 
 export const DEFAULT_MODEL_ID = MODEL_ALLOWLIST[0]?.id ?? "openai/gpt-5";
