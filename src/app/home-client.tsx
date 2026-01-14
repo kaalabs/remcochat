@@ -1964,21 +1964,35 @@ export function HomeClient({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
-              <div>
-                <div className="text-sm font-medium">Memory</div>
-                <div className="text-xs text-muted-foreground">
-                  Only saved via “Memorize this”.
-                </div>
-              </div>
-              <Button
-                onClick={() => setMemoryEnabledDraft((v) => !v)}
-                type="button"
-                variant={memoryEnabledDraft ? "secondary" : "outline"}
-              >
-                {memoryEnabledDraft ? "On" : "Off"}
-              </Button>
-            </div>
+	            <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
+	              <div>
+	                <div className="text-sm font-medium">Memory</div>
+	                <div className="text-xs text-muted-foreground">
+	                  Only saved via “Memorize this”.
+	                </div>
+	              </div>
+	              <button
+	                aria-checked={memoryEnabledDraft}
+	                aria-label="Toggle memory"
+	                className={
+	                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors " +
+	                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+	                  (memoryEnabledDraft ? "bg-primary" : "bg-muted")
+	                }
+	                data-testid="profile:memory-toggle"
+	                onClick={() => setMemoryEnabledDraft((v) => !v)}
+	                role="switch"
+	                title={memoryEnabledDraft ? "Memory: On" : "Memory: Off"}
+	                type="button"
+	              >
+	                <span
+	                  className={
+	                    "pointer-events-none inline-block size-5 rounded-full bg-white shadow-sm transition-transform " +
+	                    (memoryEnabledDraft ? "translate-x-5" : "translate-x-0.5")
+	                  }
+	                />
+	              </button>
+	            </div>
 
             {memoryEnabledDraft ? (
               <div className="space-y-2">
