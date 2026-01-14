@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ModelOption } from "@/lib/models";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export type ModelPickerProps = {
   value: string;
@@ -34,6 +34,19 @@ export function ModelPicker({
 }: ModelPickerProps) {
   const selected = options.find((m) => m.id === value);
   const [open, setOpen] = useState(false);
+  const focusOnCloseRef = useRef(false);
+
+  const focusComposer = () => {
+    window.requestAnimationFrame(() => {
+      const el = document.querySelector(
+        '[data-testid="composer:textarea"]'
+      ) as HTMLTextAreaElement | null;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+  };
 
   return (
     <ModelSelector onOpenChange={setOpen} open={open}>
@@ -56,7 +69,15 @@ export function ModelPicker({
         </Button>
       </ModelSelectorTrigger>
 
-      <ModelSelectorContent title="Select model">
+      <ModelSelectorContent
+        onCloseAutoFocus={(e) => {
+          if (!focusOnCloseRef.current) return;
+          e.preventDefault();
+          focusOnCloseRef.current = false;
+          focusComposer();
+        }}
+        title="Select model"
+      >
         <ModelSelectorInput placeholder="Search models…" />
         <ModelSelectorList>
           <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
@@ -67,6 +88,7 @@ export function ModelPicker({
                 key={option.id}
                 onSelect={() => {
                   onChange(option.id);
+                  focusOnCloseRef.current = true;
                   setOpen(false);
                 }}
                 value={option.id}

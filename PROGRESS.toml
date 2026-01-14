@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T08:41:35Z"
+updated_at = "2026-01-14T08:50:59Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -797,4 +797,12 @@ type = "ui"
 summary = "Model picker closes after selection"
 details = "Made the model selector dialog controlled so selecting a model automatically closes the dialog (no extra click/Escape). Updated E2E helper expectations accordingly."
 tests = ["npm run build (pass)", "npx playwright test e2e/instructions.spec.ts -g \"Regenerate creates\" (pass)"]
+files = ["src/components/model-picker.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T08:50:59Z"
+type = "ui"
+summary = "Focus composer after model selection"
+details = "After selecting a model, the model picker now closes and then moves focus to the composer textarea (and places the cursor at the end) so the user can keep typing without extra clicks."
+tests = ["npx playwright test e2e/instructions.spec.ts -g \"Profile \\+ chat instructions\" (pass)"]
 files = ["src/components/model-picker.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]

@@ -88,6 +88,7 @@ async function selectPreferredModel(
 
   await page.getByTestId(`model-option:${modelId}`).click();
   await expect(page.getByTestId(`model-option:${modelId}`)).toBeHidden();
+  await expect(page.getByTestId("composer:textarea")).toBeFocused();
 
   return modelId;
 }
