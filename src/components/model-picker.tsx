@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ModelOption } from "@/lib/models";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { useState } from "react";
 
 export type ModelPickerProps = {
   value: string;
@@ -32,9 +33,10 @@ export function ModelPicker({
   triggerTestId,
 }: ModelPickerProps) {
   const selected = options.find((m) => m.id === value);
+  const [open, setOpen] = useState(false);
 
   return (
-    <ModelSelector>
+    <ModelSelector onOpenChange={setOpen} open={open}>
       <ModelSelectorTrigger asChild>
         <Button
           className={cn("h-8 justify-between gap-2 px-3", className)}
@@ -63,7 +65,10 @@ export function ModelPicker({
               <ModelSelectorItem
                 data-testid={`model-option:${option.id}`}
                 key={option.id}
-                onSelect={() => onChange(option.id)}
+                onSelect={() => {
+                  onChange(option.id);
+                  setOpen(false);
+                }}
                 value={option.id}
               >
                 <CheckIcon

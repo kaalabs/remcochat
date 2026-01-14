@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T08:35:27Z"
+updated_at = "2026-01-14T08:41:35Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -790,3 +790,11 @@ summary = "New chats inherit the last-used model"
 details = "Persisted the last-used model per profile (localStorage) and used it when creating a new chat (including the auto-create path after deleting the last chat). Updated the WebKit E2E suite to avoid hard-coding model ids so it stays compatible with allowlist changes."
 tests = ["npm run test:e2e (pass)"]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "playwright.config.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T08:41:35Z"
+type = "ui"
+summary = "Model picker closes after selection"
+details = "Made the model selector dialog controlled so selecting a model automatically closes the dialog (no extra click/Escape). Updated E2E helper expectations accordingly."
+tests = ["npm run build (pass)", "npx playwright test e2e/instructions.spec.ts -g \"Regenerate creates\" (pass)"]
+files = ["src/components/model-picker.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]

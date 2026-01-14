@@ -87,7 +87,6 @@ async function selectPreferredModel(
   expect(modelId).toBeTruthy();
 
   await page.getByTestId(`model-option:${modelId}`).click();
-  await page.keyboard.press("Escape");
   await expect(page.getByTestId(`model-option:${modelId}`)).toBeHidden();
 
   return modelId;
