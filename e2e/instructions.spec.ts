@@ -590,3 +590,35 @@ test("Temporary chat turns composer red (WebKit)", async ({ page }) => {
   expect(back.ok, `backBorder="${back.raw}"`).toBe(true);
   expect(isReddish(back)).toBe(false);
 });
+
+test("Temporary toggle uses consistent colored elements (WebKit)", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const toggle = page.getByTestId("chat:temporary-toggle");
+  await expect(toggle).toBeVisible();
+  const title = (await toggle.getAttribute("title")) ?? "";
+  if (title.includes("(on)")) {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("title", "Temporary chat (off)");
+  }
+
+  await expect(toggle).toHaveClass(/border-emerald/);
+  await expect(toggle).toHaveClass(/text-emerald/);
+  await expect(toggle).toHaveClass(/bg-emerald/);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("title", "Temporary chat (on)");
+
+  await expect(toggle).toHaveClass(/border-destructive/);
+  await expect(toggle).toHaveClass(/text-destructive/);
+  await expect(toggle).toHaveClass(/bg-destructive/);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("title", "Temporary chat (off)");
+
+  await expect(toggle).toHaveClass(/border-emerald/);
+  await expect(toggle).toHaveClass(/text-emerald/);
+  await expect(toggle).toHaveClass(/bg-emerald/);
+});
