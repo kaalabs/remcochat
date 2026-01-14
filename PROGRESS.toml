@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T09:15:09Z"
+updated_at = "2026-01-14T13:32:24Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -838,3 +838,11 @@ summary = "Pruned local DB to only keep Default and Remco profiles"
 details = "Stopped the local Next server to avoid concurrent DB access, created a timestamped backup of the SQLite database files, then deleted every profile except the oldest 'Default' and oldest 'Remco' records (including removing duplicates). Verified only 2 profiles remain; cascades removed related chats/messages/memories for deleted profiles. Existing chats under Default/Remco were preserved."
 tests = ["Node one-off prune script (printed counts: profiles=2, chats=54, messages=381, variants=91)"]
 files = ["PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T13:32:24Z"
+type = "ui"
+summary = "Move Temp toggle to header"
+details = "Moved the Temporary chat toggle button from the sidebar profile footer to the top-right header next to the model label."
+tests = ["npm run build (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]

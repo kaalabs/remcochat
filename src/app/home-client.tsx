@@ -1434,9 +1434,9 @@ export function HomeClient({
               </Button>
             </div>
 
-            <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="mt-3 flex items-center gap-2">
               <Button
-                className="h-9 flex-1 justify-start gap-2"
+                className="h-9 w-full justify-start gap-2"
                 data-testid="profile:settings-open"
                 disabled={status !== "ready"}
                 onClick={() => setSettingsOpen(true)}
@@ -1445,15 +1445,6 @@ export function HomeClient({
               >
                 <SettingsIcon className="size-4" />
                 <span>Settings</span>
-              </Button>
-              <Button
-                className="h-9 px-3"
-                data-testid="chat:temporary-toggle"
-                onClick={() => toggleTemporaryChat()}
-                type="button"
-                variant={isTemporaryChat ? "secondary" : "outline"}
-              >
-                Temp
               </Button>
             </div>
 
@@ -1499,8 +1490,19 @@ export function HomeClient({
                 value={effectiveModelId}
               />
             </div>
-            <div className="text-sm text-muted-foreground">
-              {isTemporaryChat ? "Temporary chat" : getModelLabel(effectiveModelId)}
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-muted-foreground">
+                {isTemporaryChat ? "Temporary chat" : getModelLabel(effectiveModelId)}
+              </div>
+              <Button
+                className="h-8 px-3"
+                data-testid="chat:temporary-toggle"
+                onClick={() => toggleTemporaryChat()}
+                type="button"
+                variant={isTemporaryChat ? "secondary" : "outline"}
+              >
+                Temp
+              </Button>
             </div>
           </header>
 
