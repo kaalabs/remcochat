@@ -95,9 +95,10 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 
 ## Status
 - Implemented roadmap steps: 1–10 (details in `PROGRESS.toml`).
+- Roadmap step 11 is in progress (shortcuts/focus, archived-collapsible sidebar, accent color, icon-only controls).
 - Verified via WebKit E2E (real LLM): profile + chat instructions stay effective across turns, and mid-chat chat-instruction updates take effect (see `e2e/instructions.spec.ts`).
 - Verified via WebKit E2E: archive/unarchive, delete, and export endpoints work (see `e2e/instructions.spec.ts`).
-- Next up: 11 (polish).
+- Next up: continue 11 (polish).
 
 ## Testing (No Mocks)
 - Add a Playwright smoke test that boots the server and validates:

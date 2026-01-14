@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T07:46:59Z"
+updated_at = "2026-01-14T07:49:46Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -774,3 +774,11 @@ files = [
   "PLAN.md",
   "PROGRESS.toml",
 ]
+
+[[events]]
+ts = "2026-01-14T07:49:46Z"
+type = "chore"
+summary = "Merged admin-tools branch into main and cleaned up branch refs"
+details = "Fast-forward merged `work/admin-tools` into `main`, pushed `main`, then deleted the merged `work/admin-tools` branch locally and on origin to keep the workflow lightweight."
+tests = ["git status -sb (clean)"]
+files = ["PROGRESS.toml"]
