@@ -107,12 +107,14 @@ function signatureForChatState(
 
 export type HomeClientProps = {
   adminEnabled: boolean;
+  appVersion: string;
   initialProfiles: Profile[];
   initialChats: Chat[];
 };
 
 export function HomeClient({
   adminEnabled,
+  appVersion,
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
@@ -1479,23 +1481,32 @@ export function HomeClient({
               </Button>
             </div>
 
-            {adminEnabled ? (
-              <div className="mt-2">
-                <Button
-                  className="h-9 w-full justify-start gap-2"
-                  data-testid="admin:open"
-                  disabled={status !== "ready"}
-                  onClick={() => setAdminOpen(true)}
-                  type="button"
-                  variant="ghost"
-                >
-                  <ShieldIcon className="size-4" />
-                  <span>Admin</span>
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </aside>
+	            {adminEnabled ? (
+	              <div className="mt-2">
+	                <Button
+	                  className="h-9 w-full justify-start gap-2"
+	                  data-testid="admin:open"
+	                  disabled={status !== "ready"}
+	                  onClick={() => setAdminOpen(true)}
+	                  type="button"
+	                  variant="ghost"
+	                >
+	                  <ShieldIcon className="size-4" />
+	                  <span>Admin</span>
+	                </Button>
+	              </div>
+	            ) : null}
+
+	            {appVersion ? (
+	              <div
+	                className="mt-3 text-[11px] text-muted-foreground"
+	                data-testid="app:version"
+	              >
+	                v{appVersion}
+	              </div>
+	            ) : null}
+	          </div>
+	        </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <header className="flex items-center justify-between gap-3 border-b px-4 py-3">

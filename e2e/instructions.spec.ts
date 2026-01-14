@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import packageJson from "../package.json";
 
 async function createProfile(page: import("@playwright/test").Page, name: string) {
   await page.getByTestId("profile:new").click();
@@ -385,6 +386,13 @@ test("New chat uses last selected model (WebKit)", async ({ page }) => {
   const req = await createReq;
   const body = req.postDataJSON() as unknown;
   expect(body).toMatchObject({ modelId: target });
+});
+
+test("App shows version (WebKit)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("app:version")).toHaveText(
+    `v${String(packageJson.version ?? "")}`
+  );
 });
 
 test("Theme toggle restores composer focus (WebKit)", async ({ page }) => {

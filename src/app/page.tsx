@@ -2,6 +2,7 @@ import { HomeClient } from "@/app/home-client";
 import { createChat, listChats } from "@/server/chats";
 import { listProfiles } from "@/server/profiles";
 import { isAdminEnabled } from "@/server/admin";
+import packageJson from "../../package.json";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default function Home() {
   return (
     <HomeClient
       adminEnabled={isAdminEnabled()}
+      appVersion={String(packageJson.version ?? "")}
       initialChats={initialChats}
       initialProfiles={profiles}
     />
