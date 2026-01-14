@@ -1492,7 +1492,7 @@ export function HomeClient({
                 value={effectiveModelId}
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div className="text-sm text-muted-foreground">
                 {isTemporaryChat ? "Temporary chat" : getModelLabel(effectiveModelId)}
               </div>
