@@ -518,3 +518,75 @@ test("Delete profile works (WebKit)", async ({ request }) => {
   const stillThere = (profiles.profiles ?? []).some((p) => p.id === profileId);
   expect(stillThere).toBe(false);
 });
+
+test("Temporary chat turns composer red (WebKit)", async ({ page }) => {
+  await page.goto("/");
+
+  const toggle = page.getByTestId("chat:temporary-toggle");
+  await expect(toggle).toBeVisible();
+  const title = (await toggle.getAttribute("title")) ?? "";
+  if (title.includes("(on)")) {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("title", "Temporary chat (off)");
+  }
+
+  const submit = page.getByTestId("composer:submit");
+  const textarea = page.getByTestId("composer:textarea");
+  const composerGroup = textarea.locator(
+    'xpath=ancestor::*[@data-slot="input-group"][1]'
+  );
+
+  const getBorderRgb = async () =>
+    composerGroup.evaluate((el) => {
+      const raw = getComputedStyle(el).borderTopColor;
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return { ok: false, raw, r: 0, g: 0, b: 0 };
+      }
+
+      ctx.fillStyle = "rgb(0, 0, 0)";
+      ctx.fillStyle = raw;
+      const used = String(ctx.fillStyle);
+
+      ctx.fillRect(0, 0, 1, 1);
+      const data = ctx.getImageData(0, 0, 1, 1).data;
+
+      return {
+        ok:
+          used !== "rgb(0, 0, 0)" ||
+          raw.includes("0, 0, 0") ||
+          raw.includes("0 0 0"),
+        raw,
+        r: data[0] ?? 0,
+        g: data[1] ?? 0,
+        b: data[2] ?? 0,
+      };
+    });
+
+  const isReddish = (rgb: { r: number; g: number; b: number }) =>
+    rgb.r > rgb.g + 10 && rgb.r > rgb.b + 10;
+
+  const normal = await getBorderRgb();
+  expect(normal.ok, `normalBorder="${normal.raw}"`).toBe(true);
+
+  await expect(submit).toHaveAttribute("data-variant", "default");
+
+  await toggle.click();
+  await expect(submit).toHaveAttribute("data-variant", "destructive");
+
+  const temp = await getBorderRgb();
+  expect(temp.ok, `tempBorder="${temp.raw}"`).toBe(true);
+  expect(temp.r).toBeGreaterThanOrEqual(normal.r + 10);
+  expect(isReddish(temp)).toBe(true);
+  expect(temp.raw).not.toBe(normal.raw);
+
+  await toggle.click();
+  await expect(submit).toHaveAttribute("data-variant", "default");
+
+  const back = await getBorderRgb();
+  expect(back.ok, `backBorder="${back.raw}"`).toBe(true);
+  expect(isReddish(back)).toBe(false);
+});

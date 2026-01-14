@@ -1732,14 +1732,19 @@ export function HomeClient({
             </StickToBottom.Content>
           </StickToBottom>
 
-          <div className="shrink-0 border-t bg-background px-6 py-4">
-            <div className="mx-auto w-full max-w-3xl">
-              <PromptInput
-                className="bg-card"
-                onSubmit={({ text }) => {
-                  if (!activeProfile) return;
-                  if (status !== "ready") return;
-                  if (!text.trim()) return;
+	          <div className="shrink-0 border-t bg-background px-6 py-4">
+	            <div className="mx-auto w-full max-w-3xl">
+	              <PromptInput
+	                className={
+	                  "bg-card " +
+	                  (isTemporaryChat
+	                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
+	                    : "")
+	                }
+	                onSubmit={({ text }) => {
+	                  if (!activeProfile) return;
+	                  if (status !== "ready") return;
+	                  if (!text.trim()) return;
                   if (!chatRequestBody) return;
 
                   sendMessage(
@@ -1793,16 +1798,17 @@ export function HomeClient({
                       Stop
                     </button>
                   )}
-                  <PromptInputSubmit
-                    className="h-10 w-16"
-                    data-testid="composer:submit"
-                    disabled={!canSend}
-                    status={status}
-                  />
-                </div>
-              </PromptInput>
-            </div>
-          </div>
+	                  <PromptInputSubmit
+	                    className="h-10 w-16"
+	                    data-testid="composer:submit"
+	                    disabled={!canSend}
+	                    status={status}
+	                    variant={isTemporaryChat ? "destructive" : "default"}
+	                  />
+	                </div>
+	              </PromptInput>
+	            </div>
+	          </div>
         </main>
       </div>
 
