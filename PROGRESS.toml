@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T05:30:21Z"
+updated_at = "2026-01-14T07:46:59Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -747,3 +747,30 @@ summary = "Add right padding to composer action row"
 details = "Added a small right padding to the composer action button row so the send button doesn't sit flush against the input group border."
 tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T07:46:59Z"
+type = "chore"
+summary = "Clean up merged scaffold branches"
+details = "Deleted the merged `work/scaffold` branch locally and on origin after merging it into `main`."
+files = ["PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T07:46:59Z"
+type = "hardening"
+summary = "Add admin backup/export and reset tools behind an env flag"
+details = "Added admin-only endpoints for exporting a full JSON backup and resetting (wiping) the local SQLite DB. Because the app is local-LAN and has no auth, these endpoints and the UI entrypoint are disabled by default and only enabled when `REMCOCHAT_ENABLE_ADMIN=1` is set. Also forced the home route to be dynamic to avoid build-time DB reads producing invalid IDs when the runtime DB path differs (important for E2E and for local deployments)."
+tests = ["npm run build (pass)", "npm run test:e2e (pass)"]
+files = [
+  "src/server/admin.ts",
+  "src/app/api/admin/export/route.ts",
+  "src/app/api/admin/reset/route.ts",
+  "src/app/page.tsx",
+  "src/app/home-client.tsx",
+  "playwright.config.ts",
+  "e2e/instructions.spec.ts",
+  "README.md",
+  ".env.example",
+  "PLAN.md",
+  "PROGRESS.toml",
+]

@@ -46,6 +46,7 @@ import {
   ArchiveIcon,
   BookmarkIcon,
   ChevronDownIcon,
+  ShieldIcon,
   DownloadIcon,
   MoreVerticalIcon,
   PencilIcon,
@@ -103,11 +104,16 @@ function signatureForChatState(
 }
 
 export type HomeClientProps = {
+  adminEnabled: boolean;
   initialProfiles: Profile[];
   initialChats: Chat[];
 };
 
-export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
+export function HomeClient({
+  adminEnabled,
+  initialProfiles,
+  initialChats,
+}: HomeClientProps) {
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles);
   const [activeProfileId, setActiveProfileId] = useState<string>(
     initialProfiles[0]?.id ?? ""
@@ -244,6 +250,17 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
   const [deleteChatError, setDeleteChatError] = useState<string | null>(null);
 
   const [archivedOpen, setArchivedOpen] = useState(false);
+
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminResetConfirm, setAdminResetConfirm] = useState("");
+  const [adminResetSaving, setAdminResetSaving] = useState(false);
+
+  useEffect(() => {
+    if (!adminOpen) return;
+    setAdminError(null);
+    setAdminResetConfirm("");
+  }, [adminOpen]);
 
   const focusComposer = useCallback((opts?: { toEnd?: boolean }) => {
     if (typeof window === "undefined") return;
@@ -418,6 +435,20 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
     }
   }, [chats]);
 
+  const refreshProfiles = useCallback(async () => {
+    const res = await fetch("/api/profiles");
+    const data = (await res.json().catch(() => null)) as
+      | { profiles?: Profile[]; error?: string }
+      | null;
+    const nextProfiles = data?.profiles ?? [];
+    setProfiles(nextProfiles);
+    const nextId = nextProfiles[0]?.id ?? "";
+    setActiveProfileId(nextId);
+    setChats([]);
+    setActiveChatId("");
+    setIsTemporaryChat(false);
+  }, []);
+
   const exportChatById = useCallback(
     (chatId: string, format: "md" | "json") => {
       if (!activeProfile) return;
@@ -434,6 +465,46 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
     },
     [activeProfile]
   );
+
+  const exportAllData = useCallback(() => {
+    if (!adminEnabled) return;
+    const a = document.createElement("a");
+    a.href = "/api/admin/export";
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }, [adminEnabled]);
+
+  const resetAllData = useCallback(async () => {
+    if (!adminEnabled) return;
+    if (adminResetSaving) return;
+    if (adminResetConfirm !== "RESET") return;
+
+    setAdminResetSaving(true);
+    setAdminError(null);
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "RESET" }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to reset.");
+      }
+      setAdminResetConfirm("");
+      setAdminOpen(false);
+      await refreshProfiles();
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : "Failed to reset.");
+    } finally {
+      setAdminResetSaving(false);
+    }
+  }, [adminEnabled, adminResetConfirm, adminResetSaving, refreshProfiles]);
 
   const startDeleteChat = useCallback(
     (chat: Chat) => {
@@ -576,9 +647,11 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
     if (chatSettingsOpen) return;
     if (memorizeOpen) return;
     if (deleteChatOpen) return;
+    if (adminOpen) return;
     focusComposer({ toEnd: true });
   }, [
     activeChatId,
+    adminOpen,
     chatSettingsOpen,
     createOpen,
     deleteChatOpen,
@@ -601,7 +674,8 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
         settingsOpen ||
         chatSettingsOpen ||
         memorizeOpen ||
-        deleteChatOpen
+        deleteChatOpen ||
+        adminOpen
       ) {
         return;
       }
@@ -636,6 +710,7 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    adminOpen,
     chatSettingsOpen,
     createChat,
     createOpen,
@@ -1304,6 +1379,22 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
                 Temp
               </Button>
             </div>
+
+            {adminEnabled ? (
+              <div className="mt-2">
+                <Button
+                  className="h-9 w-full justify-start gap-2"
+                  data-testid="admin:open"
+                  disabled={status !== "ready"}
+                  onClick={() => setAdminOpen(true)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <ShieldIcon className="size-4" />
+                  <span>Admin</span>
+                </Button>
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -1924,6 +2015,70 @@ export function HomeClient({ initialProfiles, initialChats }: HomeClientProps) {
             >
               Delete
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setAdminOpen} open={adminOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Admin</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Backup</div>
+              <div className="text-sm text-muted-foreground">
+                Download a full JSON backup (profiles, chats, messages, variants,
+                memory).
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  data-testid="admin:export"
+                  onClick={() => exportAllData()}
+                  type="button"
+                  variant="secondary"
+                >
+                  Export all data
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-md border bg-card p-3">
+              <div className="text-sm font-medium text-destructive">Danger zone</div>
+              <div className="text-sm text-muted-foreground">
+                This wipes the local database. Type <code>RESET</code> to enable
+                the button.
+              </div>
+              <Input
+                autoComplete="off"
+                data-testid="admin:reset-confirm"
+                onChange={(e) => setAdminResetConfirm(e.target.value)}
+                placeholder="Type RESET"
+                value={adminResetConfirm}
+              />
+              <div className="flex justify-end">
+                <Button
+                  data-testid="admin:reset"
+                  disabled={adminResetConfirm !== "RESET" || adminResetSaving}
+                  onClick={() => resetAllData()}
+                  type="button"
+                  variant="destructive"
+                >
+                  Reset all data
+                </Button>
+              </div>
+            </div>
+
+            {adminError ? (
+              <div className="text-sm text-destructive">{adminError}</div>
+            ) : null}
+
+            <div className="flex justify-end">
+              <Button onClick={() => setAdminOpen(false)} type="button" variant="ghost">
+                Close
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -40,6 +40,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - **Vercel AI Gateway** as the LLM backend
 - Environment:
   - Require `VERCEL_AI_GATEWAY_API_KEY` to be exported in the shell for local runs (accept `AI_GATEWAY_API_KEY` as a compatibility fallback).
+  - Optional admin tools gated by `REMCOCHAT_ENABLE_ADMIN=1` (see README).
 
 ## Architecture (MVP)
 - **App:** Next.js (Node runtime) + React + Tailwind + shadcn/ui + AI Elements.
@@ -107,6 +108,11 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - “Memorize this” creates a memory item and it influences a subsequent chat response
   - Export returns expected content
 - Current: `npm run test:e2e` runs a WebKit (Safari-engine) E2E against a dedicated SQLite DB (`data/remcochat-e2e.sqlite`). It uses the real AI Gateway key from your shell (same requirement as `npm run dev/start`).
+
+## Hardening (Optional)
+- Admin backup/export + reset tools are available when `REMCOCHAT_ENABLE_ADMIN=1` is set:
+  - Export all data: `GET /api/admin/export`
+  - Reset all data (wipe DB): `POST /api/admin/reset` with `{ "confirm": "RESET" }`
 
 ## Open Decisions
 - Model allowlist for the selector (which model ids to offer) and defaults per profile/chat. Initial placeholder allowlist: `openai/gpt-5`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4.5`.

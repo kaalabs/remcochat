@@ -21,7 +21,7 @@ export default defineConfig({
     command: [
       `REMCOCHAT_DB_PATH=${E2E_DB} node scripts/reset-e2e-db.mjs`,
       "npm run build",
-      `REMCOCHAT_DB_PATH=${E2E_DB} node scripts/check-env.mjs && next start -p ${PORT}`,
+      `REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 node scripts/check-env.mjs && REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 next start -p ${PORT}`,
     ].join(" && "),
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
@@ -36,4 +36,3 @@ export default defineConfig({
     },
   ],
 });
-

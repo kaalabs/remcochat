@@ -1,6 +1,9 @@
 import { HomeClient } from "@/app/home-client";
 import { createChat, listChats } from "@/server/chats";
 import { listProfiles } from "@/server/profiles";
+import { isAdminEnabled } from "@/server/admin";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
   const profiles = listProfiles();
@@ -13,5 +16,11 @@ export default function Home() {
         ? [createChat({ profileId: defaultProfileId })]
         : [];
 
-  return <HomeClient initialChats={initialChats} initialProfiles={profiles} />;
+  return (
+    <HomeClient
+      adminEnabled={isAdminEnabled()}
+      initialChats={initialChats}
+      initialProfiles={profiles}
+    />
+  );
 }

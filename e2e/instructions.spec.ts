@@ -409,3 +409,31 @@ test("Archive/delete and export work (WebKit)", async ({ page }) => {
 
   await expect(page.getByTestId(`sidebar:chat:${chatId}`)).toHaveCount(0);
 });
+
+test("Admin export/reset works (WebKit)", async ({ request }) => {
+  const exportRes = await request.get("/api/admin/export");
+  expect(exportRes.ok()).toBeTruthy();
+  const exported = (await exportRes.json()) as {
+    schemaVersion?: number;
+    profiles?: unknown[];
+  };
+  expect(exported.schemaVersion).toBe(1);
+  expect(Array.isArray(exported.profiles)).toBeTruthy();
+
+  const badReset = await request.post("/api/admin/reset", {
+    data: { confirm: "NO" },
+  });
+  expect(badReset.status()).toBe(400);
+
+  const okReset = await request.post("/api/admin/reset", {
+    data: { confirm: "RESET" },
+  });
+  expect(okReset.ok()).toBeTruthy();
+
+  const profilesRes = await request.get("/api/profiles");
+  expect(profilesRes.ok()).toBeTruthy();
+  const profiles = (await profilesRes.json()) as {
+    profiles?: Array<{ name?: string }>;
+  };
+  expect(profiles.profiles?.[0]?.name).toBe("Default");
+});

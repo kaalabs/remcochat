@@ -14,6 +14,16 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 
 - SQLite database defaults to `data/remcochat.sqlite` (override with `REMCOCHAT_DB_PATH`).
 
+## Admin (optional)
+
+Admin actions are disabled by default (no auth, local LAN app). To enable them:
+
+- `export REMCOCHAT_ENABLE_ADMIN=1`
+
+This enables:
+- `GET /api/admin/export` (download full JSON backup)
+- `POST /api/admin/reset` with body `{ "confirm": "RESET" }` (wipe local DB)
+
 ## E2E (Playwright)
 
 - Install WebKit once: `npx playwright install webkit`
