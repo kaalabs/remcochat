@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T14:51:54Z"
+updated_at = "2026-01-14T15:00:53Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -934,3 +934,10 @@ summary = "Make dark unlocked temp border match icon"
 details = "Fixed a specificity issue where the outline button’s `dark:border-input` overrode `border-ring/50`; added an explicit `dark:border-ring/50` so the unlocked border matches the blue-ish ring/icon color in dark mode."
 tests = ["npm run build (pass)", "npx playwright test e2e/instructions.spec.ts -g \"Temporary toggle uses consistent colored elements\" (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T15:00:53Z"
+type = "meta"
+summary = "Roadmap 11 (Polish) confirmed complete"
+details = "Marked Implementation Roadmap step 11 (Polish) as done in PLAN.md after user confirmation."
+files = ["PLAN.md", "PROGRESS.toml"]
