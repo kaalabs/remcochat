@@ -132,3 +132,10 @@ export function updateProfile(
 
   return getProfile(id);
 }
+
+export function deleteProfile(id: string) {
+  const db = getDb();
+  // Ensure we surface a consistent "not found" error.
+  getProfile(id);
+  db.prepare(`DELETE FROM profiles WHERE id = ?`).run(id);
+}

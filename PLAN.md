@@ -47,6 +47,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - **API:** `/api/chat` streams tokens using Vercel AI SDK (`streamText`) and returns a stream response; supports abort for “Stop”.
 - **Persistence:** SQLite on the server (single DB file), via a thin DB layer (default `data/remcochat.sqlite`, override via `REMCOCHAT_DB_PATH`).
 - **Profiles:** stored in DB; active profile stored client-side (localStorage). API requests include `profileId`.
+- **Profile lifecycle:** create, switch, and delete profiles (deleting a profile removes its chats + memories).
 - **Prompt assembly order:**
   1. Per-chat instructions (highest priority; if set, they suppress global profile instructions to avoid conflicts across providers)
   2. Global profile instructions (only when chat instructions are empty)
@@ -66,7 +67,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - Fork metadata: `forkedFromChatId`, `forkedFromMessageId` (or equivalent) to support edit+branch.
 
 ## UI / UX Flows (Minimal, ChatGPT-like)
-- **Sidebar:** profile switcher, “New chat”, chat list (active + archived), per-chat actions (archive/delete).
+- **Sidebar:** profile switcher, “New chat”, chat list (active + archived), per-chat actions (archive/delete); profile settings include delete profile.
 - **Main chat:** AI Elements `Conversation`/`Message` rendering; per-user-message “Edit” (forks chat).
 - **Variants:** per-turn pager (1/N) + “Regenerate”.
 - **Fork + variants:** when you edit+fork a user message, the fork preserves the original (pre-edit) assistant response(s) as variants so you can page back to them after regenerating the edited turn.

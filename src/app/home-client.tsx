@@ -242,6 +242,11 @@ export function HomeClient({
   const [memoryEnabledDraft, setMemoryEnabledDraft] = useState(true);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
 
+  const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
+  const [deleteProfileConfirm, setDeleteProfileConfirm] = useState("");
+  const [deleteProfileSaving, setDeleteProfileSaving] = useState(false);
+  const [deleteProfileError, setDeleteProfileError] = useState<string | null>(null);
+
   const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
   const [chatSettingsChatId, setChatSettingsChatId] = useState<string>("");
   const [chatInstructionsDraft, setChatInstructionsDraft] = useState("");
@@ -271,6 +276,12 @@ export function HomeClient({
     setAdminError(null);
     setAdminResetConfirm("");
   }, [adminOpen]);
+
+  useEffect(() => {
+    if (!deleteProfileOpen) return;
+    setDeleteProfileError(null);
+    setDeleteProfileConfirm("");
+  }, [deleteProfileOpen]);
 
   const focusComposer = useCallback((opts?: { toEnd?: boolean }) => {
     if (typeof window === "undefined") return;
@@ -1004,6 +1015,47 @@ export function HomeClient({
     },
     [activeProfile]
   );
+
+  const confirmDeleteProfile = useCallback(async () => {
+    if (!activeProfile) return;
+    if (deleteProfileSaving) return;
+    if (status !== "ready") return;
+
+    const confirm = deleteProfileConfirm.trim();
+    if (!confirm) return;
+
+    setDeleteProfileSaving(true);
+    setDeleteProfileError(null);
+    try {
+      const res = await fetch(`/api/profiles/${activeProfile.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; profiles?: Profile[]; error?: string }
+        | null;
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to delete profile.");
+      }
+
+      setDeleteProfileOpen(false);
+      setSettingsOpen(false);
+      await refreshProfiles();
+    } catch (err) {
+      setDeleteProfileError(
+        err instanceof Error ? err.message : "Failed to delete profile."
+      );
+    } finally {
+      setDeleteProfileSaving(false);
+    }
+  }, [
+    activeProfile,
+    deleteProfileConfirm,
+    deleteProfileSaving,
+    refreshProfiles,
+    status,
+  ]);
 
   const openChatSettings = useCallback(() => {
     if (status !== "ready") return;
@@ -1898,6 +1950,24 @@ export function HomeClient({
               <div className="text-sm text-destructive">{settingsError}</div>
             ) : null}
 
+            <div className="rounded-md border border-destructive/30 bg-card p-3">
+              <div className="text-sm font-medium">Danger zone</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Deleting a profile deletes all its chats, messages, and memories.
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button
+                  data-testid="profile:delete-open"
+                  disabled={!activeProfile || status !== "ready"}
+                  onClick={() => setDeleteProfileOpen(true)}
+                  type="button"
+                  variant="destructive"
+                >
+                  Delete profile
+                </Button>
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2">
               <Button
                 disabled={settingsSaving}
@@ -1915,6 +1985,66 @@ export function HomeClient({
                 type="button"
               >
                 Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setDeleteProfileOpen} open={deleteProfileOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete profile</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              This cannot be undone. Type{" "}
+              <span className="font-medium text-foreground">
+                {activeProfile?.name ?? "the profile name"}
+              </span>{" "}
+              (or <span className="font-medium text-foreground">DELETE</span>) to
+              confirm.
+            </div>
+
+            <Input
+              autoFocus
+              data-testid="profile:delete-confirm-input"
+              onChange={(e) => setDeleteProfileConfirm(e.target.value)}
+              placeholder="Type profile name or DELETE"
+              value={deleteProfileConfirm}
+            />
+
+            {deleteProfileError ? (
+              <div className="text-sm text-destructive">{deleteProfileError}</div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                data-testid="profile:delete-cancel"
+                disabled={deleteProfileSaving}
+                onClick={() => setDeleteProfileOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="profile:delete-submit"
+                disabled={
+                  deleteProfileSaving ||
+                  !activeProfile ||
+                  status !== "ready" ||
+                  (() => {
+                    const v = deleteProfileConfirm.trim();
+                    return !(v === "DELETE" || v === activeProfile.name);
+                  })()
+                }
+                onClick={() => confirmDeleteProfile()}
+                type="button"
+                variant="destructive"
+              >
+                Delete
               </Button>
             </div>
           </div>

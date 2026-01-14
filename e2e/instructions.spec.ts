@@ -488,3 +488,33 @@ test("Admin export/reset works (WebKit)", async ({ request }) => {
   };
   expect(profiles.profiles?.[0]?.name).toBe("Default");
 });
+
+test("Delete profile works (WebKit)", async ({ request }) => {
+  const name = `E2E Delete ${Date.now()}`;
+
+  const createRes = await request.post("/api/profiles", {
+    data: { name },
+  });
+  expect(createRes.ok()).toBeTruthy();
+  const created = (await createRes.json()) as { profile?: { id?: string } };
+  const profileId = created.profile?.id ?? "";
+  expect(profileId).not.toBe("");
+
+  const badDelete = await request.delete(`/api/profiles/${profileId}`, {
+    data: { confirm: "NO" },
+  });
+  expect(badDelete.status()).toBe(400);
+
+  const okDelete = await request.delete(`/api/profiles/${profileId}`, {
+    data: { confirm: name },
+  });
+  expect(okDelete.ok()).toBeTruthy();
+
+  const profilesRes = await request.get("/api/profiles");
+  expect(profilesRes.ok()).toBeTruthy();
+  const profiles = (await profilesRes.json()) as {
+    profiles?: Array<{ id?: string; name?: string }>;
+  };
+  const stillThere = (profiles.profiles ?? []).some((p) => p.id === profileId);
+  expect(stillThere).toBe(false);
+});
