@@ -50,6 +50,8 @@ import {
   DownloadIcon,
   MoreVerticalIcon,
   PencilIcon,
+  LockIcon,
+  LockOpenIcon,
   RotateCcwIcon,
   SettingsIcon,
   SlidersHorizontalIcon,
@@ -1495,13 +1497,19 @@ export function HomeClient({
                 {isTemporaryChat ? "Temporary chat" : getModelLabel(effectiveModelId)}
               </div>
               <Button
-                className="h-8 px-3"
+                aria-label={isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"}
+                className="h-8 w-9 px-0"
                 data-testid="chat:temporary-toggle"
                 onClick={() => toggleTemporaryChat()}
+                title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
                 type="button"
                 variant={isTemporaryChat ? "secondary" : "outline"}
               >
-                Temp
+                {isTemporaryChat ? (
+                  <LockIcon className="size-4" />
+                ) : (
+                  <LockOpenIcon className="size-4" />
+                )}
               </Button>
             </div>
           </header>
