@@ -1502,7 +1502,7 @@ export function HomeClient({
                   "h-8 w-9 px-0 " +
                   (isTemporaryChat
                     ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
-                    : "border-emerald-500/50 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 focus-visible:border-emerald-500 focus-visible:ring-emerald-500/30 dark:border-emerald-400/50 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15 dark:focus-visible:border-emerald-400 dark:focus-visible:ring-emerald-400/30")
+                    : "border-input text-muted-foreground bg-background hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50")
                 }
                 data-testid="chat:temporary-toggle"
                 onClick={() => toggleTemporaryChat()}
