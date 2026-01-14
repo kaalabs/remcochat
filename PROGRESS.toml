@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T15:18:48Z"
+updated_at = "2026-01-14T15:22:21Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -966,5 +966,13 @@ ts = "2026-01-14T15:18:48Z"
 type = "ui"
 summary = "Use icon-only new profile button"
 details = "Replaced the profile 'New' button label with an icon-only plus button (aria-label/title kept) to match the icon-only control style."
+tests = ["npm run build (pass)", "npx playwright test e2e/instructions.spec.ts -g \"New chat uses last selected model\" (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T15:22:21Z"
+type = "ui"
+summary = "Use icon-only new chat button"
+details = "Replaced the sidebar chat list 'New' button label with an icon-only plus button (aria-label/title kept) to match the icon-only control style."
 tests = ["npm run build (pass)", "npx playwright test e2e/instructions.spec.ts -g \"New chat uses last selected model\" (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]

@@ -1233,17 +1233,19 @@ export function HomeClient({
             <div className="flex items-center justify-between gap-2 px-2 py-2">
               <div className="text-xs font-medium text-muted-foreground">
                 Chats
-              </div>
-              <Button
-                className="h-7 px-2 text-xs"
-                data-testid="sidebar:new-chat"
-                onClick={() => createChat()}
-                type="button"
-                variant="secondary"
-              >
-                New
-              </Button>
-            </div>
+	              </div>
+	              <Button
+	                aria-label="New chat"
+	                className="h-7 w-7 px-0"
+	                data-testid="sidebar:new-chat"
+	                onClick={() => createChat()}
+	                title="New chat"
+	                type="button"
+	                variant="secondary"
+	              >
+	                <PlusIcon className="size-4" />
+	              </Button>
+	            </div>
 
             <div className="space-y-1 px-1 pb-2" data-testid="sidebar:chats-active">
               {chats
