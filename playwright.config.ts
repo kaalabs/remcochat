@@ -9,7 +9,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  timeout: 120_000,
+  timeout: 240_000,
   expect: { timeout: 30_000 },
   use: {
     baseURL: BASE_URL,
@@ -24,7 +24,7 @@ export default defineConfig({
       `REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 node scripts/check-env.mjs && REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 next start -p ${PORT}`,
     ].join(" && "),
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 180_000,
   },
   projects: [

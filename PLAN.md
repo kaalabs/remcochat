@@ -70,7 +70,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - **Main chat:** AI Elements `Conversation`/`Message` rendering; per-user-message “Edit” (forks chat).
 - **Variants:** per-turn pager (1/N) + “Regenerate”.
 - **Fork + variants:** when you edit+fork a user message, the fork preserves the original (pre-edit) assistant response(s) as variants so you can page back to them after regenerating the edited turn.
-- **Model selector:** minimal dropdown (restricted to an allowlist), stored per-chat; defaults from profile.
+- **Model selector:** minimal dropdown (restricted to an allowlist), stored per-chat; defaults from profile; “New chat” seeds with the last-used model.
 - **Memory capture:** per-message action “Memorize this” that saves a user-selected snippet (or the full message) into profile memory.
 - **Composer:** AI Elements `PromptInput`; `Cmd/Ctrl+Enter` send; `Esc` stop.
 - **Keyboard shortcuts (polish):** `Esc` stop streaming, `Cmd/Ctrl+/` focus composer, `Cmd/Ctrl+Shift+N` new chat, `Cmd/Ctrl+Shift+L` toggle theme.

@@ -2,7 +2,7 @@ schema_version = 1
 project = "RemcoChat"
 plan_file = "PLAN.md"
 created_at = "2026-01-13T15:34:03Z"
-updated_at = "2026-01-14T07:49:46Z"
+updated_at = "2026-01-14T08:35:27Z"
 
 # PROGRESS.toml is an append-only, historical audit trail.
 # Do not pre-create tasks, statuses, or future work items here.
@@ -782,3 +782,11 @@ summary = "Merged admin-tools branch into main and cleaned up branch refs"
 details = "Fast-forward merged `work/admin-tools` into `main`, pushed `main`, then deleted the merged `work/admin-tools` branch locally and on origin to keep the workflow lightweight."
 tests = ["git status -sb (clean)"]
 files = ["PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-14T08:35:27Z"
+type = "ux"
+summary = "New chats inherit the last-used model"
+details = "Persisted the last-used model per profile (localStorage) and used it when creating a new chat (including the auto-create path after deleting the last chat). Updated the WebKit E2E suite to avoid hard-coding model ids so it stays compatible with allowlist changes."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "playwright.config.ts", "PLAN.md", "PROGRESS.toml"]

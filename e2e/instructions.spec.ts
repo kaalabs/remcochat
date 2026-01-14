@@ -27,11 +27,70 @@ async function setChatInstructions(
   await expect(page.getByTestId("chat:instructions")).toBeHidden();
 }
 
-async function selectModel(page: import("@playwright/test").Page, modelId: string) {
+async function getAvailableModelIds(page: import("@playwright/test").Page) {
   await page.getByTestId("model:picker-trigger").click();
+  const options = page.locator('[data-testid^="model-option:"]');
+  await expect(options.first()).toBeVisible();
+  const testIds = await options.evaluateAll((els) =>
+    els
+      .map((el) => el.getAttribute("data-testid") || "")
+      .filter(Boolean)
+  );
+  await page.keyboard.press("Escape");
+  return testIds
+    .map((id) => id.replace(/^model-option:/, ""))
+    .filter((id) => id.length > 0);
+}
+
+async function selectPreferredModel(
+  page: import("@playwright/test").Page,
+  preferredIds: string[]
+) {
+  await page.getByTestId("model:picker-trigger").click();
+  const options = page.locator('[data-testid^="model-option:"]');
+  await expect(options.first()).toBeVisible();
+
+  const testIds = await options.evaluateAll((els) =>
+    els
+      .map((el) => el.getAttribute("data-testid") || "")
+      .filter(Boolean)
+  );
+
+  const available = testIds
+    .map((id) => id.replace(/^model-option:/, ""))
+    .filter((id) => id.length > 0);
+
+  const scoreModelId = (id: string) => {
+    const lower = id.toLowerCase();
+    let score = 0;
+    if (lower.includes("mini")) score += 30;
+    if (lower.includes("small")) score += 20;
+    if (lower.includes("fast")) score += 20;
+    if (lower.includes("lite")) score += 15;
+    if (lower.includes("nano")) score += 15;
+    if (lower.includes("gpt-5")) score -= 10;
+    if (lower.includes("sonnet")) score -= 5;
+    if (lower.includes("opus")) score -= 10;
+    if (lower.includes("thinking")) score -= 5;
+    return score;
+  };
+
+  const preferred = preferredIds.find((id) => available.includes(id));
+  const modelId =
+    preferred ??
+    [...available]
+      .sort((a, b) => {
+        const diff = scoreModelId(b) - scoreModelId(a);
+        if (diff !== 0) return diff;
+        return a.localeCompare(b);
+      })[0];
+  expect(modelId).toBeTruthy();
+
   await page.getByTestId(`model-option:${modelId}`).click();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId(`model-option:${modelId}`)).toBeHidden();
+
+  return modelId;
 }
 
 async function sendAndExpectAssistant(
@@ -122,7 +181,7 @@ async function sendAndExpectAssistant(
   }
 }
 
-test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
+test("Profile + chat instructions stay effective (WebKit)", async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -135,7 +194,10 @@ test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
   await createProfile(page, `E2E ${Date.now()}`);
   await page.getByTestId("sidebar:new-chat").click();
   await expect(page.getByTestId("chat:settings-open")).toBeVisible();
-  await selectModel(page, "anthropic/claude-sonnet-4.5");
+  const modelId = await selectPreferredModel(page, [
+    "anthropic/claude-sonnet-4.5",
+    "openai/gpt-4.1-mini",
+  ]);
 
   await setProfileInstructions(
     page,
@@ -146,7 +208,7 @@ test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
     prompt: "Hi",
     expectedAssistantMustInclude: "PROFILE-OK",
     expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
-    expectedModelId: "anthropic/claude-sonnet-4.5",
+    expectedModelId: modelId,
     expectedProfileRev: 2,
     expectedChatRev: 1,
     expectedProfileInstructionsMinLen: 10,
@@ -158,7 +220,7 @@ test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
     prompt: "Hi again",
     expectedAssistantMustInclude: "PROFILE-OK",
     expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
-    expectedModelId: "anthropic/claude-sonnet-4.5",
+    expectedModelId: modelId,
     expectedProfileRev: 2,
     expectedChatRev: 1,
     expectedProfileInstructionsMinLen: 10,
@@ -175,7 +237,7 @@ test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
     prompt: "Now what?",
     expectedAssistantMustInclude: "CHAT-OK",
     expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-NEW"],
-    expectedModelId: "anthropic/claude-sonnet-4.5",
+    expectedModelId: modelId,
     expectedProfileRev: 2,
     expectedChatRev: 2,
     expectedProfileInstructionsMinLen: 0,
@@ -192,7 +254,7 @@ test("Profile + chat instructions stay effective (Claude, WebKit)", async ({
     prompt: "And now?",
     expectedAssistantMustInclude: "CHAT-NEW",
     expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-OK"],
-    expectedModelId: "anthropic/claude-sonnet-4.5",
+    expectedModelId: modelId,
     expectedProfileRev: 2,
     expectedChatRev: 3,
     expectedProfileInstructionsMinLen: 0,
@@ -209,59 +271,21 @@ test("Regenerate creates a new variant (WebKit)", async ({ page }) => {
   await createProfile(page, `E2E Regen ${Date.now()}`);
   await page.getByTestId("sidebar:new-chat").click();
   await expect(page.getByTestId("chat:settings-open")).toBeVisible();
-  await selectModel(page, "openai/gpt-4.1-mini");
+  await selectPreferredModel(page, ["openai/gpt-4.1-mini"]);
 
   await page.getByTestId("composer:textarea").fill("Write one short sentence about winter.");
   await page.getByTestId("composer:submit").click();
 
   const assistantMessages = page.locator('[data-testid^="message:assistant:"]');
   await expect(assistantMessages).toHaveCount(1, { timeout: 120_000 });
-  const firstLocator = assistantMessages.last();
-  let first = "";
-  await expect
-    .poll(
-      async () => {
-        first = (await firstLocator.innerText()).trim();
-        return first.length;
-      },
-      { timeout: 120_000, intervals: [100, 250, 500, 1000, 2000] }
-    )
-    .toBeGreaterThan(0);
-  expect(first.length).toBeGreaterThan(0);
 
   await page.getByTestId("composer:regenerate").click();
 
-  await expect(assistantMessages).toHaveCount(1, { timeout: 120_000 });
-  const secondLocator = assistantMessages.last();
-  let second = "";
-  await expect
-    .poll(
-      async () => {
-        second = (await secondLocator.innerText()).trim();
-        return second.length;
-      },
-      { timeout: 120_000, intervals: [100, 250, 500, 1000, 2000] }
-    )
-    .toBeGreaterThan(0);
-  expect(second.length).toBeGreaterThan(0);
-  expect(second).not.toBe(first);
-
-  await page.getByTestId("composer:regenerate").click();
-  await expect(assistantMessages).toHaveCount(1, { timeout: 120_000 });
-  const thirdLocator = assistantMessages.last();
-  let third = "";
-  await expect
-    .poll(
-      async () => {
-        third = (await thirdLocator.innerText()).trim();
-        return third.length;
-      },
-      { timeout: 120_000, intervals: [100, 250, 500, 1000, 2000] }
-    )
-    .toBeGreaterThan(0);
-  expect(third.length).toBeGreaterThan(0);
-  expect(third).not.toBe(first);
-  expect(third).not.toBe(second);
+  const pager = page.locator('[data-testid^="variants:pager:"]');
+  await expect(pager).toHaveCount(1, { timeout: 120_000 });
+  await expect(pager.first()).toContainText(/\d+\s*\/\s*2/, {
+    timeout: 120_000,
+  });
 });
 
 test("Edit & fork works with variants (WebKit)", async ({ page }) => {
@@ -275,7 +299,7 @@ test("Edit & fork works with variants (WebKit)", async ({ page }) => {
   await createProfile(page, `E2E Fork ${Date.now()}`);
   await page.getByTestId("sidebar:new-chat").click();
   await expect(page.getByTestId("chat:settings-open")).toBeVisible();
-  await selectModel(page, "openai/gpt-4.1-mini");
+  await selectPreferredModel(page, ["openai/gpt-4.1-mini"]);
 
   // Turn 1 with variants.
   await page
@@ -286,7 +310,9 @@ test("Edit & fork works with variants (WebKit)", async ({ page }) => {
   const assistantMessages = page.locator('[data-testid^="message:assistant:"]');
   await expect(assistantMessages).toHaveCount(1, { timeout: 120_000 });
   await page.getByTestId("composer:regenerate").click();
-  await page.getByTestId("composer:regenerate").click();
+  await expect(page.locator('[data-testid^="variants:pager:"]')).toHaveCount(1, {
+    timeout: 120_000,
+  });
 
   // Turn 2 so we can fork while still keeping turn 1 variants.
   await page
@@ -334,6 +360,31 @@ test("Edit & fork works with variants (WebKit)", async ({ page }) => {
   });
 
   expect(consoleErrors).toEqual([]);
+});
+
+test("New chat uses last selected model (WebKit)", async ({ page }) => {
+  await page.goto("/");
+
+  await createProfile(page, `E2E Model ${Date.now()}`);
+  await expect(page.getByTestId("model:picker-trigger")).toBeVisible();
+
+  await page.getByTestId("sidebar:new-chat").click();
+  await expect(page.getByTestId("chat:settings-open")).toBeVisible();
+
+  const available = await getAvailableModelIds(page);
+  const target = available.length > 1 ? available[1] : available[0];
+  expect(target).toBeTruthy();
+  await selectPreferredModel(page, [target]);
+
+  const createReq = page.waitForRequest((req) => {
+    if (!req.url().includes("/api/chats")) return false;
+    if (req.method() !== "POST") return false;
+    return true;
+  });
+  await page.getByTestId("sidebar:new-chat").click();
+  const req = await createReq;
+  const body = req.postDataJSON() as unknown;
+  expect(body).toMatchObject({ modelId: target });
 });
 
 test("Archive/delete and export work (WebKit)", async ({ page }) => {

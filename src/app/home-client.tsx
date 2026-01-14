@@ -152,6 +152,10 @@ export function HomeClient({
     ? activeProfile!.defaultModelId
     : DEFAULT_MODEL_ID;
 
+  const lastUsedModelKey = useCallback((profileId: string) => {
+    return `remcochat:lastModelId:${profileId}`;
+  }, []);
+
   useEffect(() => {
     if (!isAllowedModel(temporaryModelId)) {
       setTemporaryModelId(profileDefaultModelId);
@@ -176,6 +180,12 @@ export function HomeClient({
     : profileDefaultModelId;
 
   const effectiveModelId = isTemporaryChat ? temporaryModelId : chatModelId;
+
+  useEffect(() => {
+    if (!activeProfile) return;
+    if (!isAllowedModel(effectiveModelId)) return;
+    window.localStorage.setItem(lastUsedModelKey(activeProfile.id), effectiveModelId);
+  }, [activeProfile, effectiveModelId, lastUsedModelKey]);
 
   const chatSessionKey = isTemporaryChat
     ? `temp:${temporarySessionId}`
@@ -312,12 +322,19 @@ export function HomeClient({
 
     let nextChats = data.chats ?? [];
     if (input.ensureAtLeastOne && nextChats.length === 0) {
+      const storedModelId = window.localStorage.getItem(
+        lastUsedModelKey(input.profileId)
+      );
+      const seedModelId = isAllowedModel(storedModelId)
+        ? storedModelId
+        : profileDefaultModelId;
+
       const createRes = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profileId: input.profileId,
-          modelId: profileDefaultModelId,
+          modelId: seedModelId,
         }),
       });
       const created = (await createRes.json()) as { chat?: Chat };
@@ -377,6 +394,14 @@ export function HomeClient({
 
   const createChat = async () => {
     if (!activeProfile) return;
+
+    const storedModelId = window.localStorage.getItem(
+      lastUsedModelKey(activeProfile.id)
+    );
+    const seedModelId = isAllowedModel(storedModelId)
+      ? storedModelId
+      : effectiveModelId;
+
     if (status !== "ready") stop();
     setIsTemporaryChat(false);
 
@@ -385,7 +410,7 @@ export function HomeClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         profileId: activeProfile.id,
-        modelId: profileDefaultModelId,
+        modelId: seedModelId || profileDefaultModelId,
       }),
     });
 
@@ -1405,6 +1430,12 @@ export function HomeClient({
               <ModelPicker
                 className="min-w-0"
                 onChange={(modelId) => {
+                  if (activeProfile && isAllowedModel(modelId)) {
+                    window.localStorage.setItem(
+                      lastUsedModelKey(activeProfile.id),
+                      modelId
+                    );
+                  }
                   if (isTemporaryChat) {
                     if (isAllowedModel(modelId)) setTemporaryModelId(modelId);
                     return;
