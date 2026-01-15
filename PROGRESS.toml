@@ -1272,3 +1272,11 @@ summary = "Use olive accent for user prompt bubbles"
 details = "Changed user message bubbles (the prompt bubbles) to use `bg-primary` so in light theme they render as `rgb(157, 164, 123)`."
 tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
 files = ["src/components/ai-elements/message.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:34:11Z"
+type = "ui"
+summary = "Match user prompt bubble to chat selector highlight"
+details = "Updated user message bubbles to use `bg-sidebar-accent`/`text-sidebar-accent-foreground`, matching the active chat selector bar styling."
+tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
+files = ["src/components/ai-elements/message.tsx", "PROGRESS.toml"]
