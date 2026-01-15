@@ -1248,3 +1248,11 @@ summary = "Replace light theme green accent with sand tone"
 details = "Updated light theme tokens to use sand tones: `--primary`/`--ring` `#A49F7B` and a softer `--accent`/sidebar accent `#E7E5DC`. Also aligned a remaining success icon to `text-primary` and fixed lint errors discovered while validating."
 tests = ["npm run lint (pass, warnings)", "npm run test:e2e (pass)"]
 files = ["src/app/globals.css", "src/components/ai-elements/tool.tsx", "src/components/weather.tsx", "src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:19:31Z"
+type = "ui"
+summary = "Switch light theme accent to RGB 157,164,123"
+details = "Updated the light theme accent tokens so the green-ish UI accents (send button, temp chat toggle, focused composer border, sidebar selection) use `--primary`/`--ring` `rgb(157 164 123)` and a matching sidebar/hover accent tint `#D9DACB`."
+tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
+files = ["src/app/globals.css", "e2e/instructions.spec.ts", "PROGRESS.toml"]

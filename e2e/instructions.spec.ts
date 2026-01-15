@@ -523,15 +523,33 @@ test("Light theme uses gray canvas colors (WebKit)", async ({ page }) => {
     const aside = document.querySelector("aside");
     const sidebarBg = aside ? getComputedStyle(aside).backgroundColor : "";
     const style = getComputedStyle(document.documentElement);
-    const primary = style.getPropertyValue("--primary").trim().toLowerCase();
+    const primary = style.getPropertyValue("--primary").trim();
     const accent = style.getPropertyValue("--accent").trim().toLowerCase();
     return { bodyBg, sidebarBg, primary, accent };
   });
 
   expect(colors.bodyBg).toBe("rgb(247, 247, 244)");
   expect(colors.sidebarBg).toBe("rgb(242, 241, 237)");
-  expect(colors.primary).toBe("#a49f7b");
-  expect(colors.accent).toBe("#e7e5dc");
+  const primaryRgb = (() => {
+    const rgbFn = colors.primary.match(/rgb\(\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)/i);
+    if (rgbFn) return rgbFn.slice(1, 4).map(Number).join(",");
+
+    const rawTriplet = colors.primary.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/);
+    if (rawTriplet) return rawTriplet.slice(1, 4).map(Number).join(",");
+
+    const hex = colors.primary.match(/^\s*#([0-9a-f]{6})\s*$/i);
+    if (hex) {
+      const value = hex[1]!.toLowerCase();
+      const r = parseInt(value.slice(0, 2), 16);
+      const g = parseInt(value.slice(2, 4), 16);
+      const b = parseInt(value.slice(4, 6), 16);
+      return [r, g, b].join(",");
+    }
+
+    return "";
+  })();
+  expect(primaryRgb).toBe("157,164,123");
+  expect(colors.accent).toBe("#d9dacb");
 });
 
 test("Archive/delete and export work (WebKit)", async ({ page }) => {
