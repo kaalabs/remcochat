@@ -1918,15 +1918,15 @@ export function HomeClient({
             </StickToBottom.Content>
           </StickToBottom>
 
-	          <div className="shrink-0 border-t bg-background px-6 py-4">
-	            <div className="mx-auto w-full max-w-3xl">
-	              <PromptInput
-	                className={
-	                  "bg-card " +
-	                  (isTemporaryChat
-	                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
-	                    : "")
-	                }
+		          <div className="shrink-0 border-t bg-sidebar px-6 py-4">
+		            <div className="mx-auto w-full max-w-3xl">
+		              <PromptInput
+		                className={
+		                  "bg-sidebar " +
+		                  (isTemporaryChat
+		                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
+		                    : "")
+		                }
 	                onSubmit={({ text }) => {
 	                  if (!activeProfile) return;
 	                  if (status !== "ready") return;

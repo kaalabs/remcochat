@@ -522,14 +522,23 @@ test("Light theme uses gray canvas colors (WebKit)", async ({ page }) => {
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     const aside = document.querySelector("aside");
     const sidebarBg = aside ? getComputedStyle(aside).backgroundColor : "";
+    const composerBg = (() => {
+      const textarea = document.querySelector(
+        '[data-testid="composer:textarea"]'
+      ) as HTMLElement | null;
+      if (!textarea) return "";
+      const form = textarea.closest("form") as HTMLElement | null;
+      return form ? getComputedStyle(form).backgroundColor : "";
+    })();
     const style = getComputedStyle(document.documentElement);
     const primary = style.getPropertyValue("--primary").trim();
     const accent = style.getPropertyValue("--accent").trim().toLowerCase();
-    return { bodyBg, sidebarBg, primary, accent };
+    return { bodyBg, sidebarBg, composerBg, primary, accent };
   });
 
   expect(colors.bodyBg).toBe("rgb(247, 247, 244)");
   expect(colors.sidebarBg).toBe("rgb(242, 241, 237)");
+  expect(colors.composerBg).toBe(colors.sidebarBg);
   const primaryRgb = (() => {
     const rgbFn = colors.primary.match(/rgb\(\s*(\d+)[^\d]+(\d+)[^\d]+(\d+)/i);
     if (rgbFn) return rgbFn.slice(1, 4).map(Number).join(",");
