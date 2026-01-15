@@ -1240,3 +1240,11 @@ summary = "Adjust light theme background surfaces"
 details = "Updated the light theme base surface colors to match the provided screenshot: background `#F7F7F4` and card/sidebar `#F2F1ED`."
 tests = ["npm run test:e2e -- -g \"Light theme uses gray canvas colors\" (pass)"]
 files = ["src/app/globals.css", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:03:19Z"
+type = "ui"
+summary = "Replace light theme green accent with sand tone"
+details = "Updated light theme tokens to use sand tones: `--primary`/`--ring` `#A49F7B` and a softer `--accent`/sidebar accent `#E7E5DC`. Also aligned a remaining success icon to `text-primary` and fixed lint errors discovered while validating."
+tests = ["npm run lint (pass, warnings)", "npm run test:e2e (pass)"]
+files = ["src/app/globals.css", "src/components/ai-elements/tool.tsx", "src/components/weather.tsx", "src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]

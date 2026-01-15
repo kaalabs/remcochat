@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MapPin, Wind } from "lucide-react";
+import { createElement } from "react";
 
 function formatDay(date: string, timezone: string) {
   try {
@@ -32,9 +33,9 @@ function formatNumber(value: number) {
 
 export function Weather(props: WeatherToolOutput) {
   const daily = (props.daily ?? []).slice(0, 3);
-  const CurrentIcon = iconForWeatherCode(props.current.weatherCode);
+  const currentIcon = iconForWeatherCode(props.current.weatherCode);
 
-    return (
+  return (
     <Card
       className="w-full max-w-md overflow-hidden border-border/60 bg-sky-100/80 shadow-xs dark:bg-sky-950/20"
       data-testid="tool:displayWeather"
@@ -54,7 +55,9 @@ export function Weather(props: WeatherToolOutput) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="grid gap-1">
             <div className="flex items-end gap-3">
-              <CurrentIcon className="size-10 text-muted-foreground" />
+              {createElement(currentIcon, {
+                className: "size-10 text-muted-foreground",
+              })}
               <div className="text-4xl font-semibold leading-none tracking-tight">
                 {formatNumber(props.current.temperatureC)}°C
               </div>
@@ -73,7 +76,7 @@ export function Weather(props: WeatherToolOutput) {
         {daily.length > 0 ? (
           <div className="grid gap-2">
             {daily.map((day) => {
-              const DayIcon = iconForWeatherCode(day.weatherCode);
+              const dayIcon = iconForWeatherCode(day.weatherCode);
               return (
                 <div
                   className="grid grid-cols-[minmax(7.25rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm hover:bg-muted/30"
@@ -82,7 +85,7 @@ export function Weather(props: WeatherToolOutput) {
                   <div className="min-w-0 truncate text-muted-foreground">
                     {formatDay(day.date, props.timezone)}
                   </div>
-                  <DayIcon className="size-4 text-muted-foreground" />
+                  {createElement(dayIcon, { className: "size-4 text-muted-foreground" })}
                   <div className="min-w-0 truncate text-muted-foreground">
                     {day.condition}
                   </div>

@@ -1531,15 +1531,15 @@ export function HomeClient({
 	            ) : null}
 
 		            {appVersion ? (
-		              <div
-		                className="mt-3 text-[11px] text-muted-foreground"
-		                data-testid="app:version"
-		              >
-		                v{appVersion} · (c) kaaLabs '26
-		              </div>
-		            ) : null}
-	          </div>
-	        </aside>
+			              <div
+			                className="mt-3 text-[11px] text-muted-foreground"
+			                data-testid="app:version"
+			              >
+			                v{appVersion} · (c) kaaLabs &apos;26
+			              </div>
+			            ) : null}
+		          </div>
+		        </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <header className="flex items-center justify-between gap-3 border-b px-4 py-3">

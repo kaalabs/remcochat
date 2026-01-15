@@ -522,11 +522,16 @@ test("Light theme uses gray canvas colors (WebKit)", async ({ page }) => {
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     const aside = document.querySelector("aside");
     const sidebarBg = aside ? getComputedStyle(aside).backgroundColor : "";
-    return { bodyBg, sidebarBg };
+    const style = getComputedStyle(document.documentElement);
+    const primary = style.getPropertyValue("--primary").trim().toLowerCase();
+    const accent = style.getPropertyValue("--accent").trim().toLowerCase();
+    return { bodyBg, sidebarBg, primary, accent };
   });
 
   expect(colors.bodyBg).toBe("rgb(247, 247, 244)");
   expect(colors.sidebarBg).toBe("rgb(242, 241, 237)");
+  expect(colors.primary).toBe("#a49f7b");
+  expect(colors.accent).toBe("#e7e5dc");
 });
 
 test("Archive/delete and export work (WebKit)", async ({ page }) => {
