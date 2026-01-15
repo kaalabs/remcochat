@@ -80,3 +80,7 @@ When proposing changes or generating code:
 4. Ensure secrets are never committed and templates are used for configuration.
 5. Assume the developer will run tests manually and will manually promote by push/merge.
 6. If a recommendation would increase automation or process overhead, present it as optional and do not implement it unless explicitly instructed.
+7. Never discard uncommitted local work:
+   - Do not run destructive Git commands (`git checkout -- <path>`, `git restore <path>`, `git reset`, stashes) as a way to “undo” unless the developer explicitly asks.
+   - If you need to revert your own accidental edit, undo it surgically (only the lines you changed) via `apply_patch`, even if it’s “just formatting”.
+   - If you must use Git to revert a file, first confirm (via `git status`/`git diff`) that you are not overwriting other uncommitted edits in that file, then proceed only with explicit developer instruction.
