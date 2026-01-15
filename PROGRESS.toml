@@ -1296,3 +1296,134 @@ summary = "Add cron-friendly update script"
 details = "Added `scripts/update-remcochat.sh` which fetches `origin/main`, fast-forwards when updates exist, and restarts the Docker Compose stack only when needed (safe for hourly cron; ignores untracked files like `.env` but aborts on local tracked changes)."
 tests = ["bash -n scripts/update-remcochat.sh (pass)"]
 files = ["scripts/update-remcochat.sh", "README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T15:05:31Z"
+type = "feat"
+summary = "Add config.toml provider foundation (read-only)"
+details = "Introduced a global provider config foundation: added `config.toml.example` (tracked) + ignored `config.toml`, implemented a TOML+Zod config loader with a backwards-compatible internal default, and exposed the configured providers/models via `GET /api/providers` (read-only; active provider equals default for now)."
+tests = ["npm run test:e2e -- -g \"Providers config endpoint\" (pass)"]
+files = [".gitignore", "config.toml.example", "src/server/config.ts", "src/app/api/providers/route.ts", "e2e/providers-config.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T15:15:15Z"
+type = "docs"
+summary = "Document Vercel AI Gateway key in config example"
+details = "Updated `config.toml.example` to include `providers.vercel.api_key_env = \"VERCEL_AI_GATEWAY_API_KEY\"` (with a note about the `AI_GATEWAY_API_KEY` fallback)."
+tests = ["npm run test:e2e -- -g \"Providers config endpoint\" (pass)"]
+files = ["config.toml.example", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T15:25:54Z"
+type = "fix"
+summary = "Require config.toml (fail fast; no internal defaults)"
+details = "Removed the internal fallback config and made `config.toml` mandatory: `getConfig()` now errors when the config file is missing or not a file, `scripts/check-env.mjs` checks for the config before starting the app, and E2E boot now provisions an example config via `REMCOCHAT_CONFIG_PATH` so tests remain reproducible."
+tests = ["npm run test:e2e -- -g \"Providers config endpoint\" (pass)"]
+files = ["src/server/config.ts", "scripts/check-env.mjs", "src/app/page.tsx", "playwright.config.ts", "scripts/reset-e2e-db.mjs", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T15:26:35Z"
+type = "docs"
+summary = "Document required config.toml"
+details = "Updated the README to include `cp config.toml.example config.toml` for both local dev and Docker usage, matching the new fail-fast requirement."
+tests = ["npm run test:e2e -- -g \"Providers config endpoint\" (pass)"]
+files = ["README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T15:45:42Z"
+type = "feat"
+summary = "Persist active provider + add switching API"
+details = "Added a global `app_settings` table and persisted `active_provider_id` in SQLite. `GET /api/providers` now reports the effective active provider (falls back to config default if the stored value no longer exists) and `PUT /api/providers/active` switches the provider (no auth/gating; validates the provider exists in `config.toml`). E2E config generation now injects an additional provider so switching can be tested."
+tests = ["npm run test:e2e -- -g \"Switch active provider\" (pass)"]
+files = ["src/server/db.ts", "src/server/app-settings.ts", "src/app/api/providers/route.ts", "src/app/api/providers/active/route.ts", "scripts/reset-e2e-db.mjs", "e2e/providers-switch.spec.ts", "e2e/providers-config.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T16:10:31Z"
+type = "feat"
+summary = "Make model list config-driven (remove hardcoded allowlist)"
+details = "Removed the hardcoded model allowlist and made models fully config-driven per active provider: the UI model picker now loads options from `GET /api/providers` (active provider models only) and server-side profile/chat/chat-request model ids are validated/clamped against the active provider’s configured models (fallback to provider default when invalid)."
+tests = ["npm run test:e2e -- -g \"Model selector uses config models\" (pass)"]
+files = ["src/lib/models.ts", "src/server/model-registry.ts", "src/server/profiles.ts", "src/server/chats.ts", "src/app/api/chat/route.ts", "src/app/home-client.tsx", "scripts/reset-e2e-db.mjs", "e2e/model-selector-config.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T16:59:15Z"
+type = "feat"
+summary = "Route /api/chat through active provider adapter"
+details = "Added a provider adapter layer so `/api/chat` resolves models through the globally active provider (from `config.toml` + persisted `active_provider_id`). Implemented adapters for Vercel AI Gateway and an OpenAI Responses-compatible gateway (eg OpenCode Zen), including model-id mapping (`provider_model_id`) and provider metadata headers on responses. Updated env checking + E2E boot config to support the second provider, and serialized Playwright workers to avoid global provider-switch races."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/server/llm-provider.ts", "src/app/api/chat/route.ts", "src/server/config.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "config.toml.example", "e2e/chat-provider.spec.ts", "e2e/model-selector-config.spec.ts", "playwright.config.ts", "package.json", "package-lock.json", "docker-compose.yml", ".env.example", "README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T17:09:49Z"
+type = "fix"
+summary = "Decommission AI_GATEWAY_API_KEY fallback"
+details = "Removed the undocumented `AI_GATEWAY_API_KEY` compatibility fallback. RemcoChat now only reads the provider key from `config.toml` (`providers.<id>.api_key_env`) and fails fast when it’s missing. Vercel AI Gateway is instantiated via `createGateway({ apiKey })`, so no env var mapping is needed."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/server/llm-provider.ts", "scripts/check-env.mjs", "config.toml.example", ".env.example", "docker-compose.yml", "README.md", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T17:44:12Z"
+type = "fix"
+summary = "Require explicit provider base_url (no implicit defaults)"
+details = "Made `providers.<id>.base_url` mandatory for all providers (including `vercel_ai_gateway`) to avoid relying on SDK defaults. Both runtime config validation and the preflight env check now fail fast when base_url is missing."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/server/config.ts", "src/server/llm-provider.ts", "scripts/check-env.mjs", "config.toml.example", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T18:01:56Z"
+type = "feat"
+summary = "Add /admin panel route for provider switching"
+details = "Added an `/admin` page (enabled only when `REMCOCHAT_ENABLE_ADMIN=1`) that lets you view and switch the globally active provider via `PUT /api/providers/active`. The sidebar Admin button now opens this panel in a new tab so you can switch providers at any moment. The admin panel also exposes the existing backup/export and reset controls."
+tests = ["npm run test:e2e -- -g \"Admin panel switches provider\" (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/admin/page.tsx", "src/app/admin/admin-client.tsx", "src/app/home-client.tsx", "e2e/admin-provider-panel.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T19:04:42Z"
+type = "feat"
+summary = "Move provider type → model type; add OpenCode Zen Opus 4.5 support"
+details = "Refactored `config.toml` so model `type` selects the adapter/API protocol (not the provider), enabling a single gateway provider to host mixed model APIs. Updated config parsing/validation, `/api/providers`, `/admin`, and `/api/chat` routing to use the selected model’s `type` (including Anthropic-compatible via `@ai-sdk/anthropic`). Updated config examples and E2E provisioning accordingly."
+tests = [
+  "npm run test:e2e -- -g \"Providers include anthropic model type\" (pass)",
+  "npm run test:e2e (pass)",
+]
+files = [
+  "src/server/config.ts",
+  "src/server/llm-provider.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/api/providers/route.ts",
+  "src/app/admin/admin-client.tsx",
+  "src/app/home-client.tsx",
+  "scripts/check-env.mjs",
+  "scripts/reset-e2e-db.mjs",
+  "config.toml.example",
+  "config.toml",
+  "e2e/providers-config.spec.ts",
+  "e2e/chat-provider.spec.ts",
+  "e2e/providers-anthropic-type.spec.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-15T19:25:06Z"
+type = "feat"
+summary = "Align model type to OpenCode endpoint mapping"
+details = "Adjusted model `type` values to match the concrete AI SDK protocol split for OpenCode Zen endpoints: `openai_responses` (OpenAI `/responses` via `@ai-sdk/openai`), `anthropic_messages` (Anthropic `/messages` via `@ai-sdk/anthropic`), and `openai_compatible` (OpenAI-compatible `/chat/completions` via `@ai-sdk/openai-compatible`). Added the OpenAI-compatible adapter, updated config examples + E2E provisioning, and kept all base URLs explicit in config."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/server/config.ts", "src/server/llm-provider.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "config.toml.example", "config.toml", "e2e/chat-provider.spec.ts", "e2e/providers-anthropic-type.spec.ts", "package.json", "package-lock.json", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T20:20:59Z"
+type = "feat"
+summary = "Add Google Generative AI model type + harden chat stream tests"
+details = "Added the `google_generative_ai` model type (Gemini) via `@ai-sdk/google` so a gateway provider can expose Google models alongside other protocols. Tightened weather prompting to require tool-only output for weather queries, and hardened API-level E2E tests to parse the UI message SSE stream (fail on `error` chunks) with retries for transient OpenCode concurrency errors. The Google/Gemini E2E test is gated by `REMCOCHAT_E2E_ENABLE_GOOGLE_GEMINI=1` because Gemini models are disabled for the current OpenCode key."
+tests = ["npm run test:e2e (26 passed, 1 skipped)"]
+files = ["src/server/config.ts", "src/server/llm-provider.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "config.toml.example", "package.json", "package-lock.json", "src/app/api/chat/route.ts", "e2e/ui-message-stream.ts", "e2e/chat-provider.spec.ts", "e2e/providers-anthropic-type.spec.ts", "e2e/model-types.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T20:48:51Z"
+type = "feat"
+summary = "Add model capabilities to config and apply them at runtime"
+details = "Extended `config.toml` model entries with a required `capabilities` block (tools, temperature, attachments, structured_output). `/api/providers` now exposes per-model capabilities, and `/api/chat` respects them: it disables tool calling (no tools passed + no tool instructions in the system prompt) when `tools=false`, and omits the `temperature` parameter when `temperature=false`. Updated `config.toml.example` and E2E config generation accordingly and added an E2E test to verify that a tools-disabled model returns plain text with no tool chunks."
+tests = ["npm run test:e2e (27 passed, 1 skipped)"]
+files = ["src/server/config.ts", "src/server/llm-provider.ts", "src/app/api/chat/route.ts", "src/app/api/providers/route.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "config.toml.example", "PLAN.md", "e2e/model-capabilities.spec.ts", "PROGRESS.toml"]

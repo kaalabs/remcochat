@@ -10,8 +10,13 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.14",
     "@ai-sdk/gateway": "^3.0.13",
+    "@ai-sdk/google": "^3.0.9",
+    "@ai-sdk/openai": "^3.0.11",
+    "@ai-sdk/openai-compatible": "^2.0.12",
     "@ai-sdk/react": "^3.0.34",
+    "@iarna/toml": "^2.2.5",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

@@ -1,9 +1,9 @@
-import { DEFAULT_MODEL_ID, isAllowedModel } from "@/lib/models";
 import type { Chat, RemcoChatMessageMetadata } from "@/lib/types";
 import type { UIMessage } from "ai";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getProfile } from "./profiles";
+import { getActiveProviderConfig } from "@/server/model-registry";
 
 type ChatRow = {
   id: string;
@@ -113,11 +113,16 @@ export function listTurnAssistantTexts(input: {
 }
 
 function rowToChat(row: ChatRow): Chat {
+  const { provider } = getActiveProviderConfig();
+  const allowed = new Set(provider.models.map((m) => m.id));
+  const modelId = allowed.has(String(row.model_id))
+    ? String(row.model_id)
+    : provider.defaultModelId;
   return {
     id: row.id,
     profileId: row.profile_id,
     title: row.title,
-    modelId: row.model_id,
+    modelId,
     chatInstructions: row.chat_instructions,
     chatInstructionsRevision: Number(row.chat_instructions_revision ?? 1),
     createdAt: row.created_at,
@@ -166,9 +171,15 @@ export function createChat(input: {
   forkedFromMessageId?: string;
 }): Chat {
   const profile = getProfile(input.profileId);
-  const modelId = isAllowedModel(input.modelId)
-    ? input.modelId
-    : profile.defaultModelId || DEFAULT_MODEL_ID;
+  const { provider } = getActiveProviderConfig();
+  const allowed = new Set(provider.models.map((m) => m.id));
+  const profileDefaultModelId = allowed.has(profile.defaultModelId)
+    ? profile.defaultModelId
+    : provider.defaultModelId;
+  const modelId =
+    typeof input.modelId === "string" && allowed.has(input.modelId)
+      ? input.modelId
+      : profileDefaultModelId;
 
   const title = (input.title ?? "").trim();
   const chatInstructions = String(input.chatInstructions ?? "");
@@ -218,8 +229,12 @@ export function updateChat(
   if (title.length > 200) throw new Error("Chat title is too long.");
 
   const modelId =
-    patch.modelId != null && isAllowedModel(patch.modelId)
-      ? patch.modelId
+    patch.modelId != null
+      ? (() => {
+          const { provider } = getActiveProviderConfig();
+          const allowed = new Set(provider.models.map((m) => m.id));
+          return allowed.has(patch.modelId) ? patch.modelId : provider.defaultModelId;
+        })()
       : current.modelId;
 
   const chatInstructions =

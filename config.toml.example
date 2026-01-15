@@ -1,0 +1,128 @@
+# RemcoChat global configuration (example)
+#
+# Copy this file to `config.toml` and adjust it for your environment.
+# Notes:
+# - Do NOT put API keys in this file. Keep keys in env / `.env`.
+# - `config.toml` is ignored by git; only this example is tracked.
+#
+# Provider abstraction:
+# - Providers are defined under `[providers.<id>]`.
+# - Allowed models are defined under `[[providers.<id>.models]]`.
+# - This list replaces any hardcoded allowlist: only models present here are allowed.
+# - Model `type` is an API/protocol characteristic of the model (not the provider).
+#
+# Switching:
+# - The active provider is global and can be switched via API (no auth/gating; LAN-only).
+# - Switching is persistent (stored in DB).
+
+version = 1
+
+[app]
+# Default provider id to use when no active provider is stored yet.
+default_provider_id = "vercel"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+# Which env var contains the API key (do not put the key here).
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+# Explicit base URL (required; no implicit defaults).
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-5.2-chat"
+
+[[providers.vercel.models]]
+type = "vercel_ai_gateway"
+id = "openai/gpt-5.2-chat"
+label = "GPT 5.2 Chat"
+description = "OpenAI"
+[providers.vercel.models.capabilities]
+tools = true
+temperature = false
+attachments = false
+structured_output = false
+
+[[providers.vercel.models]]
+type = "vercel_ai_gateway"
+id = "openai/gpt-4o-mini"
+label = "GPT 4o Mini"
+description = "OpenAI"
+[providers.vercel.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.vercel.models]]
+type = "vercel_ai_gateway"
+id = "openai/gpt-5.2-pro"
+label = "GPT 5.2 PRO"
+description = "OpenAI"
+[providers.vercel.models.capabilities]
+tools = true
+temperature = false
+attachments = false
+structured_output = false
+
+# Example of an OpenCode Zen gateway hosting multiple model types.
+#
+#[providers.opencode]
+#name = "OpenCode Zen"
+#base_url = "https://opencode.ai/zen/v1"
+## Which env var contains the API key (do not put the key here).
+#api_key_env = "OPENCODE_API_KEY"
+#default_model_id = "opencode/gpt-5-nano"
+#
+#[[providers.opencode.models]]
+## OpenAI Responses model (GPT family via `/responses`).
+#type = "openai_responses"
+## `id` is the RemcoChat model id stored in DB/used in UI.
+## `provider_model_id` is the identifier passed to the provider API.
+#id = "opencode/gpt-5-nano"
+#label = "GPT 5 Nano"
+#description = "OpenCode Zen"
+#provider_model_id = "gpt-5-nano"
+#[providers.opencode.models.capabilities]
+#tools = true
+#temperature = false
+#attachments = true
+#structured_output = true
+#
+#[[providers.opencode.models]]
+## Anthropic Messages model (Claude via `/messages`).
+#type = "anthropic_messages"
+#id = "opencode/claude-opus-4-5"
+#label = "Claude Opus 4.5"
+#description = "OpenCode Zen"
+#provider_model_id = "claude-opus-4-5"
+#[providers.opencode.models.capabilities]
+#tools = true
+#temperature = true
+#attachments = true
+#structured_output = false
+
+#
+#[[providers.opencode.models]]
+## OpenAI-compatible Chat Completions model (eg GLM/Kimi/Qwen via `/chat/completions`).
+#type = "openai_compatible"
+#id = "opencode/glm-4.6"
+#label = "GLM 4.6"
+#description = "OpenCode Zen"
+#provider_model_id = "glm-4.6"
+#[providers.opencode.models.capabilities]
+#tools = true
+#temperature = true
+#attachments = false
+#structured_output = false
+
+#
+#[[providers.opencode.models]]
+## Google Generative AI model (Gemini via `/models/<id>:generateContent`).
+#type = "google_generative_ai"
+#id = "opencode/gemini-3-flash"
+#label = "Gemini 3 Flash"
+#description = "OpenCode Zen"
+#provider_model_id = "gemini-3-flash"
+#[providers.opencode.models.capabilities]
+#tools = true
+#temperature = true
+#attachments = true
+#structured_output = true

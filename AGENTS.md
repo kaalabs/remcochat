@@ -80,3 +80,6 @@ When proposing changes or generating code:
 4. Ensure secrets are never committed and templates are used for configuration.
 5. Assume the developer will run tests manually and will manually promote by push/merge.
 6. If a recommendation would increase automation or process overhead, present it as optional and do not implement it unless explicitly instructed.
+7. During development respect the 'fail-fast' principle. Systems, processes, or decisions (for example design and during coding) should detect errors or invalid assumptions as early as possible and stop further execution immediately, rather than continuing in a degraded or misleading state. For example: only code fall backs when the case in question has been explicitly made part of approved designs and/or architecture.
+8. When I ask you for a plan, what I mean for you is to write a SPEC. No exceptions.
+9. Never delete stuff you found changed, but don't recognize. This repo is being worked on by multiple instances at the same time. Assume, this is just someone (or something, might just be another agentic coding agent besides you) else working on it and not a bad thing. You can ignore that and just continue with what you were doing as if nothing happened.

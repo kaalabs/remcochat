@@ -4,17 +4,22 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 
 ## Local dev
 
-1. Export your Vercel AI Gateway key in your shell:
-   - `export VERCEL_AI_GATEWAY_API_KEY=...` (or `export AI_GATEWAY_API_KEY=...`)
-2. Install deps: `npm install`
-3. Run: `npm run dev`
-4. Open `http://localhost:3000` (or your machine’s LAN IP)
+1. Create `config.toml` from the example:
+   - `cp config.toml.example config.toml`
+2. Export your Vercel AI Gateway key in your shell:
+   - `export VERCEL_AI_GATEWAY_API_KEY=...`
+   - If your active provider uses OpenCode Zen: `export OPENCODE_API_KEY=...`
+3. Install deps: `npm install`
+4. Run: `npm run dev`
+5. Open `http://localhost:3000` (or your machine’s LAN IP)
 
 ## Docker (LAN / home server)
 
-1. Create a `.env` file based on `.env.example` and set your `VERCEL_AI_GATEWAY_API_KEY` (or `AI_GATEWAY_API_KEY`).
-2. Run: `docker compose up -d --build`
-3. Open `http://<server-lan-ip>:3100`
+1. Create `config.toml` from the example:
+   - `cp config.toml.example config.toml`
+2. Create a `.env` file based on `.env.example` and set your `VERCEL_AI_GATEWAY_API_KEY`.
+3. Run: `docker compose up -d --build`
+4. Open `http://<server-lan-ip>:3100`
 
 ### Auto-update (cron)
 

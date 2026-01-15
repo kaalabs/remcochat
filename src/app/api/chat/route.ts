@@ -1,4 +1,3 @@
-import { isAllowedModel } from "@/lib/models";
 import type { RemcoChatMessageMetadata } from "@/lib/types";
 import { getChat, listTurnAssistantTexts, updateChat } from "@/server/chats";
 import { getProfile } from "@/server/profiles";
@@ -14,9 +13,10 @@ import {
 import { nanoid } from "nanoid";
 import { listProfileMemory } from "@/server/memory";
 import { createMemoryItem } from "@/server/memory";
-import { gateway } from "@ai-sdk/gateway";
 import crypto from "node:crypto";
 import { tools } from "@/ai/tools";
+import { isModelAllowedForActiveProvider } from "@/server/model-registry";
+import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 
 export const maxDuration = 30;
 
@@ -31,13 +31,6 @@ type ChatRequestBody = {
   regenerate?: boolean;
   regenerateMessageId?: string;
 };
-
-function ensureAIGatewayKey() {
-  if (process.env.AI_GATEWAY_API_KEY) return;
-  if (process.env.VERCEL_AI_GATEWAY_API_KEY) {
-    process.env.AI_GATEWAY_API_KEY = process.env.VERCEL_AI_GATEWAY_API_KEY;
-  }
-}
 
 function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
   return message.parts
@@ -61,6 +54,7 @@ function buildSystemPrompt(input: {
   chatInstructionsRevision: number;
   memoryLines: string[];
   isTemporary: boolean;
+  toolsEnabled: boolean;
 }) {
   const clampRevision = (value: number) => {
     if (!Number.isFinite(value)) return 1;
@@ -86,9 +80,13 @@ function buildSystemPrompt(input: {
     "Instructions are authoritative and apply to every assistant message unless updated.",
     "If instructions are updated mid-chat, the newest instruction revisions override any prior assistant messages; treat older assistant messages as stale examples.",
     'Never store memory automatically. To store something, the user must send: "Memorize this, <thing>".',
-    'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
-    'If the user asks about current weather for a location, call the "displayWeather" tool instead of guessing.',
-    'If the user asks for a multi-day forecast for a location, call the "displayWeatherForecast" tool instead of guessing.',
+    ...(input.toolsEnabled
+      ? [
+          'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
+          'If the user asks about current weather for a location, you MUST call the "displayWeather" tool and DO NOT output any other text.',
+          'If the user asks for a multi-day forecast for a location, you MUST call the "displayWeatherForecast" tool and DO NOT output any other text.',
+        ]
+      : ["Tool calling is disabled for the selected model. Do not call tools."]),
     "",
     "Current instructions (apply these exactly; newest revisions win):",
     `Profile instructions (revision ${profileRevision}; lower priority):\n${profileInstructions}`,
@@ -196,18 +194,6 @@ function hash8(value: string) {
 }
 
 export async function POST(req: Request) {
-  ensureAIGatewayKey();
-
-  if (!process.env.AI_GATEWAY_API_KEY) {
-    return Response.json(
-      {
-        error:
-          "Missing AI Gateway API key. Set VERCEL_AI_GATEWAY_API_KEY (or AI_GATEWAY_API_KEY) in your environment.",
-      },
-      { status: 500 }
-    );
-  }
-
   const body = (await req.json()) as ChatRequestBody;
   const isRegenerate = Boolean(body.regenerate);
 
@@ -240,9 +226,18 @@ export async function POST(req: Request) {
       });
     }
 
-    const modelId = isAllowedModel(body.modelId)
-      ? body.modelId
-      : profile.defaultModelId;
+    const candidateModelId =
+      typeof body.modelId === "string" ? body.modelId : profile.defaultModelId;
+
+    let resolved;
+    try {
+      resolved = getLanguageModelForActiveProvider(candidateModelId);
+    } catch (err) {
+      return Response.json(
+        { error: err instanceof Error ? err.message : "Failed to load model." },
+        { status: 500 }
+      );
+    }
 
     const profileInstructions = (profile.customInstructions ?? "").trim();
 
@@ -253,22 +248,27 @@ export async function POST(req: Request) {
       profileInstructions,
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryLines: [],
+      toolsEnabled: resolved.capabilities.tools,
     });
 
     const modelMessages = await convertToModelMessages(body.messages);
 
     const result = streamText({
-      model: gateway(modelId),
+      model: resolved.model,
       system,
       messages: modelMessages,
-      temperature: 0,
-      stopWhen: [
-        hasToolCall("displayWeather"),
-        hasToolCall("displayWeatherForecast"),
-        hasToolCall("displayMemoryAnswer"),
-        stepCountIs(5),
-      ],
-      tools,
+      ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+      ...(resolved.capabilities.tools
+        ? {
+            stopWhen: [
+              hasToolCall("displayWeather"),
+              hasToolCall("displayWeatherForecast"),
+              hasToolCall("displayMemoryAnswer"),
+              stepCountIs(5),
+            ],
+            tools,
+          }
+        : { stopWhen: [stepCountIs(5)] }),
     });
 
     return result.toUIMessageStreamResponse({
@@ -276,6 +276,10 @@ export async function POST(req: Request) {
         "x-remcochat-api-version": REMCOCHAT_API_VERSION,
         "x-remcochat-temporary": "1",
         "x-remcochat-profile-id": profile.id,
+        "x-remcochat-provider-id": resolved.providerId,
+        "x-remcochat-model-type": resolved.modelType,
+        "x-remcochat-provider-model-id": resolved.providerModelId,
+        "x-remcochat-model-id": resolved.modelId,
         "x-remcochat-profile-instructions-rev": String(
           profile.customInstructionsRevision
         ),
@@ -309,7 +313,11 @@ export async function POST(req: Request) {
     );
   }
 
-  if (isAllowedModel(body.modelId) && body.modelId !== chat.modelId) {
+  if (
+    typeof body.modelId === "string" &&
+    isModelAllowedForActiveProvider(body.modelId) &&
+    body.modelId !== chat.modelId
+  ) {
     updateChat(chat.id, { modelId: body.modelId });
   }
 
@@ -373,6 +381,16 @@ export async function POST(req: Request) {
   const promptProfileInstructions = chatInstructions ? "" : storedProfileInstructions;
   const profileInstructions = promptProfileInstructions;
 
+  let resolved;
+  try {
+    resolved = getLanguageModelForActiveProvider(effectiveChat.modelId);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "Failed to load model." },
+      { status: 500 }
+    );
+  }
+
   const systemParts: string[] = [
     buildSystemPrompt({
       isTemporary: false,
@@ -381,6 +399,7 @@ export async function POST(req: Request) {
       profileInstructions: promptProfileInstructions,
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryLines,
+      toolsEnabled: resolved.capabilities.tools,
     }),
   ];
 
@@ -443,17 +462,23 @@ export async function POST(req: Request) {
   const modelMessages = await convertToModelMessages(filteredMessages);
 
   const result = streamText({
-    model: gateway(effectiveChat.modelId),
+    model: resolved.model,
     system,
     messages: modelMessages,
-    temperature: isRegenerate ? 0.9 : 0,
-    stopWhen: [
-      hasToolCall("displayWeather"),
-      hasToolCall("displayWeatherForecast"),
-      hasToolCall("displayMemoryAnswer"),
-      stepCountIs(5),
-    ],
-    tools,
+    ...(resolved.capabilities.temperature
+      ? { temperature: isRegenerate ? 0.9 : 0 }
+      : {}),
+    ...(resolved.capabilities.tools
+      ? {
+          stopWhen: [
+            hasToolCall("displayWeather"),
+            hasToolCall("displayWeatherForecast"),
+            hasToolCall("displayMemoryAnswer"),
+            stepCountIs(5),
+          ],
+          tools,
+        }
+      : { stopWhen: [stepCountIs(5)] }),
   });
 
   const headers = {
@@ -461,6 +486,10 @@ export async function POST(req: Request) {
       "x-remcochat-temporary": "0",
       "x-remcochat-profile-id": profile.id,
       "x-remcochat-chat-id": effectiveChat.id,
+      "x-remcochat-provider-id": resolved.providerId,
+      "x-remcochat-model-type": resolved.modelType,
+      "x-remcochat-provider-model-id": resolved.providerModelId,
+      "x-remcochat-model-id": resolved.modelId,
       "x-remcochat-profile-instructions-rev": String(
         profile.customInstructionsRevision
       ),

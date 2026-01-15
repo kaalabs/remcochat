@@ -28,12 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DEFAULT_MODEL_ID,
-  getModelLabel,
-  isAllowedModel,
-  MODEL_ALLOWLIST,
-} from "@/lib/models";
+import type { ModelOption } from "@/lib/models";
 import type { Chat, Profile, RemcoChatMessageMetadata } from "@/lib/types";
 import { Loader } from "@/components/ai-elements/loader";
 import type { UIMessage } from "ai";
@@ -138,7 +133,37 @@ export function HomeClient({
 
   const [isTemporaryChat, setIsTemporaryChat] = useState(false);
   const [temporarySessionId, setTemporarySessionId] = useState(() => nanoid());
-  const [temporaryModelId, setTemporaryModelId] = useState(DEFAULT_MODEL_ID);
+  const [temporaryModelId, setTemporaryModelId] = useState<string>(
+    () => initialProfiles[0]?.defaultModelId ?? ""
+  );
+
+  type ProvidersResponse = {
+    defaultProviderId: string;
+    activeProviderId: string;
+    providers: Array<{
+      id: string;
+      name: string;
+      defaultModelId: string;
+      models: ModelOption[];
+    }>;
+  };
+
+  const [providersConfig, setProvidersConfig] =
+    useState<ProvidersResponse | null>(null);
+
+  useEffect(() => {
+    let canceled = false;
+    fetch("/api/providers")
+      .then((res) => res.json())
+      .then((data: ProvidersResponse) => {
+        if (canceled) return;
+        setProvidersConfig(data);
+      })
+      .catch(() => {});
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("remcochat:profileId");
@@ -158,9 +183,41 @@ export function HomeClient({
     return profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   }, [profiles, activeProfileId]);
 
-  const profileDefaultModelId = isAllowedModel(activeProfile?.defaultModelId)
-    ? activeProfile!.defaultModelId
-    : DEFAULT_MODEL_ID;
+  const activeProvider = useMemo(() => {
+    if (!providersConfig) return null;
+    return (
+      providersConfig.providers.find(
+        (p) => p.id === providersConfig.activeProviderId
+      ) ??
+      providersConfig.providers.find(
+        (p) => p.id === providersConfig.defaultProviderId
+      ) ??
+      providersConfig.providers[0] ??
+      null
+    );
+  }, [providersConfig]);
+
+  const modelOptions = useMemo<ModelOption[]>(() => {
+    return activeProvider?.models ?? [];
+  }, [activeProvider]);
+
+  const allowedModelIds = useMemo(() => {
+    return new Set(modelOptions.map((m) => m.id));
+  }, [modelOptions]);
+
+  const isAllowedModel = useCallback(
+    (modelId: unknown): modelId is string =>
+      typeof modelId === "string" && allowedModelIds.has(modelId),
+    [allowedModelIds]
+  );
+
+  const providerDefaultModelId =
+    activeProvider?.defaultModelId ?? modelOptions[0]?.id ?? "";
+
+  const fallbackProfileDefault = activeProfile?.defaultModelId ?? "";
+  const profileDefaultModelId = isAllowedModel(fallbackProfileDefault)
+    ? fallbackProfileDefault
+    : providerDefaultModelId || fallbackProfileDefault;
 
   const lastUsedModelKey = useCallback((profileId: string) => {
     return `remcochat:lastModelId:${profileId}`;
@@ -189,7 +246,11 @@ export function HomeClient({
     ? activeChat!.modelId
     : profileDefaultModelId;
 
-  const effectiveModelId = isTemporaryChat ? temporaryModelId : chatModelId;
+  const effectiveModelId = isTemporaryChat
+    ? isAllowedModel(temporaryModelId)
+      ? temporaryModelId
+      : profileDefaultModelId
+    : chatModelId;
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -1514,18 +1575,17 @@ export function HomeClient({
               </Button>
             </div>
 
-	            {adminEnabled ? (
-	              <div className="mt-2">
-	                <Button
-	                  className="h-9 w-full justify-start gap-2"
-	                  data-testid="admin:open"
-	                  disabled={status !== "ready"}
-	                  onClick={() => setAdminOpen(true)}
-	                  type="button"
-	                  variant="ghost"
-	                >
-	                  <ShieldIcon className="size-4" />
-	                  <span>Admin</span>
+		            {adminEnabled ? (
+		              <div className="mt-2">
+		                <Button
+		                  className="h-9 w-full justify-start gap-2"
+		                  data-testid="admin:open"
+		                  onClick={() => window.open("/admin", "_blank", "noopener,noreferrer")}
+		                  type="button"
+		                  variant="ghost"
+		                >
+		                  <ShieldIcon className="size-4" />
+		                  <span>Admin</span>
 	                </Button>
 	              </div>
 	            ) : null}
@@ -1560,14 +1620,17 @@ export function HomeClient({
                   }
                   setChatModel(modelId);
                 }}
-                options={MODEL_ALLOWLIST}
+                options={modelOptions}
                 triggerTestId="model:picker-trigger"
                 value={effectiveModelId}
               />
             </div>
             <div className="flex items-center gap-3">
               <div className="text-sm text-muted-foreground">
-                {isTemporaryChat ? "Temporary chat" : getModelLabel(effectiveModelId)}
+                {isTemporaryChat
+                  ? "Temporary chat"
+                  : modelOptions.find((m) => m.id === effectiveModelId)?.label ??
+                    effectiveModelId}
               </div>
               <Button
                 aria-label={isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"}

@@ -39,6 +39,9 @@ yarn-error.log*
 # local data
 /data/
 
+# runtime config (commit only templates/examples)
+config.toml
+
 # vercel
 .vercel
 

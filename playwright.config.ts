@@ -3,10 +3,12 @@ import { defineConfig, devices } from "@playwright/test";
 const PORT = 3100;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_DB = "data/remcochat-e2e.sqlite";
+const E2E_CONFIG = "data/remcochat-e2e-config.toml";
 
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   timeout: 240_000,
@@ -19,9 +21,9 @@ export default defineConfig({
   },
   webServer: {
     command: [
-      `REMCOCHAT_DB_PATH=${E2E_DB} node scripts/reset-e2e-db.mjs`,
+      `REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_CONFIG_PATH=${E2E_CONFIG} node scripts/reset-e2e-db.mjs`,
       "npm run build",
-      `REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 node scripts/check-env.mjs && REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_ENABLE_ADMIN=1 next start -p ${PORT}`,
+      `REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_CONFIG_PATH=${E2E_CONFIG} REMCOCHAT_ENABLE_ADMIN=1 node scripts/check-env.mjs && REMCOCHAT_DB_PATH=${E2E_DB} REMCOCHAT_CONFIG_PATH=${E2E_CONFIG} REMCOCHAT_ENABLE_ADMIN=1 next start -p ${PORT}`,
     ].join(" && "),
     url: BASE_URL,
     reuseExistingServer: false,

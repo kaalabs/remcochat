@@ -2,11 +2,14 @@ import { HomeClient } from "@/app/home-client";
 import { createChat, listChats } from "@/server/chats";
 import { listProfiles } from "@/server/profiles";
 import { isAdminEnabled } from "@/server/admin";
+import { getConfig } from "@/server/config";
 import packageJson from "../../package.json";
 
 export const dynamic = "force-dynamic";
 
 export default function Home() {
+  getConfig();
+
   const profiles = listProfiles();
   const defaultProfileId = profiles[0]?.id ?? "";
   const chats = defaultProfileId ? listChats(defaultProfileId) : [];

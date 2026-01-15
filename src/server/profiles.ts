@@ -1,7 +1,7 @@
-import { DEFAULT_MODEL_ID, isAllowedModel } from "@/lib/models";
 import type { Profile } from "@/lib/types";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
+import { getActiveProviderConfig } from "@/server/model-registry";
 
 type ProfileRow = {
   id: string;
@@ -14,11 +14,16 @@ type ProfileRow = {
 };
 
 function rowToProfile(row: ProfileRow): Profile {
+  const { provider } = getActiveProviderConfig();
+  const allowed = new Set(provider.models.map((m) => m.id));
+  const defaultModelId = allowed.has(String(row.default_model_id))
+    ? String(row.default_model_id)
+    : provider.defaultModelId;
   return {
     id: String(row.id),
     name: String(row.name),
     createdAt: String(row.created_at),
-    defaultModelId: String(row.default_model_id),
+    defaultModelId,
     customInstructions: String(row.custom_instructions ?? ""),
     customInstructionsRevision: Number(row.custom_instructions_revision ?? 1),
     memoryEnabled: Boolean(row.memory_enabled),
@@ -41,11 +46,12 @@ export function listProfiles(): Profile[] {
 
   const now = new Date().toISOString();
   const id = nanoid();
+  const { provider } = getActiveProviderConfig();
 
   db.prepare(
     `INSERT INTO profiles (id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled)
      VALUES (?, ?, ?, ?, '', 1, 1)`
-  ).run(id, "Default", now, DEFAULT_MODEL_ID);
+  ).run(id, "Default", now, provider.defaultModelId);
 
   return listProfiles();
 }
@@ -59,9 +65,12 @@ export function createProfile(input: { name: string; defaultModelId?: string }) 
     throw new Error("Profile name is too long.");
   }
 
-  const defaultModelId = isAllowedModel(input.defaultModelId)
-    ? input.defaultModelId
-    : DEFAULT_MODEL_ID;
+  const { provider } = getActiveProviderConfig();
+  const allowed = new Set(provider.models.map((m) => m.id));
+  const defaultModelId =
+    typeof input.defaultModelId === "string" && allowed.has(input.defaultModelId)
+      ? input.defaultModelId
+      : provider.defaultModelId;
 
   const db = getDb();
   const now = new Date().toISOString();
@@ -101,8 +110,14 @@ export function updateProfile(
   if (name.length > 80) throw new Error("Profile name is too long.");
 
   const defaultModelId =
-    patch.defaultModelId != null && isAllowedModel(patch.defaultModelId)
-      ? patch.defaultModelId
+    patch.defaultModelId != null
+      ? (() => {
+          const { provider } = getActiveProviderConfig();
+          const allowed = new Set(provider.models.map((m) => m.id));
+          return allowed.has(patch.defaultModelId)
+            ? patch.defaultModelId
+            : provider.defaultModelId;
+        })()
       : current.defaultModelId;
 
   const customInstructions =
