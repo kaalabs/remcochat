@@ -2085,17 +2085,18 @@ export function HomeClient({
 	            <DialogTitle>Profile settings</DialogTitle>
 	          </DialogHeader>
 
-	          <div className="min-h-0 space-y-4 overflow-y-auto pr-4">
-	            <div className="space-y-2">
-	              <div className="text-sm font-medium">Custom instructions</div>
-	              <Textarea
-                className="min-h-[8rem]"
-                data-testid="profile:instructions"
-                onChange={(e) => setProfileInstructionsDraft(e.target.value)}
-                placeholder="How should RemcoChat behave for this profile?"
-                value={profileInstructionsDraft}
-              />
-            </div>
+	          <div className="min-h-0 overflow-y-auto pr-1">
+              <div className="space-y-4 pr-3">
+	              <div className="space-y-2">
+	                <div className="text-sm font-medium">Custom instructions</div>
+	                <Textarea
+	                  className="min-h-[8rem]"
+	                  data-testid="profile:instructions"
+	                  onChange={(e) => setProfileInstructionsDraft(e.target.value)}
+	                  placeholder="How should RemcoChat behave for this profile?"
+	                  value={profileInstructionsDraft}
+	                />
+	              </div>
 
 	            <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
 	              <div>
@@ -2184,28 +2185,29 @@ export function HomeClient({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Button
-                disabled={settingsSaving}
-                data-testid="profile:settings-cancel"
-                onClick={() => setSettingsOpen(false)}
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={settingsSaving}
-                data-testid="profile:settings-save"
-                onClick={() => saveProfileSettings()}
-                type="button"
-              >
-                Save
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+	              <div className="flex justify-end gap-2">
+	                <Button
+	                  disabled={settingsSaving}
+	                  data-testid="profile:settings-cancel"
+	                  onClick={() => setSettingsOpen(false)}
+	                  type="button"
+	                  variant="ghost"
+	                >
+	                  Cancel
+	                </Button>
+	                <Button
+	                  disabled={settingsSaving}
+	                  data-testid="profile:settings-save"
+	                  onClick={() => saveProfileSettings()}
+	                  type="button"
+	                >
+	                  Save
+	                </Button>
+	              </div>
+	            </div>
+	          </div>
+	        </DialogContent>
+	      </Dialog>
 
       <Dialog onOpenChange={setDeleteProfileOpen} open={deleteProfileOpen}>
         <DialogContent>

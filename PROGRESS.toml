@@ -1192,3 +1192,11 @@ summary = "Add scrollbar clearance in profile settings"
 details = "Added extra right padding in the scrollable profile settings body so the scrollbar doesn't visually overlap the right borders of the inner setting boxes."
 tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T07:42:45Z"
+type = "ui"
+summary = "Move profile settings scrollbar closer to dialog edge"
+details = "Split the profile settings body into an outer scroll container with minimal right padding (scrollbar closer to the dialog edge) and an inner content wrapper with right padding (keeps borders clear of the scrollbar)."
+tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]
