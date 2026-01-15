@@ -510,6 +510,25 @@ test("Theme toggle restores composer focus (WebKit)", async ({ page }) => {
   await expect(composer).toBeFocused();
 });
 
+test("Light theme uses gray canvas colors (WebKit)", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("theme", "light");
+  });
+
+  await page.goto("/");
+  await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
+
+  const colors = await page.evaluate(() => {
+    const bodyBg = getComputedStyle(document.body).backgroundColor;
+    const aside = document.querySelector("aside");
+    const sidebarBg = aside ? getComputedStyle(aside).backgroundColor : "";
+    return { bodyBg, sidebarBg };
+  });
+
+  expect(colors.bodyBg).toBe("rgb(247, 247, 244)");
+  expect(colors.sidebarBg).toBe("rgb(242, 241, 237)");
+});
+
 test("Archive/delete and export work (WebKit)", async ({ page }) => {
   const profileName = `E2E Archive ${Date.now()}`;
 

@@ -1232,3 +1232,11 @@ summary = "Show copyright notice in sidebar footer"
 details = "Appended '(c) kaaLabs '26' next to the app version in the sidebar footer."
 tests = ["npm run test:e2e -- -g \"App shows version\" (pass)"]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T12:49:02Z"
+type = "ui"
+summary = "Adjust light theme background surfaces"
+details = "Updated the light theme base surface colors to match the provided screenshot: background `#F7F7F4` and card/sidebar `#F2F1ED`."
+tests = ["npm run test:e2e -- -g \"Light theme uses gray canvas colors\" (pass)"]
+files = ["src/app/globals.css", "e2e/instructions.spec.ts", "PROGRESS.toml"]
