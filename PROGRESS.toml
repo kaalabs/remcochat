@@ -1288,3 +1288,11 @@ summary = "Bump version to 0.9.2"
 details = "Bumped the app version to 0.9.2 after merging the light-theme UI updates into `main`."
 tests = ["npm run lint (pass, warnings)", "npm run test:e2e (pass)"]
 files = ["package.json", "package-lock.json", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:47:43Z"
+type = "chore"
+summary = "Add cron-friendly update script"
+details = "Added `scripts/update-remcochat.sh` which fetches `origin/main`, fast-forwards when updates exist, and restarts the Docker Compose stack only when needed (safe for hourly cron; ignores untracked files like `.env` but aborts on local tracked changes)."
+tests = ["bash -n scripts/update-remcochat.sh (pass)"]
+files = ["scripts/update-remcochat.sh", "README.md", "PROGRESS.toml"]

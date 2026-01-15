@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+update-remcochat.sh
+
+Cron-safe updater for a RemcoChat git clone that runs via docker compose.
+
+Environment variables:
+  REPO_DIR      Path to the RemcoChat git repo (default: script's parent dir)
+  BRANCH        Git branch to track (default: main)
+  REMOTE        Git remote to track (default: origin)
+  COMPOSE_FILE  Compose file path relative to REPO_DIR (default: docker-compose.yml)
+  LOCK_FILE     Flock lock file path (default: /tmp/remcochat-update.lock)
+
+Exit codes:
+  0  Up to date or updated successfully
+  2  Repo not clean / not safe to update
+  3  Missing prerequisites (git/docker/compose file)
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+log() { echo "$(ts) [remcochat-update] $*"; }
+die() { log "ERROR: $*"; exit 3; }
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-"$(cd -- "$SCRIPT_DIR/.." && pwd)"}"
+BRANCH="${BRANCH:-main}"
+REMOTE="${REMOTE:-origin}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+LOCK_FILE="${LOCK_FILE:-/tmp/remcochat-update.lock}"
+
+command -v git >/dev/null 2>&1 || die "git not found"
+command -v docker >/dev/null 2>&1 || die "docker not found"
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+    return
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+    return
+  fi
+  die "docker compose not available (need docker compose v2 or docker-compose)"
+}
+
+cd "$REPO_DIR"
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "REPO_DIR is not a git repo: $REPO_DIR"
+[[ -f "$COMPOSE_FILE" ]] || die "compose file missing: $REPO_DIR/$COMPOSE_FILE"
+
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    log "Another update run is in progress; exiting."
+    exit 0
+  fi
+fi
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  log "Repo has uncommitted tracked changes; refusing to update."
+  git status --porcelain=v1 | sed 's/^/  /'
+  exit 2
+fi
+
+current_branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+if [[ "$current_branch" != "$BRANCH" ]]; then
+  if [[ -n "$current_branch" ]]; then
+    log "Switching branch $current_branch -> $BRANCH"
+  else
+    log "Checking out $BRANCH"
+  fi
+  git checkout "$BRANCH"
+fi
+
+log "Fetching $REMOTE/$BRANCH"
+git fetch --prune "$REMOTE" "$BRANCH"
+
+remote_ref="$REMOTE/$BRANCH"
+local_sha="$(git rev-parse HEAD)"
+remote_sha="$(git rev-parse "$remote_ref")"
+
+if [[ "$local_sha" == "$remote_sha" ]]; then
+  log "Up to date: $local_sha"
+  exit 0
+fi
+
+log "Update available: $local_sha -> $remote_sha"
+git pull --ff-only "$REMOTE" "$BRANCH"
+
+log "Rebuilding & restarting via docker compose"
+compose -f "$COMPOSE_FILE" up -d --build
+
+log "Update complete: $(git rev-parse HEAD)"

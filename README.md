@@ -16,6 +16,13 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 2. Run: `docker compose up -d --build`
 3. Open `http://<server-lan-ip>:3100`
 
+### Auto-update (cron)
+
+Use `scripts/update-remcochat.sh` to pull the latest `main` and restart the compose stack only when updates exist.
+
+- Example cron (hourly): `0 * * * * /path/to/remcochat/scripts/update-remcochat.sh >> /var/log/remcochat-update.log 2>&1`
+- The script refuses to update if the repo has uncommitted changes.
+
 ## Data
 
 - SQLite database defaults to `data/remcochat.sqlite` (override with `REMCOCHAT_DB_PATH`).
