@@ -449,7 +449,7 @@ test("New chat uses last selected model (WebKit)", async ({ page }) => {
 test("App shows version (WebKit)", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("app:version")).toHaveText(
-    `v${String(packageJson.version ?? "")}`
+    `v${String(packageJson.version ?? "")} · (c) kaaLabs '26`
   );
 });
 

@@ -1530,14 +1530,14 @@ export function HomeClient({
 	              </div>
 	            ) : null}
 
-	            {appVersion ? (
-	              <div
-	                className="mt-3 text-[11px] text-muted-foreground"
-	                data-testid="app:version"
-	              >
-	                v{appVersion}
-	              </div>
-	            ) : null}
+		            {appVersion ? (
+		              <div
+		                className="mt-3 text-[11px] text-muted-foreground"
+		                data-testid="app:version"
+		              >
+		                v{appVersion} · (c) kaaLabs '26
+		              </div>
+		            ) : null}
 	          </div>
 	        </aside>
 

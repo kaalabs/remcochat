@@ -1224,3 +1224,11 @@ summary = "Add Docker Compose for LAN hosting"
 details = "Added a `docker-compose.yml` + `Dockerfile` for running RemcoChat on a home server (LAN-only) with a persistent named volume for SQLite data."
 tests = ["docker compose build (pass)"]
 files = ["docker-compose.yml", "Dockerfile", ".dockerignore", "README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T11:47:57Z"
+type = "ui"
+summary = "Show copyright notice in sidebar footer"
+details = "Appended '(c) kaaLabs '26' next to the app version in the sidebar footer."
+tests = ["npm run test:e2e -- -g \"App shows version\" (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
