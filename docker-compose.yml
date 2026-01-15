@@ -1,0 +1,21 @@
+services:
+  remcochat:
+    build:
+      context: .
+    container_name: remcochat
+    restart: unless-stopped
+    init: true
+    ports:
+      - "3100:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      REMCOCHAT_DB_PATH: /app/data/remcochat.sqlite
+      REMCOCHAT_ENABLE_ADMIN: ${REMCOCHAT_ENABLE_ADMIN:-0}
+      VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY:-}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
+    volumes:
+      - remcochat_data:/app/data
+
+volumes:
+  remcochat_data:

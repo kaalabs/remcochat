@@ -10,6 +10,12 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 3. Run: `npm run dev`
 4. Open `http://localhost:3000` (or your machine’s LAN IP)
 
+## Docker (LAN / home server)
+
+1. Create a `.env` file based on `.env.example` and set your `VERCEL_AI_GATEWAY_API_KEY` (or `AI_GATEWAY_API_KEY`).
+2. Run: `docker compose up -d --build`
+3. Open `http://<server-lan-ip>:3100`
+
 ## Data
 
 - SQLite database defaults to `data/remcochat.sqlite` (override with `REMCOCHAT_DB_PATH`).

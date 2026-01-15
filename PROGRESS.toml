@@ -1216,3 +1216,11 @@ summary = "Create a new chat when no active chats remain"
 details = "Adjusted chat refresh/selection so archived chats are never auto-selected when the active chat list becomes empty. When the last active chat is archived or deleted (even if archived chats exist), RemcoChat now creates and selects a new unarchived chat instead."
 tests = ["npm run test:e2e -- -g \"Archiving/deleting last active chat\" (pass)"]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T08:19:18Z"
+type = "chore"
+summary = "Add Docker Compose for LAN hosting"
+details = "Added a `docker-compose.yml` + `Dockerfile` for running RemcoChat on a home server (LAN-only) with a persistent named volume for SQLite data."
+tests = ["docker compose build (pass)"]
+files = ["docker-compose.yml", "Dockerfile", ".dockerignore", "README.md", "PROGRESS.toml"]
