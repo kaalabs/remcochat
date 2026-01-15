@@ -1176,3 +1176,11 @@ summary = "Tighten memory card spacing"
 details = "Centered the brain icon vertically within the card content, removed the default `Card` vertical padding for this component, and tightened the memory card content padding for a more compact look."
 tests = ["npm run test:e2e (pass)"]
 files = ["src/components/memory-card.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T07:21:43Z"
+type = "fix"
+summary = "Prevent profile settings dialog overflow from long memory"
+details = "Constrained the profile settings dialog height and made its body scrollable, and ensured long memory items wrap within the available width so the modal no longer stretches outside the viewport."
+tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]

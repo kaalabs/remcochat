@@ -266,6 +266,64 @@ test("Profile + chat instructions stay effective (WebKit)", async ({
   expect(consoleErrors).toEqual([]);
 });
 
+test("Profile settings stays within viewport with long memory items (WebKit)", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const profileName = `E2E settings memory ${Date.now()}`;
+  await createProfile(page, profileName);
+  await page.getByTestId("sidebar:new-chat").click();
+
+  const profilesRes = await page.request.get("/api/profiles");
+  expect(profilesRes.ok()).toBeTruthy();
+  const profilesJson = (await profilesRes.json()) as {
+    profiles?: Array<{ id: string; name: string }>;
+  };
+  const profileId =
+    profilesJson.profiles?.find((p) => p.name === profileName)?.id ?? "";
+  expect(profileId).toBeTruthy();
+
+  const patchRes = await page.request.patch(`/api/profiles/${profileId}`, {
+    data: { memoryEnabled: true },
+  });
+  expect(patchRes.ok()).toBeTruthy();
+
+  const longToken = "A".repeat(4000);
+  await page
+    .getByTestId("composer:textarea")
+    .fill(`Memorize this, ${longToken}`);
+  await page.getByTestId("composer:submit").click();
+
+  const assistantMessages = page.locator('[data-testid^="message:assistant:"]');
+  await expect
+    .poll(async () => await assistantMessages.count(), {
+      timeout: 120_000,
+      intervals: [100, 250, 500, 1000],
+    })
+    .toBeGreaterThan(0);
+
+  await page.getByTestId("profile:settings-open").click();
+  const dialog = page.getByTestId("profile:settings-dialog");
+  await expect(dialog).toBeVisible({ timeout: 120_000 });
+
+  const viewport = page.viewportSize();
+  expect(viewport).toBeTruthy();
+  const bbox = await dialog.boundingBox();
+  expect(bbox).toBeTruthy();
+  expect(bbox!.width).toBeLessThanOrEqual(viewport!.width - 4);
+  expect(bbox!.height).toBeLessThanOrEqual(viewport!.height - 4);
+
+  const memoryItems = page.getByTestId("profile:memory-item");
+  await expect(memoryItems.first()).toBeVisible({ timeout: 120_000 });
+  await expect(memoryItems.first()).toContainText(longToken.slice(0, 32));
+
+  const wraps = await memoryItems.first().evaluate((el) => {
+    return el.scrollWidth <= el.clientWidth + 1;
+  });
+  expect(wraps).toBeTruthy();
+});
+
 test("Regenerate creates a new variant (WebKit)", async ({ page }) => {
   await page.goto("/");
 

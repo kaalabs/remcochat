@@ -2076,16 +2076,19 @@ export function HomeClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog onOpenChange={setSettingsOpen} open={settingsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Profile settings</DialogTitle>
-          </DialogHeader>
+	      <Dialog onOpenChange={setSettingsOpen} open={settingsOpen}>
+	        <DialogContent
+            className="grid max-h-[calc(100vh-2rem)] grid-rows-[auto_1fr] overflow-hidden sm:max-w-md"
+            data-testid="profile:settings-dialog"
+          >
+	          <DialogHeader>
+	            <DialogTitle>Profile settings</DialogTitle>
+	          </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Custom instructions</div>
-              <Textarea
+	          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+	            <div className="space-y-2">
+	              <div className="text-sm font-medium">Custom instructions</div>
+	              <Textarea
                 className="min-h-[8rem]"
                 data-testid="profile:instructions"
                 onChange={(e) => setProfileInstructionsDraft(e.target.value)}
@@ -2132,21 +2135,24 @@ export function HomeClient({
                     No memories yet.
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {memoryItems.map((m) => (
-                      <div
-                        className="flex items-start justify-between gap-3 rounded-md border bg-card p-3"
-                        key={m.id}
-                      >
-                        <div className="min-w-0 whitespace-pre-wrap text-sm">
-                          {m.content}
-                        </div>
-                        <Button
-                          className="h-8 px-2"
-                          onClick={() => deleteMemory(m.id)}
-                          type="button"
-                          variant="ghost"
-                        >
+	                  <div className="space-y-2">
+	                    {memoryItems.map((m) => (
+	                      <div
+	                        className="flex items-start justify-between gap-3 rounded-md border bg-card p-3"
+	                        key={m.id}
+	                      >
+	                        <div
+                            className="min-w-0 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]"
+                            data-testid="profile:memory-item"
+                          >
+	                          {m.content}
+	                        </div>
+	                        <Button
+	                          className="h-8 shrink-0 px-2"
+	                          onClick={() => deleteMemory(m.id)}
+	                          type="button"
+	                          variant="ghost"
+	                        >
                           Delete
                         </Button>
                       </div>
