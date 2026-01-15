@@ -1280,3 +1280,11 @@ summary = "Match user prompt bubble to chat selector highlight"
 details = "Updated user message bubbles to use `bg-sidebar-accent`/`text-sidebar-accent-foreground`, matching the active chat selector bar styling."
 tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
 files = ["src/components/ai-elements/message.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:40:51Z"
+type = "chore"
+summary = "Bump version to 0.9.2"
+details = "Bumped the app version to 0.9.2 after merging the light-theme UI updates into `main`."
+tests = ["npm run lint (pass, warnings)", "npm run test:e2e (pass)"]
+files = ["package.json", "package-lock.json", "PROGRESS.toml"]
