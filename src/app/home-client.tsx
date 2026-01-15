@@ -180,7 +180,7 @@ export function HomeClient({
   useEffect(() => {
     if (isTemporaryChat) return;
     if (activeChatId && activeChat) return;
-    const first = chats[0]?.id ?? "";
+    const first = chats.find((c) => !c.archivedAt)?.id ?? "";
     if (!first) return;
     setActiveChatId(first);
   }, [activeChat, activeChatId, chats, isTemporaryChat]);
@@ -343,7 +343,8 @@ export function HomeClient({
     const data = (await res.json()) as { chats?: Chat[]; error?: string };
 
     let nextChats = data.chats ?? [];
-    if (input.ensureAtLeastOne && nextChats.length === 0) {
+    const hasUnarchived = nextChats.some((c) => !c.archivedAt);
+    if (input.ensureAtLeastOne && !hasUnarchived) {
       const storedModelId = window.localStorage.getItem(
         lastUsedModelKey(input.profileId)
       );
@@ -361,21 +362,30 @@ export function HomeClient({
       });
       const created = (await createRes.json()) as { chat?: Chat };
       if (createRes.ok && created.chat) {
-        nextChats = [created.chat];
+        nextChats = [created.chat, ...nextChats];
       }
     }
 
     setChats(nextChats);
 
     const storedChatId =
-      input.preferChatId ??
-      window.localStorage.getItem(`remcochat:chatId:${input.profileId}`) ??
-      "";
+      window.localStorage.getItem(`remcochat:chatId:${input.profileId}`) ?? "";
 
-    const nextActiveChatId =
-      nextChats.some((c) => c.id === storedChatId)
+    const preferredChatId =
+      typeof input.preferChatId === "string" ? input.preferChatId : "";
+
+    const storedChat = storedChatId
+      ? nextChats.find((c) => c.id === storedChatId) ?? null
+      : null;
+
+    const storedChatIsUnarchived = storedChat != null && !storedChat.archivedAt;
+    const firstUnarchivedChatId = nextChats.find((c) => !c.archivedAt)?.id ?? "";
+
+    const nextActiveChatId = preferredChatId
+      ? nextChats.find((c) => c.id === preferredChatId)?.id ?? ""
+      : storedChatIsUnarchived
         ? storedChatId
-        : nextChats[0]?.id ?? "";
+        : firstUnarchivedChatId || storedChatId || nextChats[0]?.id || "";
 
     setActiveChatId(nextActiveChatId);
   }, [profileDefaultModelId]);
@@ -453,9 +463,10 @@ export function HomeClient({
         body: JSON.stringify({ profileId: activeProfile.id }),
       }).catch(() => {});
       setArchivedOpen(true);
-      refreshChats({ profileId: activeProfile.id, preferChatId: chatId }).catch(
-        () => {}
-      );
+      refreshChats({
+        profileId: activeProfile.id,
+        ensureAtLeastOne: true,
+      }).catch(() => {});
     },
     [activeProfile, refreshChats, status]
   );

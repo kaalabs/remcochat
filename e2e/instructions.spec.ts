@@ -584,6 +584,69 @@ test("Archive/delete and export work (WebKit)", async ({ page }) => {
   await expect(page.getByTestId(`sidebar:chat:${chatId}`)).toHaveCount(0);
 });
 
+test("Archiving/deleting last active chat never opens archived chat (WebKit)", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await createProfile(page, `E2E Empty chats ${Date.now()}`);
+  await expect(page.getByTestId("sidebar:new-chat")).toBeVisible();
+
+  await page.getByTestId("sidebar:new-chat").click();
+
+  const activeList = page.getByTestId("sidebar:chats-active");
+  const chatButtons = activeList.locator('[data-testid^="sidebar:chat:"]');
+  await expect(chatButtons).toHaveCount(2, { timeout: 120_000 });
+
+  const [newerChatId, olderChatId] = await chatButtons.evaluateAll((els) =>
+    els
+      .map((el) => el.getAttribute("data-testid") || "")
+      .filter(Boolean)
+      .map((id) => id.replace(/^sidebar:chat:/, ""))
+  );
+  expect(newerChatId).toBeTruthy();
+  expect(olderChatId).toBeTruthy();
+  expect(newerChatId).not.toBe(olderChatId);
+
+  await page.getByTestId(`sidebar:chat-menu:${olderChatId}`).click();
+  await page.getByTestId(`chat-action:archive:${olderChatId}`).click();
+  await expect(page.getByTestId(`sidebar:archived-chat:${olderChatId}`)).toBeVisible({
+    timeout: 120_000,
+  });
+
+  await page.getByTestId(`sidebar:chat-menu:${newerChatId}`).click();
+  await page.getByTestId(`chat-action:archive:${newerChatId}`).click();
+  await expect(page.getByTestId(`sidebar:archived-chat:${newerChatId}`)).toBeVisible({
+    timeout: 120_000,
+  });
+
+  await expect(chatButtons).toHaveCount(1, { timeout: 120_000 });
+  const createdChatId =
+    ((await chatButtons.first().getAttribute("data-testid")) ?? "").replace(
+      /^sidebar:chat:/,
+      ""
+    );
+  expect(createdChatId).toBeTruthy();
+  expect([newerChatId, olderChatId]).not.toContain(createdChatId);
+
+  await page.getByTestId(`sidebar:chat-menu:${createdChatId}`).click();
+  await page.getByTestId(`chat-action:delete:${createdChatId}`).click();
+  await page.getByTestId("chat:delete-confirm").click();
+
+  await expect(page.getByTestId(`sidebar:chat:${createdChatId}`)).toHaveCount(0);
+  await expect(chatButtons).toHaveCount(1, { timeout: 120_000 });
+  const afterDeleteChatId =
+    ((await chatButtons.first().getAttribute("data-testid")) ?? "").replace(
+      /^sidebar:chat:/,
+      ""
+    );
+  expect(afterDeleteChatId).toBeTruthy();
+  expect([newerChatId, olderChatId, createdChatId]).not.toContain(afterDeleteChatId);
+
+  await expect(page.getByTestId(`sidebar:archived-chat:${olderChatId}`)).toBeVisible();
+  await expect(page.getByTestId(`sidebar:archived-chat:${newerChatId}`)).toBeVisible();
+});
+
 test("Admin export/reset works (WebKit)", async ({ request }) => {
   const exportRes = await request.get("/api/admin/export");
   expect(exportRes.ok()).toBeTruthy();
