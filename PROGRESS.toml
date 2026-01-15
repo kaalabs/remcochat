@@ -1264,3 +1264,11 @@ summary = "Match prompt bubble and user bubble to sidebar surface"
 details = "Adjusted the prompt area background and user message bubble background to use `bg-sidebar` so they match the left sidebar surface in both light and dark themes."
 tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
 files = ["src/app/home-client.tsx", "src/components/ai-elements/message.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T13:32:16Z"
+type = "ui"
+summary = "Use olive accent for user prompt bubbles"
+details = "Changed user message bubbles (the prompt bubbles) to use `bg-primary` so in light theme they render as `rgb(157, 164, 123)`."
+tests = ["npm run test:e2e (pass)", "npm run lint (pass, warnings)"]
+files = ["src/components/ai-elements/message.tsx", "PROGRESS.toml"]
