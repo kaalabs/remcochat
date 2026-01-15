@@ -1184,3 +1184,11 @@ summary = "Prevent profile settings dialog overflow from long memory"
 details = "Constrained the profile settings dialog height and made its body scrollable, and ensured long memory items wrap within the available width so the modal no longer stretches outside the viewport."
 tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T07:39:30Z"
+type = "ui"
+summary = "Add scrollbar clearance in profile settings"
+details = "Added extra right padding in the scrollable profile settings body so the scrollbar doesn't visually overlap the right borders of the inner setting boxes."
+tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]

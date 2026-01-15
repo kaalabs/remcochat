@@ -2085,7 +2085,7 @@ export function HomeClient({
 	            <DialogTitle>Profile settings</DialogTitle>
 	          </DialogHeader>
 
-	          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+	          <div className="min-h-0 space-y-4 overflow-y-auto pr-4">
 	            <div className="space-y-2">
 	              <div className="text-sm font-medium">Custom instructions</div>
 	              <Textarea
