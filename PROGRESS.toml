@@ -1200,3 +1200,11 @@ summary = "Move profile settings scrollbar closer to dialog edge"
 details = "Split the profile settings body into an outer scroll container with minimal right padding (scrollbar closer to the dialog edge) and an inner content wrapper with right padding (keeps borders clear of the scrollbar)."
 tests = ["npm run test:e2e -- -g \"Profile settings stays within viewport\" (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T07:50:23Z"
+type = "fix"
+summary = "Prevent page-level scrolling of the app canvas"
+details = "Constrained `html`/`body` to the viewport and disabled page overflow so the chat UI can't be scrolled out of view; internal panels keep their own scroll behavior."
+tests = ["npm run test:e2e -- -g \"App canvas stays within viewport\" (pass)"]
+files = ["src/app/layout.tsx", "src/app/globals.css", "e2e/instructions.spec.ts", "PROGRESS.toml"]

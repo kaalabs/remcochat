@@ -453,6 +453,28 @@ test("App shows version (WebKit)", async ({ page }) => {
   );
 });
 
+test("App canvas stays within viewport (WebKit)", async ({ page }) => {
+  await page.goto("/");
+
+  const sizes = await page.evaluate(() => {
+    const vh = window.innerHeight;
+    const doc = document.documentElement;
+    const body = document.body;
+    return {
+      vh,
+      docScroll: doc.scrollHeight,
+      docClient: doc.clientHeight,
+      bodyScroll: body.scrollHeight,
+      bodyClient: body.clientHeight,
+    };
+  });
+
+  expect(sizes.docScroll).toBeLessThanOrEqual(sizes.vh + 4);
+  expect(sizes.bodyScroll).toBeLessThanOrEqual(sizes.vh + 4);
+  expect(sizes.docClient).toBeLessThanOrEqual(sizes.vh + 4);
+  expect(sizes.bodyClient).toBeLessThanOrEqual(sizes.vh + 4);
+});
+
 test("Profile reselect restores composer focus (WebKit)", async ({ page }) => {
   await page.goto("/");
 
