@@ -16,8 +16,10 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - Custom instructions: global + per-chat
 - Memory across chats (opt-in)
 - “Memorize this” (explicit memory capture)
+- Memory-derived answers shown as a card (brain icon)
 - Temporary chat (no history/no memory)
 - Theme (light/dark) + keyboard shortcuts
+- Generative UI tools: weather + forecast cards (Open-Meteo)
 
 ### Later
 - Chat search (`Ctrl/Cmd+K`)
@@ -99,6 +101,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - Implemented roadmap step 11 (polish): shortcuts/focus, archived-collapsible sidebar, accent color, icon-only controls, and consistent minimal styling.
 - Verified via WebKit E2E (real LLM): profile + chat instructions stay effective across turns, and mid-chat chat-instruction updates take effect (see `e2e/instructions.spec.ts`).
 - Verified via WebKit E2E: archive/unarchive, delete, and export endpoints work (see `e2e/instructions.spec.ts`).
+- Verified via WebKit E2E: weather tool renders a weather card (see `e2e/weather-tool.spec.ts`).
 - Next up: pick the next roadmap item.
 
 ## Testing (No Mocks)
@@ -108,6 +111,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - Regenerate adds a variant
   - Edit forks a chat
   - “Memorize this” creates a memory item and it influences a subsequent chat response
+  - Weather tool renders a weather card
   - Export returns expected content
 - Current: `npm run test:e2e` runs a WebKit (Safari-engine) E2E against a dedicated SQLite DB (`data/remcochat-e2e.sqlite`). It uses the real AI Gateway key from your shell (same requirement as `npm run dev/start`).
 

@@ -6,6 +6,8 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   convertToModelMessages,
+  hasToolCall,
+  stepCountIs,
   streamText,
   type UIMessage,
 } from "ai";
@@ -14,6 +16,7 @@ import { listProfileMemory } from "@/server/memory";
 import { createMemoryItem } from "@/server/memory";
 import { gateway } from "@ai-sdk/gateway";
 import crypto from "node:crypto";
+import { tools } from "@/ai/tools";
 
 export const maxDuration = 30;
 
@@ -83,6 +86,9 @@ function buildSystemPrompt(input: {
     "Instructions are authoritative and apply to every assistant message unless updated.",
     "If instructions are updated mid-chat, the newest instruction revisions override any prior assistant messages; treat older assistant messages as stale examples.",
     'Never store memory automatically. To store something, the user must send: "Memorize this, <thing>".',
+    'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
+    'If the user asks about current weather for a location, call the "displayWeather" tool instead of guessing.',
+    'If the user asks for a multi-day forecast for a location, call the "displayWeatherForecast" tool instead of guessing.',
     "",
     "Current instructions (apply these exactly; newest revisions win):",
     `Profile instructions (revision ${profileRevision}; lower priority):\n${profileInstructions}`,
@@ -138,6 +144,42 @@ function uiTextResponse(input: {
       writer.write({ type: "text-start", id: messageId });
       writer.write({ type: "text-delta", id: messageId, delta: input.text });
       writer.write({ type: "text-end", id: messageId });
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream });
+}
+
+function uiMemoryAnswerResponse(input: {
+  answer: string;
+  messageMetadata?: RemcoChatMessageMetadata;
+}) {
+  const messageId = nanoid();
+  const toolCallId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({
+        type: "tool-input-available",
+        toolCallId,
+        toolName: "displayMemoryAnswer",
+        input: { answer: input.answer },
+      });
+      writer.write({
+        type: "tool-output-available",
+        toolCallId,
+        output: { answer: input.answer },
+      });
       writer.write({
         type: "finish",
         finishReason: "stop",
@@ -220,6 +262,13 @@ export async function POST(req: Request) {
       system,
       messages: modelMessages,
       temperature: 0,
+      stopWhen: [
+        hasToolCall("displayWeather"),
+        hasToolCall("displayWeatherForecast"),
+        hasToolCall("displayMemoryAnswer"),
+        stepCountIs(5),
+      ],
+      tools,
     });
 
     return result.toUIMessageStreamResponse({
@@ -294,8 +343,8 @@ export async function POST(req: Request) {
     }
 
     createMemoryItem({ profileId: profile.id, content: memorizeContent });
-    return uiTextResponse({
-      text: "Saved to memory.",
+    return uiMemoryAnswerResponse({
+      answer: "Saved to memory.",
       messageMetadata: {
         createdAt: now,
         turnUserMessageId: lastUserMessageId || undefined,
@@ -309,12 +358,12 @@ export async function POST(req: Request) {
   if (profile.memoryEnabled) {
     const memory = listProfileMemory(profile.id);
     if (memory.length > 0) {
-      const lines = memory
+      const items = memory
         .slice(0, 50)
-        .map((m) => `- ${m.content.replace(/\s+/g, " ").trim()}`)
+        .map((m) => m.content.replace(/\s+/g, " ").trim())
         .filter(Boolean);
-      if (lines.length > 0) {
-        memoryLines.push(...lines);
+      if (items.length > 0) {
+        memoryLines.push(...items.map((i) => `- ${i}`));
       }
     }
   }
@@ -398,10 +447,16 @@ export async function POST(req: Request) {
     system,
     messages: modelMessages,
     temperature: isRegenerate ? 0.9 : 0,
+    stopWhen: [
+      hasToolCall("displayWeather"),
+      hasToolCall("displayWeatherForecast"),
+      hasToolCall("displayMemoryAnswer"),
+      stepCountIs(5),
+    ],
+    tools,
   });
 
-  return result.toUIMessageStreamResponse({
-    headers: {
+  const headers = {
       "x-remcochat-api-version": REMCOCHAT_API_VERSION,
       "x-remcochat-temporary": "0",
       "x-remcochat-profile-id": profile.id,
@@ -422,13 +477,18 @@ export async function POST(req: Request) {
       "x-remcochat-profile-instructions-stored-hash": hash8(
         storedProfileInstructions
       ),
-    },
+    };
+
+  const messageMetadata = () => ({
+    createdAt: now,
+    turnUserMessageId: lastUserMessageId || undefined,
+    profileInstructionsRevision: currentProfileRevision,
+    chatInstructionsRevision: currentChatRevision,
+  });
+
+  return result.toUIMessageStreamResponse({
+    headers,
     generateMessageId: nanoid,
-    messageMetadata: () => ({
-      createdAt: now,
-      turnUserMessageId: lastUserMessageId || undefined,
-      profileInstructionsRevision: currentProfileRevision,
-      chatInstructionsRevision: currentChatRevision,
-    }),
+    messageMetadata,
   });
 }

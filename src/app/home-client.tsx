@@ -42,6 +42,11 @@ import { useChat } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { MessageActions, MessageAction } from "@/components/ai-elements/message";
+import { Weather } from "@/components/weather";
+import { WeatherForecast } from "@/components/weather-forecast";
+import { MemoryCard } from "@/components/memory-card";
+import type { WeatherToolOutput } from "@/ai/weather";
+import type { WeatherForecastToolOutput } from "@/ai/weather";
 import {
 	  ArchiveIcon,
 	  BookmarkIcon,
@@ -1595,6 +1600,10 @@ export function HomeClient({
                   return messages.map(({ id, role, parts, metadata }) => {
                     if (role === "user") lastUserMessageId = id;
 
+                    const hasMemoryAnswerCard =
+                      role === "assistant" &&
+                      parts.some((p) => p.type === "tool-displayMemoryAnswer");
+
                     const turnUserMessageId =
                       role === "assistant"
                         ? metadata?.turnUserMessageId ?? lastUserMessageId
@@ -1663,15 +1672,124 @@ export function HomeClient({
                       >
                         <MessageContent>
                           {parts.map((part, index) => {
-                            if (part.type !== "text") return null;
-                            return (
-                              <MessageResponse
-                                className="prose-neutral dark:prose-invert"
-                                key={`${id}-${index}`}
-                              >
-                                {part.text}
-                              </MessageResponse>
-                            );
+                            if (part.type === "text") {
+                              if (hasMemoryAnswerCard) return null;
+                              return (
+                                <MessageResponse
+                                  className="prose-neutral dark:prose-invert"
+                                  key={`${id}-${index}`}
+                                >
+                                  {part.text}
+                                </MessageResponse>
+                              );
+                            }
+
+                            if (part.type === "tool-displayMemoryAnswer") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Retrieving from memory…
+                                    </div>
+                                  );
+                                case "output-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <MemoryCard
+                                        answer={
+                                          typeof (part.output as { answer?: unknown })
+                                            ?.answer === "string"
+                                            ? (part.output as { answer: string }).answer
+                                            : ""
+                                        }
+                                      />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Memory error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayWeather") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Fetching weather…
+                                    </div>
+                                  );
+                                case "output-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <Weather {...(part.output as WeatherToolOutput)} />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Weather error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayWeatherForecast") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Fetching forecast…
+                                    </div>
+                                  );
+                                case "output-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <WeatherForecast
+                                        {...(part.output as WeatherForecastToolOutput)}
+                                      />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Forecast error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            return null;
                           })}
                         </MessageContent>
 

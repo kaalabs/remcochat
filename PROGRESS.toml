@@ -995,3 +995,184 @@ tests = [
   "npm run test:e2e -- -g \"Profile reselect restores composer focus\" (pass)",
 ]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:48:02Z"
+type = "feat"
+summary = "Add weather tool (generative UI)"
+details = "Added a `displayWeather` tool backed by Open-Meteo (geocoding + forecast), wired it into `/api/chat` tool-calling, and rendered the returned tool part as a Weather card in the chat UI."
+tests = ["npm run lint (pass; warnings exist in other files)", "npm run build (pass)", "npm run test:e2e (pass)"]
+files = [
+  "src/ai/weather.ts",
+  "src/ai/tools.ts",
+  "src/app/api/chat/route.ts",
+  "src/components/weather.tsx",
+  "src/app/home-client.tsx",
+  "e2e/weather-tool.spec.ts",
+  "package.json",
+  "package-lock.json",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-15T04:57:33Z"
+type = "fix"
+summary = "Stop after weather tool call to avoid duplicate text"
+details = "Adjusted `/api/chat` to stop the tool-calling loop immediately after `displayWeather` is invoked so the UI card isn't followed by a redundant textual summary."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card\" (pass)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:01:39Z"
+type = "ui"
+summary = "Add condition icons to weather card"
+details = "Rendered a small Lucide icon for current conditions and each forecast day (mapped from Open-Meteo weather codes) to make the weather card more glanceable."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card\" (pass)"]
+files = ["src/ai/weather.ts", "src/components/weather.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:07:24Z"
+type = "ui"
+summary = "Align weather card daily rows"
+details = "Switched the daily forecast rows to a fixed column grid (day / icon / condition / temps) so values line up cleanly across rows."
+tests = ["npm run build (pass)"]
+files = ["src/components/weather.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:11:51Z"
+type = "feat"
+summary = "Add weather forecast tool + card"
+details = "Added a separate `displayWeatherForecast` tool (7-day default) and a Forecast card renderer, plus stopping behavior to avoid redundant text after tool output."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Forecast tool renders a card\" (pass)"]
+files = [
+  "src/ai/weather.ts",
+  "src/ai/tools.ts",
+  "src/app/api/chat/route.ts",
+  "src/components/weather-icons.ts",
+  "src/components/weather.tsx",
+  "src/components/weather-forecast.tsx",
+  "src/app/home-client.tsx",
+  "e2e/weather-tool.spec.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-15T05:16:57Z"
+type = "ui"
+summary = "Polish weather + forecast card styling"
+details = "Improved visual hierarchy and polish: gradient card backgrounds, icon chips, badges for 'Now' / day range, and hoverable aligned forecast rows."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:20:15Z"
+type = "ui"
+summary = "Move current condition icon next to temperature"
+details = "Adjusted the weather card layout so the current condition icon sits directly next to the current temperature (and is larger), instead of being placed in the header."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:25:03Z"
+type = "ui"
+summary = "Use sunny sky-blue card backgrounds"
+details = "Updated weather and forecast cards to use a brighter sky-blue gradient background while keeping dark mode subtle."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:27:23Z"
+type = "ui"
+summary = "Reduce dark background in weather cards"
+details = "Adjusted dark-mode gradients and header surfaces to avoid the cards looking overly black while keeping contrast and readability."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:31:25Z"
+type = "ui"
+summary = "Add condition-based tinting to weather cards"
+details = "Kept the sky-blue base but varied the gradient end color + accent icon color based on the Open-Meteo weather code (sunny=warm amber, rain=blue, snow=indigo, etc.)."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather-theme.ts", "src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:33:52Z"
+type = "revert"
+summary = "Revert condition-based tinting on weather cards"
+details = "Removed per-condition background/icon tinting because it looked confusing; restored a consistent sunny sky-blue background for both cards."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:36:43Z"
+type = "ui"
+summary = "Use solid sky-blue weather card backgrounds"
+details = "Removed gradients from weather + forecast cards and switched to solid sky-blue backgrounds for a simpler, less distracting look."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather.tsx", "src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T05:41:00Z"
+type = "fix"
+summary = "Prevent forecast header icon clipping"
+details = "Made the forecast header left content shrinkable and the calendar icon container non-shrinking so the icon never gets clipped when the header text wraps."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Forecast tool renders a card\" (pass)"]
+files = ["src/components/weather-forecast.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T06:19:23Z"
+type = "feat"
+summary = "Show memory usage as a card in chat"
+details = "When profile memory is enabled and non-empty, `/api/chat` injects a `data-memory` part into assistant responses so the UI can render a distinct 'Memory used' card (brain icon, brown/amber styling) to clearly indicate context coming from saved memory."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Memory retrieval shows a memory card\" (pass)"]
+files = [
+  "src/components/memory-card.tsx",
+  "src/app/api/chat/route.ts",
+  "src/app/home-client.tsx",
+  "e2e/memory-card.spec.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-15T06:25:14Z"
+type = "ui"
+summary = "Remove explanatory text from memory card"
+details = "Simplified the memory card so it only shows the retrieved memory text (plus the brain icon), removing labels/description and the '...and more' footer."
+tests = ["npm run build (pass)", "npm run test:e2e -- -g \"Memory retrieval shows a memory card\" (pass)"]
+files = ["src/components/memory-card.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T06:39:25Z"
+type = "feat"
+summary = "Show memory-derived answers inside a memory card"
+details = "Replaced the `data-memory` injection with a `displayMemoryAnswer` tool so memory-derived answers render exclusively inside the brown/amber brain card. The UI suppresses normal assistant text for that message so there is no duplicate response outside the card."
+tests = ["npm run test:e2e -- -g \"Memory retrieval\" (pass)"]
+files = [
+  "src/ai/tools.ts",
+  "src/app/api/chat/route.ts",
+  "src/app/home-client.tsx",
+  "src/components/memory-card.tsx",
+  "e2e/memory-card.spec.ts",
+  "PLAN.md",
+  "PROGRESS.toml",
+]
+
+[[events]]
+ts = "2026-01-15T06:57:54Z"
+type = "ui"
+summary = "Render 'Saved to memory' as a brain card"
+details = "Changed the explicit memory-save confirmation ('Saved to memory.') to return a `displayMemoryAnswer` tool part so it renders as the same brown/amber brain card (with no standalone assistant text)."
+tests = ["npm run test:e2e -- -g \"Memory retrieval\" (pass)"]
+files = ["src/app/api/chat/route.ts", "e2e/memory-card.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T07:09:20Z"
+type = "ui"
+summary = "Tighten memory card spacing"
+details = "Centered the brain icon vertically within the card content, removed the default `Card` vertical padding for this component, and tightened the memory card content padding for a more compact look."
+tests = ["npm run test:e2e (pass)"]
+files = ["src/components/memory-card.tsx", "PROGRESS.toml"]
