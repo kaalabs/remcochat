@@ -1,43 +1,109 @@
 # llm-api-overview.toml
-# Purpose: Map common LLM API interaction patterns to Vercel AI SDK v6 primitives.
+# Purpose: Common LLM provider API interaction patterns, plus mapping to Vercel AI SDK v6 primitives.
+# Note: This file also includes a "model API type" matrix (e.g. openai_response, openai_completions, anthropic_messages).
 # Generated: 2026-01-15
 
 [meta]
-title = "LLM API Types Overview"
-version = "1.0"
+title = "LLM API Types Overview (incl. Vercel AI SDK v6 mapping)"
+version = "1.1"
 generated_at = "2026-01-15"
 language = "nl"
-scope = "LLM provider API interaction patterns + mapping to Vercel AI SDK v6"
-primary_reference = "https://vercel.com/blog/ai-sdk-6"
-secondary_references = [
-  "https://ai-sdk.dev/docs/reference/ai-sdk-core",
+
+references = [
+  "https://vercel.com/blog/ai-sdk-6",
+  "https://ai-sdk.dev/docs/announcing-ai-sdk-6-beta",
+  "https://ai-sdk.dev/providers/ai-sdk-providers/openai",
+  "https://ai-sdk.dev/providers/ai-sdk-providers/anthropic",
   "https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text",
   "https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text",
   "https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling",
-  "https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data",
   "https://ai-sdk.dev/docs/reference/ai-sdk-core/embed",
-  "https://ai-sdk.dev/docs/reference/ai-sdk-core/embed-many",
   "https://ai-sdk.dev/docs/reference/ai-sdk-core/rerank",
-  "https://vercel.com/docs/ai-sdk",
 ]
 
 [vercel_ai_sdk_v6]
 core_package = "ai"
+provider_packages_examples = ["@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/cohere"]
 key_primitives = [
   "generateText()",
   "streamText()",
   "Output.object() (structured output via generateText/streamText)",
   "tools + stopWhen (multi-step tool calling loop)",
-  "Agent class (higher-level agent loop abstraction)",
+  "Agent class (higher-level agent abstraction)",
   "embed()/embedMany() (embeddings)",
   "rerank() (reranking models)",
-  "generateImage(), experimental_transcribe(), experimental_generateSpeech() (other modalities)",
 ]
-provider_routing_note = "AI SDK offers a unified provider architecture; commonly used with Vercel AI Gateway or direct provider packages."
-structured_output_note = "generateObject()/streamObject() exist but are deprecated in favor of generateText/streamText with Output.*."
+provider_routing_note = "AI SDK is provider-agnostic. Underlying provider API families are chosen by the provider package (or by explicit factory selection, e.g. openai.responses/openai.chat/openai.completion)."
+structured_output_note = "generateObject()/streamObject() exist but are deprecated in favor of generateText/streamText with Output.* in v6 docs."
 
-# Each entry below is a 'table row' in TOML form.
-# The intention is that you can render this as a table in tooling, or read it directly.
+# -----------------------------------------------------------------------------
+# Provider-level model API types (the 'API family' a model call goes through)
+# -----------------------------------------------------------------------------
+
+[[model_api_types]]
+id = "openai_response"
+provider = "openai"
+kind = "language_model"
+api_family = "responses"
+http_endpoint = "/v1/responses"
+ai_sdk_package = "@ai-sdk/openai"
+ai_sdk_factory = "openai('gpt-5') OR openai.responses('gpt-5')"
+notes = [
+  "Default API family for the OpenAI provider since AI SDK 5.",
+  "Best fit when you want the modern OpenAI stack (tools/structured/multimodal, model-dependent).",
+]
+
+[[model_api_types]]
+id = "openai_chat_completions"
+provider = "openai"
+kind = "language_model"
+api_family = "chat_completions"
+http_endpoint = "/v1/chat/completions"
+ai_sdk_package = "@ai-sdk/openai"
+ai_sdk_factory = "openai.chat('gpt-5')"
+notes = [
+  "Explicitly selects the Chat Completions API family.",
+]
+
+[[model_api_types]]
+id = "openai_completions"
+provider = "openai"
+kind = "language_model"
+api_family = "completions"
+http_endpoint = "/v1/completions"
+ai_sdk_package = "@ai-sdk/openai"
+ai_sdk_factory = "openai.completion('gpt-3.5-turbo-instruct')"
+notes = [
+  "Legacy-style completion API family; in AI SDK docs currently only gpt-3.5-turbo-instruct is supported via .completion().",
+]
+
+[[model_api_types]]
+id = "openai_embeddings"
+provider = "openai"
+kind = "embedding_model"
+api_family = "embeddings"
+http_endpoint = "/v1/embeddings"
+ai_sdk_package = "@ai-sdk/openai"
+ai_sdk_factory = "openai.embedding('text-embedding-3-large')"
+notes = [
+  "Used with embed()/embedMany().",
+]
+
+[[model_api_types]]
+id = "anthropic_messages"
+provider = "anthropic"
+kind = "language_model"
+api_family = "messages"
+http_endpoint = "/v1/messages"
+ai_sdk_package = "@ai-sdk/anthropic"
+ai_sdk_factory = "anthropic('claude-3-haiku-20240307')"
+notes = [
+  "Anthropic provider uses the Messages API family.",
+]
+
+# -----------------------------------------------------------------------------
+# API interaction types (conceptual patterns), mapped to AI SDK v6 + model API types
+# -----------------------------------------------------------------------------
 
 [[api_types]]
 id = "completion_api"
@@ -49,6 +115,9 @@ operational_notes = [
   "Je beheert context zelf: alles wat het model moet weten stuur je mee per request.",
   "Goed voor eenvoudige pipelines zonder chatgeschiedenis.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_completions", "openai_response"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 sync = "generateText({ model, prompt })"
 streaming = "streamText({ model, prompt })"
@@ -59,11 +128,14 @@ tools = "generateText/streamText({ tools, stopWhen })"
 id = "chat_messages_api"
 name = "Chat / Messages (conversation -> response)"
 provider_level = "Array van messages met rollen; conversational context in de request."
-typical_provider_endpoints = ["chat completions", "responses (messages)"]
+typical_provider_endpoints = ["chat completions", "responses (messages)", "anthropic messages"]
 typical_use_cases = ["chatbots", "assistants", "multi-turn flows", "system prompts + beleid"]
 operational_notes = [
   "Ook hier blijft context window management jouw verantwoordelijkheid (truncation/samenvatting).",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 sync = "generateText({ model, messages })"
 streaming = "streamText({ model, messages })"
@@ -79,6 +151,9 @@ typical_use_cases = ["chat UI", "lage perceived latency", "progressieve renderin
 operational_notes = [
   "Vereist client-side stream verwerking en cancel/retry logica.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions", "openai_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 core = "streamText()"
 ui_helpers = "AI SDK UI hooks (bv. useChat) kunnen server streaming consumeren (framework afhankelijk)."
@@ -93,24 +168,28 @@ operational_notes = [
   "Altijd argument-validatie en autorisatie toepassen; behandel tool input als onbetrouwbaar.",
   "Multi-step tool loops (tool -> result -> vervolgprompt) zijn essentieel voor agentic gedrag.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 core = "generateText/streamText({ tools })"
 multi_step = "stopWhen + tool results (SDK voert tool-call loop uit totdat stop-conditie geldt)"
-provider_specific_tools = "AI SDK 6 voegt provider tools toe (platform-specifieke capabilities)."
 
 [[api_types]]
 id = "structured_output_api"
 name = "Structured output (schema-constrained JSON)"
 provider_level = "Model output moet valide JSON/object conform schema zijn (extractie, classificatie, forms)."
-typical_provider_endpoints = ["JSON mode", "schema-constrained outputs", "tool-calling + structured return"]
+typical_provider_endpoints = ["Structured Outputs / JSON mode", "tool-calling + structured return"]
 typical_use_cases = ["information extraction", "ETL", "form parsing", "typed outputs voor backends"]
 operational_notes = [
   "Valideer output altijd (schema) en ontwerp schema's compact om foutkans te beperken.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 preferred = "generateText/streamText({ output: Output.object({ schema }) })"
 deprecation_note = "generateObject()/streamObject() zijn deprecated; Output.* is de aanbevolen route."
-tool_interop = "Tools + output kan; SDK behandelt structured generation als extra stap."
 
 [[api_types]]
 id = "embeddings_api"
@@ -121,6 +200,8 @@ typical_use_cases = ["RAG retrieval", "semantische search", "clustering", "dedup
 operational_notes = [
   "Gebruik een vector index/database; beheer dimensionaliteit en normalisatie consistent.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_embeddings"]
 [api_types.vercel_ai_sdk_v6]
 single = "embed({ model, value })"
 batch = "embedMany({ model, values })"
@@ -129,13 +210,14 @@ batch = "embedMany({ model, values })"
 id = "reranking_api"
 name = "Reranking (query + kandidaten -> herordening)"
 provider_level = "Model rangschikt documenten/kandidaten op relevantie; vaak gebruikt na vector search."
-typical_provider_endpoints = ["rerank / reranking models"]
-typical_use_cases = ["betere top-k context voor RAG", "search relevance", "email/doc triage"]
+typical_provider_endpoints = ["rerank / reranking models (provider-specifiek)"]
+typical_use_cases = ["betere top-k context voor RAG", "search relevance", "triage van resultaten"]
 operational_notes = [
   "Rerank pas toe op een beperkt kandidaat-set (bv. top 20-200) na retrieval om kosten te beperken.",
 ]
 [api_types.vercel_ai_sdk_v6]
 core = "rerank({ model, query, documents, topN })"
+model_factory_examples = "bv. cohere.reranking('rerank-v3.5') (provider-specifiek)"
 
 [[api_types]]
 id = "multimodal_api"
@@ -146,21 +228,25 @@ typical_use_cases = ["vision Q&A", "document understanding", "transcriptie", "sp
 operational_notes = [
   "Let op grotere payloads, latency en privacy; voorkom dat je onnodig binaire data logt.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 vision_text = "generateText({ messages: [{ content: [{ type: 'text' }, { type: 'image' }] }] })"
-image_generation = "generateImage({ model, prompt, ... })"
-transcription = "experimental_transcribe({ model, audio })"
-speech = "experimental_generateSpeech({ model, text })"
+audio_note = "Audio endpoints zijn provider-/model-afhankelijk; AI SDK biedt aparte helpers bij sommige providers."
 
 [[api_types]]
 id = "agent_abstraction_api"
 name = "Agent abstraction (loop + tools + policy)"
 provider_level = "Hoger niveau orchestratie bovenop chat/tools; beheert loops en configuratie herbruikbaar."
-typical_provider_endpoints = ["(geen aparte provider endpoint; meestal bovenop chat/responses + tools)"]
+typical_provider_endpoints = ["(geen aparte provider endpoint; meestal bovenop LLM + tools)"]
 typical_use_cases = ["autonome taken", "multi-tool workflows", "research agents", "ops runbooks"]
 operational_notes = [
   "Agent frameworks verbergen vaak complexiteit; behoud observability (logs/traces) en grenzen.",
 ]
+[api_types.model_api_matrix]
+openai = ["openai_response", "openai_chat_completions"]
+anthropic = ["anthropic_messages"]
 [api_types.vercel_ai_sdk_v6]
 recommended = "Agent class (AI SDK 6) voor herbruikbare agents"
 low_level_alternative = "generateText/streamText + stopWhen voor maximale controle"
@@ -169,12 +255,12 @@ low_level_alternative = "generateText/streamText + stopWhen voor maximale contro
 id = "batch_async_provider_api"
 name = "Batch/Async processing (provider-side jobs)"
 provider_level = "Asynchroon job model bij providers (bulk requests, goedkoper, langere turnaround)."
-typical_provider_endpoints = ["provider batch APIs (bv. OpenAI Batch, Gemini Batch)"]
+typical_provider_endpoints = ["provider batch APIs (verschilt per provider)"]
 typical_use_cases = ["offline evaluaties", "massale documentverwerking", "nachtjobs"]
 operational_notes = [
   "Niet elke provider ondersteunt dit, en semantiek verschilt per provider.",
-  "In AI SDK: embeddings hebben wel batch (embedMany); voor LLM batch jobs gebruik je doorgaans provider-specifieke batch endpoints/SDK of je eigen queue + parallel generateText calls.",
+  "AI SDK Core heeft geen uniforme 'batch LLM jobs' primitive; je gebruikt provider batch endpoints of bouwt zelf een queue/worker met parallel generateText calls.",
 ]
 [api_types.vercel_ai_sdk_v6]
 embedding_batch = "embedMany()"
-llm_batch_jobs = "Geen uniforme AI SDK Core primitive; gebruik provider batch API’s of eigen job-queue (worker) aanpak."
+llm_batch_jobs = "Provider-specifiek of eigen queue/worker aanpak."
