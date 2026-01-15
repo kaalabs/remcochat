@@ -995,3 +995,66 @@ tests = [
   "npm run test:e2e -- -g \"Profile reselect restores composer focus\" (pass)",
 ]
 files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T03:40:31Z"
+type = "ui"
+summary = "Soften light theme background"
+details = "Changed the light theme page background from pure white to a slightly softer off-white; added a small Playwright smoke test to assert the light theme background isn't pure white."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/globals.css", "e2e/theme.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T03:50:10Z"
+type = "fix"
+summary = "Restore local model allowlist entry"
+details = "Re-added a locally-added (uncommitted) model allowlist entry that was accidentally reverted while undoing an unrelated formatting change."
+files = ["src/lib/models.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T03:59:59Z"
+type = "ui"
+summary = "Soften main surface background (light)"
+details = "Made the non-sidebar light theme surfaces slightly softer by nudging `--background`, `--card`, and `--popover` away from pure white while keeping the left sidebar on `--sidebar`."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/globals.css", "e2e/theme.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:02:45Z"
+type = "ui"
+summary = "Soften main surfaces further (light)"
+details = "Further softened the non-sidebar light theme surfaces by lowering `--background` and slightly lowering `--card`/`--popover`, keeping the sidebar unchanged."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/globals.css", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:05:58Z"
+type = "ui"
+summary = "Add contrast for chat bubbles"
+details = "Added subtle `bg-*` + border styling for assistant messages and a border for user messages so both bubbles stay visually distinct from the softened main background."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/components/ai-elements/message.tsx", "e2e/theme.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:09:40Z"
+type = "ui"
+summary = "Increase chat bubble contrast further"
+details = "Introduced dedicated light-theme bubble colors (`--message-user`/`--message-assistant`) and applied them to user/assistant bubbles with a stronger border and subtle shadow."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/globals.css", "src/components/ai-elements/message.tsx", "e2e/theme.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:11:39Z"
+type = "ui"
+summary = "Increase user bubble contrast"
+details = "Darkened the user bubble background in light theme (`--message-user`) so user messages stand out more against the softened main background while keeping assistant bubbles unchanged."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/globals.css", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-15T04:16:54Z"
+type = "ui"
+summary = "Match composer background to sidebar (light)"
+details = "Changed the composer form background to `bg-sidebar` in light theme so the input area matches the left sidebar background; dark theme keeps using `bg-card`."
+tests = ["VERCEL_AI_GATEWAY_API_KEY=dummy npx playwright test e2e/theme.spec.ts (pass)"]
+files = ["src/app/home-client.tsx", "e2e/theme.spec.ts", "PROGRESS.toml"]

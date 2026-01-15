@@ -1793,7 +1793,7 @@ export function HomeClient({
 	            <div className="mx-auto w-full max-w-3xl">
 	              <PromptInput
 	                className={
-	                  "bg-card " +
+	                  "bg-sidebar dark:bg-card " +
 	                  (isTemporaryChat
 	                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
 	                    : "")
