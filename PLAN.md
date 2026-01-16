@@ -15,11 +15,12 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - Model selector
 - Custom instructions: global + per-chat
 - Memory across chats (opt-in)
-- “Memorize this” (explicit memory capture)
+- “Memorize this” (explicit memory capture with confirmation + remember/save intents)
+- Intent router (cheap LLM gate) for memory/weather workflows
 - Memory-derived answers shown as a card (brain icon)
 - Temporary chat (no history/no memory)
 - Theme (light/dark) + keyboard shortcuts
-- Generative UI tools: weather + forecast cards (Open-Meteo)
+- Generative UI tools: weather + forecast cards (Open-Meteo), to-do/grocery list cards (shareable across profiles), timezones card, URL summary card, quick notes card
 
 ### Later
 - Chat search (`Ctrl/Cmd+K`)
@@ -59,7 +60,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - **Prompt assembly order:**
   1. Per-chat instructions (highest priority; if set, they suppress global profile instructions to avoid conflicts across providers)
   2. Global profile instructions (only when chat instructions are empty)
-  3. (If enabled) profile memory (captured explicitly via “Memorize this”; lowest priority)
+  3. (If enabled) profile memory (captured explicitly via “Memorize this” / remember/save intents + confirmation; lowest priority)
   4. Conversation messages
 
 ## Data Model (Suggested)
@@ -80,7 +81,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - **Variants:** per-turn pager (1/N) + “Regenerate”.
 - **Fork + variants:** when you edit+fork a user message, the fork preserves the original (pre-edit) assistant response(s) as variants so you can page back to them after regenerating the edited turn.
 - **Model selector:** minimal dropdown (restricted to an allowlist), stored per-chat; defaults from profile; “New chat” seeds with the last-used model.
-- **Memory capture:** per-message action “Memorize this” that saves a user-selected snippet (or the full message) into profile memory.
+- **Memory capture:** per-message action “Memorize this” (or remember/save in chat) that saves a user-selected snippet (or the full message) into profile memory after confirmation.
 - **Composer:** AI Elements `PromptInput`; `Cmd/Ctrl+Enter` send; `Esc` stop.
 - **Keyboard shortcuts (polish):** `Esc` stop streaming, `Cmd/Ctrl+/` focus composer, `Cmd/Ctrl+Shift+N` new chat, `Cmd/Ctrl+Shift+L` toggle theme.
 - **Settings:** global instructions, per-chat instructions, memory toggle + memory editor, temporary chat toggle, theme toggle.
@@ -96,7 +97,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 8. Add edit + branch: editing a past user message **forks** a new chat (copy messages up to that point, replace edited message).
 9. Add instructions + memory + temporary chat:
    - Global/per-chat instructions
-   - “Memorize this” action → saves memory items + inclusion in system prompt
+   - “Memorize this” action → saves memory items (after confirmation) + inclusion in system prompt
    - Memory list management (view/delete; edit optional)
    - Temporary chat bypasses persistence + does not read/update memory
 10. Add archive/delete + export endpoints: Markdown + JSON.

@@ -1427,3 +1427,147 @@ summary = "Add model capabilities to config and apply them at runtime"
 details = "Extended `config.toml` model entries with a required `capabilities` block (tools, temperature, attachments, structured_output). `/api/providers` now exposes per-model capabilities, and `/api/chat` respects them: it disables tool calling (no tools passed + no tool instructions in the system prompt) when `tools=false`, and omits the `temperature` parameter when `temperature=false`. Updated `config.toml.example` and E2E config generation accordingly and added an E2E test to verify that a tools-disabled model returns plain text with no tool chunks."
 tests = ["npm run test:e2e (27 passed, 1 skipped)"]
 files = ["src/server/config.ts", "src/server/llm-provider.ts", "src/app/api/chat/route.ts", "src/app/api/providers/route.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "config.toml.example", "PLAN.md", "e2e/model-capabilities.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T17:12:38Z"
+type = "feat"
+summary = "Require confirmation before saving chat memory"
+details = "Updated the system prompt and chat memory command flow to ask for explicit confirmation before saving. Added pending-memory storage with confirmation/cancel handling, refreshed copy in the profile settings UI, and updated the memory-related E2E coverage for the two-step flow."
+tests = ["npm run test:e2e -- -g \"Memory retrieval shows a memory card|Profile settings stays within viewport with long memory items\" (pass)"]
+files = ["src/server/db.ts", "src/server/pending-memory.ts", "src/server/admin.ts", "src/app/api/chat/route.ts", "src/app/home-client.tsx", "e2e/memory-card.spec.ts", "e2e/instructions.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T17:19:03Z"
+type = "feat"
+summary = "Expand memory intent detection beyond \"Memorize this\""
+details = "Extended the chat-side memory capture parser to recognize natural-language intents (remember/save/store/note, including \"...to memory\" forms) while still requiring confirmation before saving. Updated UI copy + plan notes and adjusted the memory-related E2E flows to use the new phrasing."
+tests = ["npm run test:e2e -- -g \"Memory retrieval shows a memory card|Profile settings stays within viewport with long memory items\" (pass)"]
+files = ["src/app/api/chat/route.ts", "src/app/home-client.tsx", "e2e/memory-card.spec.ts", "e2e/instructions.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T18:04:37Z"
+type = "feat"
+summary = "Add server-side intent router for memory and weather workflows"
+details = "Introduced an LLM-backed intent router that classifies memory/weather intents server-side and routes `/api/chat` accordingly (memory confirmation or weather tool cards). Added router config (provider/model/min_confidence/max_input_chars), provider-scoped model resolution, and a prefilter to skip routing for generic questions. Hardened structured-output schema requirements for Vercel AI Gateway and aligned the memory E2E wait with the two-message confirmation flow."
+tests = ["npm run test:e2e -- -g \"Memory retrieval shows a memory card|Weather tool renders a card|Forecast tool renders a card\" (pass)"]
+files = ["src/server/intent-router.ts", "src/server/config.ts", "src/server/llm-provider.ts", "src/app/api/chat/route.ts", "scripts/check-env.mjs", "config.toml.example", "e2e/memory-card.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T18:20:45Z"
+type = "fix"
+summary = "Skip weather routing when tools are disabled"
+details = "Adjusted intent routing so weather intents only short-circuit to tool UI when the resolved model allows tools, preventing tool chunks for tools-disabled models. Added typed model resolution caching to keep the router/tool gate explicit."
+tests = ["npm run test:e2e (27 passed, 1 skipped)"]
+files = ["src/app/api/chat/route.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T18:43:12Z"
+type = "feat"
+summary = "Show memory confirmation as a prompt card with buttons"
+details = "Replaced the text confirmation prompt with a memory-styled card that includes Yes/No actions. Added a memory prompt card component, streamed it via a new UI tool part, and updated E2E coverage to click the prompt buttons and accept either a memory card or plain-text answer for retrieval."
+tests = ["npm run test:e2e -- -g \"Memory retrieval shows a memory card|Profile settings stays within viewport with long memory items\" (pass)"]
+files = ["src/components/memory-prompt-card.tsx", "src/app/api/chat/route.ts", "src/app/home-client.tsx", "e2e/memory-card.spec.ts", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T18:57:42Z"
+type = "feat"
+summary = "Require contextual memory candidates"
+details = "Updated the intent router prompt to require self-contained memory candidates and added a server-side guard that asks for more context when the memory text is a single word. This prevents storing context-free memories and aligns memory prompts with future retrieval needs."
+tests = ["npm run test:e2e -- -g \"Memory retrieval shows a memory card|Profile settings stays within viewport with long memory items\" (pass)"]
+files = ["src/server/intent-router.ts", "src/app/api/chat/route.ts", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T19:06:59Z"
+type = "feat"
+summary = "Delete chats without a confirmation dialog"
+details = "Removed the delete confirmation modal so chat history deletions happen immediately from the sidebar menu. Added inline error feedback in the sidebar and updated E2E coverage to reflect the new flow."
+tests = ["npm run test:e2e -- -g \"Archive/delete and export work|Archiving/deleting last active chat\" (pass)"]
+files = ["src/app/home-client.tsx", "e2e/instructions.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T19:42:04Z"
+type = "feat"
+summary = "Add to-do and grocery list tool with interactive cards"
+details = "Implemented profile-scoped lists with list items in SQLite, added the displayList tool for list creation/updates, and built an interactive list card with toggle/remove/clear actions. Added list API routes, admin export/reset coverage for lists, and a Playwright E2E to validate the card."
+tests = ["npm run test:e2e -- -g \"List tool renders a card\" (pass)"]
+files = ["src/server/db.ts", "src/server/lists.ts", "src/app/api/profiles/[profileId]/lists/route.ts", "src/ai/tools.ts", "src/app/api/chat/route.ts", "src/components/list-card.tsx", "src/app/home-client.tsx", "src/server/admin.ts", "e2e/list-tool.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T20:36:42Z"
+type = "feat"
+summary = "Enable shared lists across profiles"
+details = "Added list membership storage and share/unshare actions with owner-only permissions. Lists now resolve shared access by name or id, and list cards label shared lists. Prevented chat state sync from saving across profile switches, and updated tool/system guidance for sharing."
+tests = ["npm run test:e2e -- -g \"Shared lists sync across profiles\" (pass)"]
+files = ["src/server/db.ts", "src/server/lists.ts", "src/app/api/profiles/[profileId]/lists/route.ts", "src/ai/tools.ts", "src/app/api/chat/route.ts", "src/components/list-card.tsx", "src/app/home-client.tsx", "src/server/admin.ts", "e2e/list-tool.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T20:44:54Z"
+type = "fix"
+summary = "Show shared badge on owner list cards"
+details = "Added shared member counts to list outputs so owners see the Shared tag when a list is shared. Updated the shared-list E2E test to assert the badge."
+tests = ["npm run test:e2e -- -g \"Shared lists sync across profiles\" (pass)"]
+files = ["src/server/lists.ts", "src/lib/types.ts", "src/components/list-card.tsx", "e2e/list-tool.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T20:53:08Z"
+type = "feat"
+summary = "Add list deletion support"
+details = "Added delete_list actions for tools/API, owner-only deletion, and list cards that show a Deleted state with the new delete button. Updated the system tool guidance and added an E2E test for list deletion."
+tests = ["npm run test:e2e -- -g \"List tool deletes a list\" (pass)"]
+files = ["src/server/lists.ts", "src/ai/tools.ts", "src/app/api/profiles/[profileId]/lists/route.ts", "src/app/api/chat/route.ts", "src/components/list-card.tsx", "src/lib/types.ts", "e2e/list-tool.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T21:05:43Z"
+type = "fix"
+summary = "Stop recreating deleted shared lists for members"
+details = "Restricted implicit list creation to create/add_items (or show with items) so member profiles cannot recreate deleted shared lists by showing them. Clarified list tool instructions and extended the shared-list E2E to cover owner deletion and member access."
+tests = ["npm run test:e2e -- -g \"Shared lists sync across profiles\" (pass)"]
+files = ["src/server/lists.ts", "src/app/api/chat/route.ts", "e2e/list-tool.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T21:22:22Z"
+type = "feat"
+summary = "Add timezones tool card"
+details = "Implemented a timezones tool that resolves city/IANA zones, formats current times, and supports reference-time conversions. Added a Timezones card UI, hooked tool rendering and stop conditions into chat, updated the system prompt guidance, and added an E2E test for the new card."
+tests = ["npm run test:e2e -- -g \"Timezones tool renders a card\" (pass)"]
+files = ["src/ai/timezones.ts", "src/ai/tools.ts", "src/components/timezones-card.tsx", "src/app/home-client.tsx", "src/app/api/chat/route.ts", "e2e/timezones-tool.spec.ts", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T21:31:39Z"
+type = "fix"
+summary = "Geocode city names for timezones"
+details = "Added an Open-Meteo geocoding fallback so unknown city names resolve to their IANA timezone, keeping the timezones card usable for non-alias inputs like smaller cities."
+tests = ["npm run test:e2e -- -g \"Timezones tool renders a card\" (pass)"]
+files = ["src/ai/timezones.ts", "e2e/timezones-tool.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T22:06:22Z"
+type = "feat"
+summary = "Add URL summary tool and card"
+details = "Implemented URL summarization with HTML extraction, length/focus controls, and a new summary card with an open-link CTA. Wired the tool into chat prompts and tool handling, added unit coverage for extraction helpers, and added an E2E card smoke test."
+tests = ["npm run test:unit (pass)", "npm run test:e2e -- -g \"URL summary tool renders a card\" (pass)"]
+files = ["src/ai/url-summary.ts", "src/ai/tools.ts", "src/components/url-summary-card.tsx", "src/app/home-client.tsx", "src/app/api/chat/route.ts", "e2e/url-summary-tool.spec.ts", "tests/url-summary.test.ts", "package.json", "package-lock.json", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T22:17:30Z"
+type = "fix"
+summary = "Raise URL summary size cap"
+details = "Increased the maximum HTML size threshold to 2 MB so large documentation pages can still be summarized before extraction." 
+tests = ["npm run test:unit (pass)"]
+files = ["src/ai/url-summary.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T22:29:36Z"
+type = "feat"
+summary = "Add quick notes tool and card"
+details = "Implemented profile-scoped quick notes with create/show/delete actions, a new notes card UI with inline deletion, and API endpoints for notes. Wired tool instructions and stop conditions into chat, and added unit + E2E coverage."
+tests = ["npm run test:unit (pass)", "npm run test:e2e -- -g \"Notes tool renders a card\" (pass)"]
+files = ["src/server/db.ts", "src/server/notes.ts", "src/app/api/profiles/[profileId]/notes/route.ts", "src/ai/tools.ts", "src/app/api/chat/route.ts", "src/components/notes-card.tsx", "src/app/home-client.tsx", "src/lib/notes.ts", "src/lib/types.ts", "src/server/admin.ts", "e2e/notes-tool.spec.ts", "tests/notes.test.ts", "package.json", "package-lock.json", "PLAN.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-16T22:37:02Z"
+type = "fix"
+summary = "Route note phrases to quick notes instead of memory"
+details = "Adjusted memory parsing and intent routing to ignore quick-note phrases like 'Note this', preventing them from triggering memory confirmation. Updated intent router guidance and the notes E2E prompt to cover the phrase." 
+tests = ["npm run test:unit (pass)", "npm run test:e2e -- -g \"Notes tool renders a card\" (pass)"]
+files = ["src/app/api/chat/route.ts", "src/server/intent-router.ts", "e2e/notes-tool.spec.ts", "PROGRESS.toml"]

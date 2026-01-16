@@ -113,6 +113,11 @@ const defaultProviderId =
     ? parsedConfig.app.default_provider_id.trim()
     : "";
 
+const routerConfig =
+  parsedConfig?.app?.router && typeof parsedConfig.app.router === "object"
+    ? parsedConfig.app.router
+    : null;
+
 const providers =
   parsedConfig?.providers && typeof parsedConfig.providers === "object"
     ? parsedConfig.providers
@@ -133,6 +138,37 @@ const activeProviderId =
   storedActiveProviderId && providers[storedActiveProviderId]
     ? storedActiveProviderId
     : defaultProviderId;
+
+const routerEnabled = routerConfig?.enabled === true;
+const routerProviderId =
+  routerEnabled && typeof routerConfig?.provider_id === "string"
+    ? routerConfig.provider_id.trim()
+    : "";
+const routerModelId =
+  routerEnabled && typeof routerConfig?.model_id === "string"
+    ? routerConfig.model_id.trim()
+    : "";
+
+if (routerEnabled) {
+  if (!routerProviderId) {
+    console.error(
+      "Invalid config.toml: app.router.provider_id is required when router is enabled"
+    );
+    process.exit(1);
+  }
+  if (!routerModelId) {
+    console.error(
+      "Invalid config.toml: app.router.model_id is required when router is enabled"
+    );
+    process.exit(1);
+  }
+  if (!providers?.[routerProviderId]) {
+    console.error(
+      `Invalid config.toml: app.router.provider_id "${routerProviderId}" is not present in providers`
+    );
+    process.exit(1);
+  }
+}
 
 const allowedModelTypes = new Set([
   "vercel_ai_gateway",
@@ -248,12 +284,36 @@ for (const [providerId, provider] of Object.entries(providers)) {
     process.exit(1);
   }
 
+  if (routerEnabled && providerId === routerProviderId) {
+    if (!models.some((m) => m?.id === routerModelId)) {
+      console.error(
+        `Invalid config.toml: app.router.model_id "${routerModelId}" is not present in providers.${providerId}.models`
+      );
+      process.exit(1);
+    }
+  }
+
   if (providerId === activeProviderId) {
     const key = process.env[apiKeyEnv];
     if (!key) {
       console.error(
         [
           `Missing API key for provider "${providerId}".`,
+          "",
+          `Export it in your shell before running RemcoChat:`,
+          `  export ${apiKeyEnv}='...'`,
+        ].join("\n")
+      );
+      process.exit(1);
+    }
+  }
+
+  if (routerEnabled && providerId === routerProviderId) {
+    const key = process.env[apiKeyEnv];
+    if (!key) {
+      console.error(
+        [
+          `Missing API key for router provider "${providerId}".`,
           "",
           `Export it in your shell before running RemcoChat:`,
           `  export ${apiKeyEnv}='...'`,

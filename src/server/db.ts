@@ -53,6 +53,69 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_chats_profile_updated_at
       ON chats(profile_id, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS pending_memory (
+      chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pending_memory_profile_updated_at
+      ON pending_memory(profile_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS lists (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'todo',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lists_profile_name
+      ON lists(profile_id, name COLLATE NOCASE);
+
+    CREATE INDEX IF NOT EXISTS idx_lists_profile_updated_at
+      ON lists(profile_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS list_items (
+      id TEXT PRIMARY KEY,
+      list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_list_items_list_position
+      ON list_items(list_id, position ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_list_items_list_completed
+      ON list_items(list_id, completed, position ASC);
+
+    CREATE TABLE IF NOT EXISTS list_members (
+      list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (list_id, profile_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_list_members_profile
+      ON list_members(profile_id);
+
+    CREATE TABLE IF NOT EXISTS quick_notes (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quick_notes_profile_updated_at
+      ON quick_notes(profile_id, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS messages (
       chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
       id TEXT NOT NULL,

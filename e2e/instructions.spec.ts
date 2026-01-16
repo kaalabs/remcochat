@@ -289,10 +289,10 @@ test("Profile settings stays within viewport with long memory items (WebKit)", a
   });
   expect(patchRes.ok()).toBeTruthy();
 
-  const longToken = "A".repeat(4000);
+  const longToken = "A".repeat(3950);
   await page
     .getByTestId("composer:textarea")
-    .fill(`Memorize this, ${longToken}`);
+    .fill(`Save this: Access token ${longToken}`);
   await page.getByTestId("composer:submit").click();
 
   const assistantMessages = page.locator('[data-testid^="message:assistant:"]');
@@ -302,6 +302,22 @@ test("Profile settings stays within viewport with long memory items (WebKit)", a
       intervals: [100, 250, 500, 1000],
     })
     .toBeGreaterThan(0);
+
+  const promptCard = assistantMessages
+    .first()
+    .getByTestId("memory:prompt-card");
+  await expect(promptCard).toBeVisible({ timeout: 120_000 });
+
+  const confirmButton = promptCard.getByTestId("memory:prompt-confirm");
+  await expect(confirmButton).toBeEnabled({ timeout: 120_000 });
+  await confirmButton.click();
+
+  await expect
+    .poll(async () => await assistantMessages.count(), {
+      timeout: 120_000,
+      intervals: [100, 250, 500, 1000],
+    })
+    .toBeGreaterThan(1);
 
   await page.getByTestId("profile:settings-open").click();
   const dialog = page.getByTestId("profile:settings-dialog");
@@ -630,7 +646,6 @@ test("Archive/delete and export work (WebKit)", async ({ page }) => {
 
   await page.getByTestId(`sidebar:chat-menu:${chatId}`).click();
   await page.getByTestId(`chat-action:delete:${chatId}`).click();
-  await page.getByTestId("chat:delete-confirm").click();
 
   await expect(page.getByTestId(`sidebar:chat:${chatId}`)).toHaveCount(0);
 });
@@ -682,7 +697,6 @@ test("Archiving/deleting last active chat never opens archived chat (WebKit)", a
 
   await page.getByTestId(`sidebar:chat-menu:${createdChatId}`).click();
   await page.getByTestId(`chat-action:delete:${createdChatId}`).click();
-  await page.getByTestId("chat:delete-confirm").click();
 
   await expect(page.getByTestId(`sidebar:chat:${createdChatId}`)).toHaveCount(0);
   await expect(chatButtons).toHaveCount(1, { timeout: 120_000 });

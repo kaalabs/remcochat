@@ -29,7 +29,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ModelOption } from "@/lib/models";
-import type { Chat, Profile, RemcoChatMessageMetadata } from "@/lib/types";
+import type {
+  Chat,
+  MemoryItem,
+  Profile,
+  RemcoChatMessageMetadata,
+  TaskList,
+} from "@/lib/types";
 import { Loader } from "@/components/ai-elements/loader";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
@@ -40,8 +46,16 @@ import { MessageActions, MessageAction } from "@/components/ai-elements/message"
 import { Weather } from "@/components/weather";
 import { WeatherForecast } from "@/components/weather-forecast";
 import { MemoryCard } from "@/components/memory-card";
+import { ListCard } from "@/components/list-card";
+import { MemoryPromptCard } from "@/components/memory-prompt-card";
+import { TimezonesCard } from "@/components/timezones-card";
+import { UrlSummaryCard } from "@/components/url-summary-card";
+import { NotesCard } from "@/components/notes-card";
 import type { WeatherToolOutput } from "@/ai/weather";
 import type { WeatherForecastToolOutput } from "@/ai/weather";
+import type { TimezonesToolOutput } from "@/ai/timezones";
+import type { UrlSummaryToolOutput } from "@/ai/url-summary";
+import type { NotesToolOutput } from "@/lib/types";
 import {
 	  ArchiveIcon,
 	  BookmarkIcon,
@@ -59,7 +73,6 @@ import {
   Trash2Icon,
   Undo2Icon,
 } from "lucide-react";
-import type { MemoryItem } from "@/lib/types";
 import { nanoid } from "nanoid";
 import {
   DropdownMenu,
@@ -329,9 +342,6 @@ export function HomeClient({
   const [memorizeSaving, setMemorizeSaving] = useState(false);
   const [memorizeError, setMemorizeError] = useState<string | null>(null);
 
-  const [deleteChatOpen, setDeleteChatOpen] = useState(false);
-  const [deleteChatId, setDeleteChatId] = useState("");
-  const [deleteChatTitle, setDeleteChatTitle] = useState("");
   const [deleteChatSaving, setDeleteChatSaving] = useState(false);
   const [deleteChatError, setDeleteChatError] = useState<string | null>(null);
 
@@ -625,27 +635,15 @@ export function HomeClient({
     }
   }, [adminEnabled, adminResetConfirm, adminResetSaving, refreshProfiles]);
 
-  const startDeleteChat = useCallback(
-    (chat: Chat) => {
-      if (status !== "ready") return;
-      setDeleteChatError(null);
-      setDeleteChatId(chat.id);
-      setDeleteChatTitle(chat.title.trim() ? chat.title.trim() : "New chat");
-      setDeleteChatOpen(true);
-    },
-    [status]
-  );
-
-  const confirmDeleteChat = useCallback(async () => {
+  const deleteChatById = useCallback(async (chatId: string) => {
     if (!activeProfile) return;
-    if (!deleteChatId) return;
     if (deleteChatSaving) return;
     if (status !== "ready") return;
 
     setDeleteChatSaving(true);
     setDeleteChatError(null);
     try {
-      const res = await fetch(`/api/chats/${deleteChatId}`, {
+      const res = await fetch(`/api/chats/${chatId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profileId: activeProfile.id }),
@@ -657,9 +655,6 @@ export function HomeClient({
         throw new Error(data?.error || "Failed to delete chat.");
       }
 
-      setDeleteChatOpen(false);
-      setDeleteChatId("");
-      setDeleteChatTitle("");
       refreshChats({ profileId: activeProfile.id, ensureAtLeastOne: true }).catch(
         () => {}
       );
@@ -670,7 +665,7 @@ export function HomeClient({
     } finally {
       setDeleteChatSaving(false);
     }
-  }, [activeProfile, deleteChatId, deleteChatSaving, refreshChats, status]);
+  }, [activeProfile, deleteChatSaving, refreshChats, status]);
 
   const setChatModel = async (nextModelId: string) => {
     if (!activeProfile) return;
@@ -700,6 +695,11 @@ export function HomeClient({
   useEffect(() => {
     loadedChatIdRef.current = "";
   }, [activeChatId, isTemporaryChat]);
+
+  useEffect(() => {
+    loadedChatIdRef.current = "";
+    syncRef.current = null;
+  }, [activeProfileId]);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -765,7 +765,6 @@ export function HomeClient({
     if (settingsOpen) return;
     if (chatSettingsOpen) return;
     if (memorizeOpen) return;
-    if (deleteChatOpen) return;
     if (adminOpen) return;
     if (profileSelectOpen) return;
     focusComposer({ toEnd: true });
@@ -774,7 +773,6 @@ export function HomeClient({
     adminOpen,
     chatSettingsOpen,
     createOpen,
-    deleteChatOpen,
     editOpen,
     focusComposer,
     isTemporaryChat,
@@ -792,9 +790,8 @@ export function HomeClient({
       if (settingsOpen) return;
       if (chatSettingsOpen) return;
       if (memorizeOpen) return;
-      if (deleteChatOpen) return;
-      if (adminOpen) return;
-      if (profileSelectOpen) return;
+    if (adminOpen) return;
+    if (profileSelectOpen) return;
       focusComposer({ toEnd: true });
     };
 
@@ -806,7 +803,6 @@ export function HomeClient({
     adminOpen,
     chatSettingsOpen,
     createOpen,
-    deleteChatOpen,
     editOpen,
     focusComposer,
     memorizeOpen,
@@ -826,7 +822,6 @@ export function HomeClient({
         settingsOpen ||
         chatSettingsOpen ||
         memorizeOpen ||
-        deleteChatOpen ||
         adminOpen ||
         profileSelectOpen
       ) {
@@ -867,7 +862,6 @@ export function HomeClient({
     chatSettingsOpen,
     createChat,
     createOpen,
-    deleteChatOpen,
     editOpen,
     focusComposer,
     memorizeOpen,
@@ -1304,6 +1298,23 @@ export function HomeClient({
     }
   }, [activeProfile, isTemporaryChat, memorizeSaving, memorizeText]);
 
+  const sendMemoryDecision = useCallback(
+    (decision: "confirm" | "cancel") => {
+      if (!activeProfile) return;
+      if (!chatRequestBody) return;
+      if (status !== "ready") return;
+
+      sendMessage(
+        {
+          text: decision === "confirm" ? "Confirm memory" : "Cancel memory",
+          metadata: { createdAt: new Date().toISOString() },
+        },
+        { body: chatRequestBody }
+      );
+    },
+    [activeProfile, chatRequestBody, sendMessage, status]
+  );
+
   return (
     <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
       <div className="grid h-full min-h-0 grid-cols-[18rem_1fr]">
@@ -1330,6 +1341,11 @@ export function HomeClient({
 	                <PlusIcon className="size-4" />
 	              </Button>
 	            </div>
+            {deleteChatError ? (
+              <div className="px-2 pb-2 text-xs text-destructive">
+                {deleteChatError}
+              </div>
+            ) : null}
 
             <div className="space-y-1 px-1 pb-2" data-testid="sidebar:chats-active">
               {chats
@@ -1397,7 +1413,7 @@ export function HomeClient({
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           data-testid={`chat-action:delete:${chat.id}`}
-                          onClick={() => startDeleteChat(chat)}
+                          onClick={() => deleteChatById(chat.id)}
                           variant="destructive"
                         >
                           <Trash2Icon />
@@ -1501,7 +1517,7 @@ export function HomeClient({
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   data-testid={`chat-action:delete:${chat.id}`}
-                                  onClick={() => startDeleteChat(chat)}
+                                  onClick={() => deleteChatById(chat.id)}
                                   variant="destructive"
                                 >
                                   <Trash2Icon />
@@ -1790,6 +1806,200 @@ export function HomeClient({
                                       key={`${id}-${index}`}
                                     >
                                       Memory error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayMemoryPrompt") {
+                              const payload =
+                                part.state === "output-available"
+                                  ? part.output
+                                  : part.input;
+                              const content =
+                                typeof (payload as { content?: unknown })?.content ===
+                                "string"
+                                  ? (payload as { content: string }).content
+                                  : "";
+
+                              switch (part.state) {
+                                case "input-available":
+                                case "output-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <MemoryPromptCard
+                                        content={content}
+                                        disabled={
+                                          status !== "ready" || !chatRequestBody
+                                        }
+                                        onCancel={() => sendMemoryDecision("cancel")}
+                                        onConfirm={() =>
+                                          sendMemoryDecision("confirm")
+                                        }
+                                      />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Memory error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayList") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Updating list…
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as TaskList | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <ListCard
+                                        list={output}
+                                        profileId={activeProfile?.id ?? ""}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      List error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayTimezones") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Calculating times…
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | TimezonesToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <TimezonesCard {...output} />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Timezones error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayUrlSummary") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Summarizing link…
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | UrlSummaryToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <UrlSummaryCard {...output} />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Summary error: {part.errorText}
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayNotes") {
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div
+                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                      key={`${id}-${index}`}
+                                    >
+                                      <Loader size={14} />
+                                      Updating notes…
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | NotesToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <NotesCard
+                                        {...output}
+                                        profileId={activeProfile?.id ?? ""}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div
+                                      className="text-sm text-destructive"
+                                      key={`${id}-${index}`}
+                                    >
+                                      Notes error: {part.errorText}
                                     </div>
                                   );
                                 default:
@@ -2176,7 +2386,7 @@ export function HomeClient({
 	              <div>
 	                <div className="text-sm font-medium">Memory</div>
 	                <div className="text-xs text-muted-foreground">
-	                  Only saved via “Memorize this”.
+	                  Saved after confirmation (ask me to remember/save in chat or use the Memorize action).
 	                </div>
 	              </div>
 	              <button
@@ -2427,47 +2637,6 @@ export function HomeClient({
                 Save memory
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog onOpenChange={setDeleteChatOpen} open={deleteChatOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete chat?</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <div className="text-sm text-muted-foreground">
-              This removes the chat from the sidebar. This action cannot be undone.
-            </div>
-            <div className="rounded-md border bg-card p-3 text-sm">
-              {deleteChatTitle}
-            </div>
-          </div>
-
-          {deleteChatError ? (
-            <div className="text-sm text-destructive">{deleteChatError}</div>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              disabled={deleteChatSaving}
-              onClick={() => setDeleteChatOpen(false)}
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={deleteChatSaving}
-              data-testid="chat:delete-confirm"
-              onClick={() => confirmDeleteChat()}
-              type="button"
-              variant="destructive"
-            >
-              Delete
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -21,6 +21,14 @@ version = 1
 # Default provider id to use when no active provider is stored yet.
 default_provider_id = "vercel"
 
+# Optional intent router (cheap model) to classify user intent server-side.
+[app.router]
+enabled = true
+provider_id = "vercel"
+model_id = "openai/gpt-4o-mini"
+min_confidence = 0.7
+max_input_chars = 600
+
 [providers.vercel]
 name = "Vercel AI Gateway"
 # Which env var contains the API key (do not put the key here).

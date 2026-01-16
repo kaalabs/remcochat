@@ -2,6 +2,8 @@ import { getDb } from "@/server/db";
 import { listProfiles } from "@/server/profiles";
 import { listChats, loadChatState } from "@/server/chats";
 import { listProfileMemory } from "@/server/memory";
+import { listProfileLists } from "@/server/lists";
+import { listProfileNotes } from "@/server/notes";
 
 export function isAdminEnabled(): boolean {
   const v = String(process.env.REMCOCHAT_ENABLE_ADMIN ?? "").trim().toLowerCase();
@@ -14,6 +16,8 @@ export type ExportAllData = {
   profiles: Array<{
     profile: ReturnType<typeof listProfiles>[number];
     memory: ReturnType<typeof listProfileMemory>;
+    lists: ReturnType<typeof listProfileLists>;
+    notes: ReturnType<typeof listProfileNotes>;
     chats: Array<
       ReturnType<typeof listChats>[number] & {
         state: ReturnType<typeof loadChatState>;
@@ -31,11 +35,13 @@ export function exportAllData(): ExportAllData {
     exportedAt,
     profiles: profiles.map((profile) => {
       const memory = listProfileMemory(profile.id);
+      const lists = listProfileLists(profile.id);
+      const notes = listProfileNotes(profile.id, 200);
       const chats = listChats(profile.id).map((chat) => ({
         ...chat,
         state: loadChatState(chat.id),
       }));
-      return { profile, memory, chats };
+      return { profile, memory, lists, notes, chats };
     }),
   };
 }
@@ -44,12 +50,16 @@ export function resetAllData(): void {
   const db = getDb();
   db.exec(`
     PRAGMA foreign_keys = OFF;
+    DELETE FROM list_members;
+    DELETE FROM list_items;
+    DELETE FROM lists;
+    DELETE FROM quick_notes;
     DELETE FROM message_variants;
     DELETE FROM messages;
+    DELETE FROM pending_memory;
     DELETE FROM chats;
     DELETE FROM profile_memory;
     DELETE FROM profiles;
     PRAGMA foreign_keys = ON;
   `);
 }
-

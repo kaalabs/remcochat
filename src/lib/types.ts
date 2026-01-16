@@ -37,3 +37,46 @@ export type MemoryItem = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type TaskListKind = "todo" | "grocery";
+
+export type TaskListItem = {
+  id: string;
+  listId: string;
+  content: string;
+  completed: boolean;
+  createdAt: string;
+  updatedAt: string;
+  position: number;
+};
+
+export type TaskList = {
+  id: string;
+  profileId: string;
+  name: string;
+  kind: TaskListKind;
+  createdAt: string;
+  updatedAt: string;
+  items: TaskListItem[];
+  sharedCount: number;
+  deleted?: boolean;
+  stats: {
+    total: number;
+    completed: number;
+    remaining: number;
+  };
+};
+
+export type QuickNote = {
+  id: string;
+  profileId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotesToolOutput = {
+  notes: QuickNote[];
+  totalCount: number;
+  limit: number;
+};

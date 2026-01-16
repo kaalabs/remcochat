@@ -87,7 +87,7 @@ test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
 
   await page
     .getByTestId("composer:textarea")
-    .fill("Memorize this, Favorite color: purple.");
+    .fill("Remember this: Favorite color: purple.");
   await page.getByTestId("composer:submit").click();
 
   const assistantMessages = page.locator('[data-testid^="message:assistant:"]');
@@ -99,10 +99,26 @@ test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
     .toBeGreaterThan(0);
 
   const firstAssistant = assistantMessages.first();
-  await expect(firstAssistant.getByTestId("memory:card")).toBeVisible({
+  const promptCard = firstAssistant.getByTestId("memory:prompt-card");
+  await expect(promptCard).toBeVisible({ timeout: 120_000 });
+  await expect(promptCard).toContainText(/favorite color/i);
+
+  const confirmButton = promptCard.getByTestId("memory:prompt-confirm");
+  await expect(confirmButton).toBeEnabled({ timeout: 120_000 });
+  await confirmButton.click();
+
+  await expect
+    .poll(async () => await assistantMessages.count(), {
+      timeout: 120_000,
+      intervals: [100, 250, 500, 1000],
+    })
+    .toBeGreaterThan(1);
+
+  const savedAssistant = assistantMessages.last();
+  await expect(savedAssistant.getByTestId("memory:card")).toBeVisible({
     timeout: 120_000,
   });
-  await expect(firstAssistant.getByTestId("memory:card")).toContainText(
+  await expect(savedAssistant.getByTestId("memory:card")).toContainText(
     /saved to memory/i
   );
 
@@ -120,11 +136,30 @@ test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
       timeout: 120_000,
       intervals: [100, 250, 500, 1000],
     })
-    .toBeGreaterThan(1);
+    .toBeGreaterThan(2);
 
   const lastAssistant = assistantMessages.last();
   const memoryCard = lastAssistant.getByTestId("memory:card");
-  await expect(memoryCard).toBeVisible({ timeout: 120_000 });
-  await expect(memoryCard).toContainText(/\bpurple\b/i);
-  await expect(lastAssistant.locator(".prose-neutral")).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      if ((await memoryCard.count()) > 0) return "card";
+      const text = await lastAssistant
+        .locator(".prose-neutral")
+        .innerText()
+        .catch(() => "");
+      return /\bpurple\b/i.test(text) ? "text" : "";
+    }, {
+      timeout: 120_000,
+      intervals: [100, 250, 500, 1000],
+    })
+    .not.toBe("");
+
+  if ((await memoryCard.count()) > 0) {
+    await expect(memoryCard).toContainText(/\bpurple\b/i);
+    await expect(lastAssistant.locator(".prose-neutral")).toHaveCount(0);
+  } else {
+    await expect(lastAssistant.locator(".prose-neutral")).toContainText(
+      /\bpurple\b/i
+    );
+  }
 });

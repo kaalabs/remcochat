@@ -5,10 +5,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import type { ModelType, RemcoChatProvider } from "@/server/config";
-import {
-  clampModelIdForActiveProvider,
-  getActiveProviderConfig,
-} from "@/server/model-registry";
+import { getConfig } from "@/server/config";
+import { getActiveProviderConfig } from "@/server/model-registry";
 
 type ResolvedModel = {
   providerId: string;
@@ -30,7 +28,11 @@ function requiredEnv(name: string, providerId: string) {
 }
 
 function resolveProviderModelId(provider: RemcoChatProvider, modelId: unknown) {
-  const resolvedModelId = clampModelIdForActiveProvider(modelId);
+  const resolvedModelId =
+    typeof modelId === "string" &&
+    provider.models.some((m) => m.id === modelId)
+      ? modelId
+      : provider.defaultModelId;
   const model =
     provider.models.find((m) => m.id === resolvedModelId) ??
     provider.models.find((m) => m.id === provider.defaultModelId);
@@ -129,16 +131,27 @@ function getGoogleGenerativeAIClient(provider: RemcoChatProvider) {
   return client;
 }
 
-export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedModel {
-  const { provider, activeProviderId } = getActiveProviderConfig();
+function getProviderById(providerId: string): RemcoChatProvider {
+  const config = getConfig();
+  const provider = config.providers.find((p) => p.id === providerId);
+  if (!provider) {
+    throw new Error(`Provider "${providerId}" is not present in config.toml.`);
+  }
+  return provider;
+}
+
+function resolveModelForProvider(
+  providerId: string,
+  provider: RemcoChatProvider,
+  modelId: unknown
+): ResolvedModel {
   const { resolvedModelId, providerModelId, modelType, capabilities } =
     resolveProviderModelId(provider, modelId);
-
   switch (modelType) {
     case "vercel_ai_gateway": {
       const gateway = getVercelGatewayClient(provider);
       return {
-        providerId: activeProviderId,
+        providerId,
         modelType,
         modelId: resolvedModelId,
         providerModelId,
@@ -149,7 +162,7 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
     case "openai_responses": {
       const openai = getOpenAIResponsesClient(provider);
       return {
-        providerId: activeProviderId,
+        providerId,
         modelType,
         modelId: resolvedModelId,
         providerModelId,
@@ -160,7 +173,7 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
     case "openai_compatible": {
       const openaiCompatible = getOpenAICompatibleClient(provider);
       return {
-        providerId: activeProviderId,
+        providerId,
         modelType,
         modelId: resolvedModelId,
         providerModelId,
@@ -171,7 +184,7 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
     case "anthropic_messages": {
       const anthropic = getAnthropicCompatibleClient(provider);
       return {
-        providerId: activeProviderId,
+        providerId,
         modelType,
         modelId: resolvedModelId,
         providerModelId,
@@ -182,7 +195,7 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
     case "google_generative_ai": {
       const google = getGoogleGenerativeAIClient(provider);
       return {
-        providerId: activeProviderId,
+        providerId,
         modelType,
         modelId: resolvedModelId,
         providerModelId,
@@ -191,4 +204,17 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
       };
     }
   }
+}
+
+export function getLanguageModelForProvider(
+  providerId: string,
+  modelId: unknown
+): ResolvedModel {
+  const provider = getProviderById(providerId);
+  return resolveModelForProvider(providerId, provider, modelId);
+}
+
+export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedModel {
+  const { provider, activeProviderId } = getActiveProviderConfig();
+  return resolveModelForProvider(activeProviderId, provider, modelId);
 }

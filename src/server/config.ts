@@ -36,10 +36,21 @@ const ProviderSchema = z.object({
   models: z.array(ModelSchema).min(1),
 });
 
+const IntentRouterSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    provider_id: z.string().min(1).optional(),
+    model_id: z.string().min(1).optional(),
+    min_confidence: z.number().min(0).max(1).optional(),
+    max_input_chars: z.number().int().min(20).max(4000).optional(),
+  })
+  .optional();
+
 const RawConfigSchema = z.object({
   version: z.literal(1),
   app: z.object({
     default_provider_id: z.string().min(1),
+    router: IntentRouterSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
 });
@@ -71,6 +82,13 @@ export type RemcoChatConfig = {
   version: 1;
   defaultProviderId: string;
   providers: RemcoChatProvider[];
+  intentRouter: {
+    enabled: boolean;
+    providerId: string;
+    modelId: string;
+    minConfidence: number;
+    maxInputChars: number;
+  } | null;
 };
 
 let cachedConfig: RemcoChatConfig | null = null;
@@ -123,10 +141,55 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     }
   }
 
+  let intentRouter: RemcoChatConfig["intentRouter"] = null;
+  const router = raw.app.router ?? {};
+  const routerEnabled = Boolean(router.enabled ?? false);
+  if (routerEnabled) {
+    const providerId = String(router.provider_id ?? "").trim();
+    if (!providerId) {
+      throw new Error(
+        "config.toml: app.router.provider_id is required when router is enabled"
+      );
+    }
+    const provider = providers.find((p) => p.id === providerId);
+    if (!provider) {
+      throw new Error(
+        `config.toml: app.router.provider_id "${providerId}" is not present in providers`
+      );
+    }
+    const modelId = String(router.model_id ?? "").trim();
+    if (!modelId) {
+      throw new Error(
+        "config.toml: app.router.model_id is required when router is enabled"
+      );
+    }
+    if (!provider.models.some((m) => m.id === modelId)) {
+      throw new Error(
+        `config.toml: app.router.model_id "${modelId}" is not present in providers.${providerId}.models`
+      );
+    }
+    const minConfidence = Math.min(
+      1,
+      Math.max(0, Number(router.min_confidence ?? 0.7))
+    );
+    const maxInputChars = Math.min(
+      4000,
+      Math.max(20, Math.floor(Number(router.max_input_chars ?? 600)))
+    );
+    intentRouter = {
+      enabled: true,
+      providerId,
+      modelId,
+      minConfidence,
+      maxInputChars,
+    };
+  }
+
   return {
     version: 1,
     defaultProviderId,
     providers,
+    intentRouter,
   };
 }
 
