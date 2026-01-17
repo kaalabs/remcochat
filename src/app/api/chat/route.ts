@@ -32,6 +32,7 @@ import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { routeIntent } from "@/server/intent-router";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
+import { isListIntent } from "@/server/list-intent";
 
 export const maxDuration = 30;
 
@@ -169,6 +170,7 @@ function shouldRouteIntent(text: string) {
   if (!trimmed) return false;
   const lower = trimmed.toLowerCase();
   if (isNotesIntent(lower)) return false;
+  if (isListIntent(lower)) return false;
   const hasQuestion = trimmed.includes("?");
   const hasMemoryHint =
     /\b(remember|save|store|memorize|keep in mind|add to memory|put in memory)\b/.test(
@@ -489,7 +491,9 @@ export async function POST(req: Request) {
     : "";
 
   const notesIntent = isNotesIntent(lastUserText);
-  const memorizeContent = notesIntent ? null : parseMemorizeIntent(lastUserText);
+  const listIntent = isListIntent(lastUserText);
+  const memorizeContent =
+    notesIntent || listIntent ? null : parseMemorizeIntent(lastUserText);
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const canRouteIntent =
     !isRegenerate &&

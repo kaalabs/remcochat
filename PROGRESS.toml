@@ -1627,3 +1627,11 @@ summary = "Auto-continue AI Gateway perplexity_search for non-OpenAI models"
 details = "Some non-OpenAI models routed through Vercel AI Gateway would call provider-executed web tools (perplexity_search) and stop with an empty assistant message (finishReason=tool-calls). RemcoChat now buffers that first step and automatically runs a second pass that injects formatted search results as context (and removes perplexity_search) so the model produces a normal text answer. Also hardened message sanitization to strip web tool UI parts (tool-*) and ignore incomplete tool calls when converting UI messages to model messages to avoid Anthropic tool_use/tool_result mismatches."
 tests = ["npm run test:unit (pass)", "npm run build (pass)", "agent-browser smoke: AI Gateway anthropic/* answers with URLs (pass)"]
 files = ["src/app/api/chat/route.ts", "src/ai/perplexity.ts", "src/server/message-sanitize.ts", "tests/perplexity.test.ts", "tests/message-sanitize.test.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T23:12:46Z"
+type = "fix"
+summary = "Prevent list actions from triggering memory flow"
+details = "Added list-intent detection so commands like 'add issue to the RemcoChat issues list' bypass memory parsing and intent routing. This keeps list updates in the list tool flow even when memory is disabled."
+tests = ["npm run test:unit (pass)"]
+files = ["src/server/list-intent.ts", "src/app/api/chat/route.ts", "tests/list-intent.test.ts", "PROGRESS.toml"]
