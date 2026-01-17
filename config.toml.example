@@ -1,27 +1,8 @@
-# RemcoChat global configuration (example)
-#
-# Copy this file to `config.toml` and adjust it for your environment.
-# Notes:
-# - Do NOT put API keys in this file. Keep keys in env / `.env`.
-# - `config.toml` is ignored by git; only this example is tracked.
-#
-# Provider abstraction:
-# - Providers are defined under `[providers.<id>]`.
-# - Allowed models are defined under `[[providers.<id>.models]]`.
-# - This list replaces any hardcoded allowlist: only models present here are allowed.
-# - Model `type` is an API/protocol characteristic of the model (not the provider).
-#
-# Switching:
-# - The active provider is global and can be switched via API (no auth/gating; LAN-only).
-# - Switching is persistent (stored in DB).
-
 version = 1
 
 [app]
-# Default provider id to use when no active provider is stored yet.
 default_provider_id = "vercel"
 
-# Optional intent router (cheap model) to classify user intent server-side.
 [app.router]
 enabled = true
 provider_id = "vercel"
@@ -29,21 +10,16 @@ model_id = "openai/gpt-4o-mini"
 min_confidence = 0.7
 max_input_chars = 600
 
-# Optional web tools (agentic web search / web fetch). When enabled, RemcoChat
-# exposes provider-native web tools to tool-capable models and lets the model
-# decide when to use them (no forced triggers).
 [app.web_tools]
-enabled = false
+enabled = true
 max_results = 8
-recency = "week" # day|week|month|year (used by Perplexity search)
+recency = "week"
 allowed_domains = []
 blocked_domains = []
 
 [providers.vercel]
 name = "Vercel AI Gateway"
-# Which env var contains the API key (do not put the key here).
 api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
-# Explicit base URL (required; no implicit defaults).
 base_url = "https://ai-gateway.vercel.sh/v3/ai"
 default_model_id = "openai/gpt-5.2-chat"
 
@@ -82,6 +58,17 @@ structured_output = false
 
 [[providers.vercel.models]]
 type = "vercel_ai_gateway"
+id = "openai/gpt-5.2-codex"
+label = "GPT 5.2 Codex"
+description = "OpenAI"
+[providers.vercel.models.capabilities]
+tools = true
+temperature = false
+attachments = false
+structured_output = false
+
+[[providers.vercel.models]]
+type = "vercel_ai_gateway"
 id = "anthropic/claude-opus-4.5"
 label = "Claude Opus 4.5"
 description = "Anthropic"
@@ -91,82 +78,128 @@ temperature = true
 attachments = false
 structured_output = false
 
-# Example: use a non-OpenAI model via AI Gateway. With web tools enabled, RemcoChat
-# will expose Perplexity web search (`perplexity_search`) to this model, and for
-# Anthropic models it can also expose `web_fetch` for fetching specific pages.
-#
-#[[providers.vercel.models]]
-#type = "vercel_ai_gateway"
-#id = "anthropic/claude-sonnet-4.5"
-#label = "Claude Sonnet 4.5"
-#description = "Anthropic"
-#[providers.vercel.models.capabilities]
-#tools = true
-#temperature = true
-#attachments = false
-#structured_output = false
+[providers.opencode]
+name = "OpenCode Zen"
+base_url = "https://opencode.ai/zen/v1"
+api_key_env = "OPENCODE_API_KEY"
+default_model_id = "opencode/claude-opus-4-5"
 
-# Example of an OpenCode Zen gateway hosting multiple model types.
-#
-#[providers.opencode]
-#name = "OpenCode Zen"
-#base_url = "https://opencode.ai/zen/v1"
-## Which env var contains the API key (do not put the key here).
-#api_key_env = "OPENCODE_API_KEY"
-#default_model_id = "opencode/gpt-5-nano"
-#
-#[[providers.opencode.models]]
-## OpenAI Responses model (GPT family via `/responses`).
-#type = "openai_responses"
-## `id` is the RemcoChat model id stored in DB/used in UI.
-## `provider_model_id` is the identifier passed to the provider API.
-#id = "opencode/gpt-5-nano"
-#label = "GPT 5 Nano"
-#description = "OpenCode Zen"
-#provider_model_id = "gpt-5-nano"
-#[providers.opencode.models.capabilities]
-#tools = true
-#temperature = false
-#attachments = true
-#structured_output = true
-#
-#[[providers.opencode.models]]
-## Anthropic Messages model (Claude via `/messages`).
-#type = "anthropic_messages"
-#id = "opencode/claude-opus-4-5"
-#label = "Claude Opus 4.5"
-#description = "OpenCode Zen"
-#provider_model_id = "claude-opus-4-5"
-#[providers.opencode.models.capabilities]
-#tools = true
-#temperature = true
-#attachments = true
-#structured_output = false
+[[providers.opencode.models]]
+type = "anthropic_messages"
+id = "opencode/claude-opus-4-5"
+label = "Claude Opus 4.5"
+description = "OpenCode Zen"
+provider_model_id = "claude-opus-4-5"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = true
+structured_output = false
 
-#
-#[[providers.opencode.models]]
-## OpenAI-compatible Chat Completions model (eg GLM/Kimi/Qwen via `/chat/completions`).
-#type = "openai_compatible"
-#id = "opencode/glm-4.6"
-#label = "GLM 4.6"
-#description = "OpenCode Zen"
-#provider_model_id = "glm-4.6"
-#[providers.opencode.models.capabilities]
-#tools = true
-#temperature = true
-#attachments = false
-#structured_output = false
+[[providers.opencode.models]]
+type = "openai_responses"
+id = "opencode/gpt-5.2-codex"
+label = "GPT 5.2 Codex"
+description = "OpenCode Zen"
+provider_model_id = "gpt-5.2-codex"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = false
+attachments = false
+structured_output = false
 
-#
-#[[providers.opencode.models]]
-## Google Generative AI model (Gemini via `/models/<id>:generateContent`).
-#type = "google_generative_ai"
-#id = "opencode/gemini-3-flash"
-#label = "Gemini 3 Flash"
-#description = "OpenCode Zen"
-#provider_model_id = "gemini-3-flash"
-#[providers.opencode.models.capabilities]
-#tools = true
-#temperature = true
-#attachments = true
-#structured_output = true
+[[providers.opencode.models]]
+type = "openai_responses"
+id = "opencode/gpt-5-nano"
+label = "GPT-5-nano"
+description = "OpenCode Zen"
+provider_model_id = "gpt-5-nano"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = false
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "openai_compatible"
+id = "opencode/glm-4.7-free"
+label = "GLM-4.7"
+description = "OpenCode Zen"
+provider_model_id = "glm-4.7-free"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "openai_compatible"
+id = "opencode/kimi-k2"
+label = "Kimi K2"
+description = "OpenCode Zen"
+provider_model_id = "kimi-k2"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "openai_compatible"
+id = "opencode/kimi-k2-thinking"
+label = "Kimi K2 Thinking"
+description = "OpenCode Zen"
+provider_model_id = "kimi-k2-thinking"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "openai_compatible"
+id = "opencode/big-pickle"
+label = "Big Pickle"
+description = "OpenCode Zen"
+provider_model_id = "big-pickle"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "anthropic_messages"
+id = "opencode/minimax-m2.1-free"
+label = "MiniMax M2.1"
+description = "OpenCode Zen"
+provider_model_id = "minimax-m2.1-free"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+[[providers.opencode.models]]
+type = "openai_compatible"
+id = "opencode/grok-code"
+label = "Grok Code Fast 1"
+description = "OpenCode Zen"
+provider_model_id = "grok-code"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = true
+structured_output = false
+
+[[providers.opencode.models]]
+type = "anthropic_messages"
+id = "opencode/claude-haiku-4-5"
+label = "Claude Haiku 4.5"
+description = "OpenCode Zen"
+provider_model_id = "claude-haiku-4-5"
+[providers.opencode.models.capabilities]
+tools = true
+temperature = true
+attachments = true
+structured_output = false
