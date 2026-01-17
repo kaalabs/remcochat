@@ -29,6 +29,16 @@ model_id = "openai/gpt-4o-mini"
 min_confidence = 0.7
 max_input_chars = 600
 
+# Optional web tools (agentic web search / web fetch). When enabled, RemcoChat
+# exposes provider-native web tools to tool-capable models and lets the model
+# decide when to use them (no forced triggers).
+[app.web_tools]
+enabled = false
+max_results = 8
+recency = "week" # day|week|month|year (used by Perplexity search)
+allowed_domains = []
+blocked_domains = []
+
 [providers.vercel]
 name = "Vercel AI Gateway"
 # Which env var contains the API key (do not put the key here).
@@ -69,6 +79,32 @@ tools = true
 temperature = false
 attachments = false
 structured_output = false
+
+[[providers.vercel.models]]
+type = "vercel_ai_gateway"
+id = "anthropic/claude-opus-4.5"
+label = "Claude Opus 4.5"
+description = "Anthropic"
+[providers.vercel.models.capabilities]
+tools = true
+temperature = true
+attachments = false
+structured_output = false
+
+# Example: use a non-OpenAI model via AI Gateway. With web tools enabled, RemcoChat
+# will expose Perplexity web search (`perplexity_search`) to this model, and for
+# Anthropic models it can also expose `web_fetch` for fetching specific pages.
+#
+#[[providers.vercel.models]]
+#type = "vercel_ai_gateway"
+#id = "anthropic/claude-sonnet-4.5"
+#label = "Claude Sonnet 4.5"
+#description = "Anthropic"
+#[providers.vercel.models.capabilities]
+#tools = true
+#temperature = true
+#attachments = false
+#structured_output = false
 
 # Example of an OpenCode Zen gateway hosting multiple model types.
 #

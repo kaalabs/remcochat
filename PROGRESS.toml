@@ -1571,3 +1571,59 @@ summary = "Route note phrases to quick notes instead of memory"
 details = "Adjusted memory parsing and intent routing to ignore quick-note phrases like 'Note this', preventing them from triggering memory confirmation. Updated intent router guidance and the notes E2E prompt to cover the phrase." 
 tests = ["npm run test:unit (pass)", "npm run test:e2e -- -g \"Notes tool renders a card\" (pass)"]
 files = ["src/app/api/chat/route.ts", "src/server/intent-router.ts", "e2e/notes-tool.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T18:31:49Z"
+type = "feat"
+summary = "Enable seamless web tools for tool-capable models"
+details = "Added an optional app.web_tools config block and wired provider-native web search/fetch tools into /api/chat so models can decide when to fetch up-to-date information. Increased step budget when web tools are enabled and added minimal system prompt guidance."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["src/server/config.ts", "config.toml.example", "src/server/llm-provider.ts", "src/ai/web-tools.ts", "src/app/api/chat/route.ts", "tests/config-web-tools.test.ts", "PLAN.md", "feat-webfetch-research.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T19:15:10Z"
+type = "fix"
+summary = "Make web tools discoverable to the model"
+details = "Moved system prompt construction into a shared module, expanded the web-tools instruction so provider tools are discoverable by name (perplexity_search/web_search/web_fetch/etc), and added debug response headers exposing which web tools were injected per request."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["src/ai/system-prompt.ts", "src/app/api/chat/route.ts", "tests/system-prompt.test.ts", "feat-webfetch-research.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T19:50:00Z"
+type = "fix"
+summary = "Fix AI Gateway web tool result forwarding"
+details = "When using provider-executed web tools (perplexity_search) with OpenAI models via AI Gateway, OpenAI Responses needs store=true to reference tool result items across steps. Added providerOptions.openai.store=true when web tools are enabled for OpenAI models to avoid repeated tool loops and warnings."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["src/ai/provider-options.ts", "src/app/api/chat/route.ts", "tests/provider-options.test.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T19:52:35Z"
+type = "docs"
+summary = "Document OpenAI store requirement for web tools"
+details = "Noted that provider-executed web tools with OpenAI Responses require providerOptions.openai.store=true, otherwise tool results can't be referenced across steps and warnings/tool loops occur."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["feat-webfetch-research.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T20:37:14Z"
+type = "fix"
+summary = "Use OpenAI web_search for AI Gateway OpenAI models"
+details = "Switched AI Gateway OpenAI models from perplexity_search to OpenAI's native web_search tool so the model returns a normal text answer. Also strip web tool call/result parts from messages (request + persisted chat state) to avoid warnings and context bloat, and removed the automatic store=true override."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["src/ai/web-tools.ts", "src/app/api/chat/route.ts", "src/server/message-sanitize.ts", "src/server/chats.ts", "src/ai/provider-options.ts", "tests/provider-options.test.ts", "tests/web-tools.test.ts", "tests/message-sanitize.test.ts", "feat-webfetch-research.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T21:08:39Z"
+type = "feat"
+summary = "Add web_fetch for Anthropic models via AI Gateway"
+details = "When using non-OpenAI models through Vercel AI Gateway, keep web search via perplexity_search and additionally expose Anthropic's web_fetch tool for anthropic/* models so they can fetch and cite specific pages when needed."
+tests = ["npm run test:unit (pass)", "npm run build (pass)"]
+files = ["src/ai/web-tools.ts", "tests/web-tools.test.ts", "feat-webfetch-research.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-17T22:16:31Z"
+type = "fix"
+summary = "Auto-continue AI Gateway perplexity_search for non-OpenAI models"
+details = "Some non-OpenAI models routed through Vercel AI Gateway would call provider-executed web tools (perplexity_search) and stop with an empty assistant message (finishReason=tool-calls). RemcoChat now buffers that first step and automatically runs a second pass that injects formatted search results as context (and removes perplexity_search) so the model produces a normal text answer. Also hardened message sanitization to strip web tool UI parts (tool-*) and ignore incomplete tool calls when converting UI messages to model messages to avoid Anthropic tool_use/tool_result mismatches."
+tests = ["npm run test:unit (pass)", "npm run build (pass)", "agent-browser smoke: AI Gateway anthropic/* answers with URLs (pass)"]
+files = ["src/app/api/chat/route.ts", "src/ai/perplexity.ts", "src/server/message-sanitize.ts", "tests/perplexity.test.ts", "tests/message-sanitize.test.ts", "PROGRESS.toml"]

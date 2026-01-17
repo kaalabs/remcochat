@@ -83,3 +83,4 @@ When proposing changes or generating code:
 7. During development respect the 'fail-fast' principle. Systems, processes, or decisions (for example design and during coding) should detect errors or invalid assumptions as early as possible and stop further execution immediately, rather than continuing in a degraded or misleading state. For example: only code fall backs when the case in question has been explicitly made part of approved designs and/or architecture.
 8. When I ask you for a plan, what I mean for you is to write a SPEC. No exceptions.
 9. Never delete stuff you found changed, but don't recognize. This repo is being worked on by multiple instances at the same time. Assume, this is just someone (or something, might just be another agentic coding agent besides you) else working on it and not a bad thing. You can ignore that and just continue with what you were doing as if nothing happened.
+10. Use excalidraw format for all diagrams you want to output.

@@ -218,3 +218,23 @@ export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedMod
   const { provider, activeProviderId } = getActiveProviderConfig();
   return resolveModelForProvider(activeProviderId, provider, modelId);
 }
+
+export function getGatewayProviderForProviderId(providerId: string) {
+  const provider = getProviderById(providerId);
+  return getVercelGatewayClient(provider);
+}
+
+export function getOpenAIProviderForProviderId(providerId: string) {
+  const provider = getProviderById(providerId);
+  return getOpenAIResponsesClient(provider);
+}
+
+export function getAnthropicProviderForProviderId(providerId: string) {
+  const provider = getProviderById(providerId);
+  return getAnthropicCompatibleClient(provider);
+}
+
+export function getGoogleProviderForProviderId(providerId: string) {
+  const provider = getProviderById(providerId);
+  return getGoogleGenerativeAIClient(provider);
+}

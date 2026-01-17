@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getProfile } from "./profiles";
 import { getActiveProviderConfig } from "@/server/model-registry";
+import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 
 type ChatRow = {
   id: string;
@@ -525,6 +526,14 @@ export function saveChatState(input: {
     throw new Error("Chat does not belong to this profile.");
   }
 
+  const messages = stripWebToolPartsFromMessages(input.messages);
+  const variantsByUserMessageId = Object.fromEntries(
+    Object.entries(input.variantsByUserMessageId ?? {}).map(([turnId, variants]) => [
+      turnId,
+      stripWebToolPartsFromMessages(variants),
+    ])
+  );
+
   const db = getDb();
   const now = new Date().toISOString();
 
@@ -635,7 +644,7 @@ export function saveChatState(input: {
     }
   );
 
-  tx(input.messages, input.variantsByUserMessageId ?? {});
+  tx(messages, variantsByUserMessageId);
 }
 
 function updateUserMessageText(

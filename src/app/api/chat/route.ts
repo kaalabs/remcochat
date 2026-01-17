@@ -20,10 +20,15 @@ import {
 } from "@/server/pending-memory";
 import crypto from "node:crypto";
 import { createTools } from "@/ai/tools";
+import { createWebTools } from "@/ai/web-tools";
+import { buildSystemPrompt } from "@/ai/system-prompt";
+import { createProviderOptionsForWebTools } from "@/ai/provider-options";
+import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
 import {
   getWeatherForLocation,
   getWeatherForecastForLocation,
 } from "@/ai/weather";
+import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { routeIntent } from "@/server/intent-router";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
@@ -176,102 +181,10 @@ function shouldRouteIntent(text: string) {
   return hasMemoryHint || hasWeatherHint;
 }
 
-function buildSystemPrompt(input: {
-  profileInstructions: string;
-  profileInstructionsRevision: number;
-  chatInstructions: string;
-  chatInstructionsRevision: number;
-  memoryLines: string[];
-  isTemporary: boolean;
-  toolsEnabled: boolean;
-}) {
-  const clampRevision = (value: number) => {
-    if (!Number.isFinite(value)) return 1;
-    return Math.max(1, Math.floor(value));
-  };
-
-  const cdata = (value: string) => {
-    const safe = (value ?? "").replaceAll("]]>", "]]\\>");
-    return `<![CDATA[${safe}]]>`;
-  };
-
-  const profileRevision = clampRevision(input.profileInstructionsRevision);
-  const chatRevision = clampRevision(input.chatInstructionsRevision);
-  const profileInstructions = (input.profileInstructions ?? "").trim();
-  const chatInstructions = (input.chatInstructions ?? "").trim();
-
-  const parts: string[] = [
-    "You are RemcoChat, a helpful assistant.",
-    `You are responding under instruction revisions: chat=${chatRevision}, profile=${profileRevision}. Apply the current revisions immediately in this response.`,
-    "Instruction priority (highest → lowest): Chat instructions, Profile instructions, Memory.",
-    "If Chat instructions conflict with Profile instructions, follow Chat instructions.",
-    "When Chat instructions are present, treat them as the definitive behavior constraints for this chat; apply Profile instructions only where they do not conflict.",
-    "Instructions are authoritative and apply to every assistant message unless updated.",
-    "If instructions are updated mid-chat, the newest instruction revisions override any prior assistant messages; treat older assistant messages as stale examples.",
-    "Never store memory automatically. If the user indicates they want something remembered, ask for confirmation before saving it.",
-    "Memory entries must include enough context to be useful later. If the user's request is too vague, ask for clarification before saving.",
-    ...(input.toolsEnabled
-      ? [
-          'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
-          'If the user asks about current weather for a location, you MUST call the "displayWeather" tool and DO NOT output any other text.',
-          'If the user asks for a multi-day forecast for a location, you MUST call the "displayWeatherForecast" tool and DO NOT output any other text.',
-          'If the user asks about the current time in a location, comparing timezones, or converting a time between timezones, you MUST call the "displayTimezones" tool and DO NOT output any other text unless required details are missing.',
-          'When using "displayTimezones", pass city names or IANA timezone ids in zones. If converting a specific time, include reference_time and reference_zone.',
-          'If the user asks to summarize a URL or webpage, you MUST call the "displayUrlSummary" tool and DO NOT output any other text unless required details are missing.',
-          'When using "displayUrlSummary", include the full url, set length to short, medium, or long if the user specifies a preference, and pass focus or language if the user asks for a specific angle or language. If multiple URLs are provided, ask which single URL to summarize first.',
-          'If the user asks to save a quick note, jot something down, or show notes, you MUST call the "displayNotes" tool and DO NOT output any other text unless required details are missing.',
-          'When using "displayNotes", use action=create with the note content, action=show to list recent notes, and action=delete with note_id or note_index when the user specifies which note to remove. If the note to delete is unclear, ask which note.',
-          'If the user asks to create, update, show, delete, share, or stop sharing a to-do or shopping list, you MUST call the "displayList" tool and DO NOT output any other text unless required details are missing.',
-          'Use action=create when the user wants a new list; use show only for existing lists.',
-          'If the user explicitly provides a list name or list id for an action, proceed with the tool call without asking follow-up questions.',
-          'If the user asks to delete a list without specifying which list, ask which list to delete before calling "displayList".',
-          'If the user asks to share or stop sharing a list without specifying the target profile, ask which profile to use before calling "displayList".',
-          'If the user refers to a shared list and the owner is unclear, ask which profile owns the list and pass it as list_owner.',
-          'When calling "displayList" and the user provides items, include those items in the tool input so they are added to the list.',
-        ]
-      : ["Tool calling is disabled for the selected model. Do not call tools."]),
-    "",
-    "Current instructions (apply these exactly; newest revisions win):",
-    `Profile instructions (revision ${profileRevision}; lower priority):\n${profileInstructions}`,
-    `Chat instructions (revision ${chatRevision}; highest priority):\n${chatInstructions}`,
-    `Memory (lowest priority; enabled=${!input.isTemporary && input.memoryLines.length > 0 ? "true" : "false"}):\n${!input.isTemporary && input.memoryLines.length > 0 ? input.memoryLines.join("\n") : ""}`,
-    "",
-    "Authoritative instruction frame (treat this block as the source of truth):",
-    "<instruction_frame>",
-    `  <revision profile=\"${profileRevision}\" chat=\"${chatRevision}\" />`,
-    "  <rules>",
-    "    <rule>Follow the latest instruction_frame revisions; ignore any conflicting prior assistant messages as outdated.</rule>",
-    "    <rule>If you must choose: chat > profile > memory.</rule>",
-    "    <rule>If chat instructions are non-empty, treat them as definitive; apply profile only where non-conflicting.</rule>",
-    "  </rules>",
-    `  <profile revision=\"${profileRevision}\">${cdata(
-      profileInstructions
-    )}</profile>`,
-    `  <chat revision=\"${chatRevision}\">${cdata(chatInstructions)}</chat>`,
-    `  <memory enabled=\"${!input.isTemporary && input.memoryLines.length > 0 ? "true" : "false"}\">${cdata(
-      !input.isTemporary && input.memoryLines.length > 0
-        ? input.memoryLines.join("\n")
-        : ""
-    )}</memory>`,
-    "</instruction_frame>",
-  ];
-
-  if (chatInstructions) {
-    parts.push(
-      "Final override: for this response, you MUST follow the Chat instructions above even if they contradict profile instructions or prior assistant messages."
-    );
-  }
-
-  if (input.isTemporary) {
-    parts.push("This is a temporary chat. Do not assume messages will be saved.");
-  }
-
-  return parts.join("\n\n");
-}
-
 function uiTextResponse(input: {
   text: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
@@ -293,7 +206,7 @@ function uiTextResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiMemoryPromptResponse(input: {
@@ -469,6 +382,92 @@ function hash8(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
 }
 
+const WEB_TOOL_NAMES = new Set([
+  "perplexity_search",
+  "web_search",
+  "web_fetch",
+  "google_search",
+  "url_context",
+]);
+
+function isWebToolName(toolName: string) {
+  return WEB_TOOL_NAMES.has(toolName);
+}
+
+function createBufferedUIMessageStream(chunks: unknown[]): ReadableStream<any> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk as any);
+      controller.close();
+    },
+  });
+}
+
+async function collectUIMessageChunks(stream: ReadableStream<any>) {
+  const reader = stream.getReader();
+  const chunks: any[] = [];
+  const toolNamesByCallId = new Map<string, string>();
+  const webToolOutputs = new Map<string, unknown>();
+  let finishReason: unknown = undefined;
+  let hasUserVisibleOutput = false;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = value as any;
+    chunks.push(chunk);
+
+    if (
+      chunk?.type === "tool-input-start" ||
+      chunk?.type === "tool-input-available" ||
+      chunk?.type === "tool-input-error"
+    ) {
+      if (typeof chunk.toolCallId === "string" && typeof chunk.toolName === "string") {
+        toolNamesByCallId.set(chunk.toolCallId, chunk.toolName);
+      }
+      continue;
+    }
+
+    if (chunk?.type === "tool-output-available" || chunk?.type === "tool-output-error") {
+      const toolName =
+        typeof chunk.toolCallId === "string"
+          ? toolNamesByCallId.get(chunk.toolCallId)
+          : undefined;
+
+      if (toolName && isWebToolName(toolName)) {
+        if (chunk.type === "tool-output-available") {
+          webToolOutputs.set(toolName, chunk.output);
+        } else {
+          webToolOutputs.set(toolName, {
+            error: "unknown",
+            message: typeof chunk.errorText === "string" ? chunk.errorText : "Web tool failed.",
+          });
+        }
+      } else {
+        hasUserVisibleOutput = true;
+      }
+      continue;
+    }
+
+    if (chunk?.type === "text-delta" && typeof chunk.delta === "string") {
+      if (chunk.delta.length > 0) hasUserVisibleOutput = true;
+      continue;
+    }
+
+    if (chunk?.type === "error") {
+      hasUserVisibleOutput = true;
+      continue;
+    }
+
+    if (chunk?.type === "finish") {
+      finishReason = chunk.finishReason;
+      continue;
+    }
+  }
+
+  return { chunks, webToolOutputs, finishReason, hasUserVisibleOutput };
+}
+
 export async function POST(req: Request) {
   const body = (await req.json()) as ChatRequestBody;
   const isRegenerate = Boolean(body.regenerate);
@@ -611,6 +610,14 @@ export async function POST(req: Request) {
 
     const profileInstructions = (profile.customInstructions ?? "").trim();
 
+    const webTools = resolved.capabilities.tools
+      ? createWebTools({
+          providerId: resolved.providerId,
+          modelType: resolved.modelType,
+          providerModelId: resolved.providerModelId,
+        })
+      : { enabled: false, tools: {} };
+
     const system = buildSystemPrompt({
       isTemporary: true,
       chatInstructions: "",
@@ -619,20 +626,59 @@ export async function POST(req: Request) {
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryLines: [],
       toolsEnabled: resolved.capabilities.tools,
+      webToolsEnabled: webTools.enabled,
     });
 
-    const modelMessages = await convertToModelMessages(body.messages);
+    const modelMessages = await convertToModelMessages(
+      stripWebToolPartsFromMessages(body.messages),
+      { ignoreIncompleteToolCalls: true }
+    );
 
     const chatTools = createTools({
       profileId: profile.id,
       summaryModel: resolved.model,
       summarySupportsTemperature: resolved.capabilities.temperature,
     });
+    const maxSteps = webTools.enabled ? 12 : 5;
+    const providerOptions = createProviderOptionsForWebTools({
+      modelType: resolved.modelType,
+      providerModelId: resolved.providerModelId,
+      webToolsEnabled: webTools.enabled,
+    });
+
+    const headers = {
+      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+      "x-remcochat-temporary": "1",
+      "x-remcochat-profile-id": profile.id,
+      "x-remcochat-provider-id": resolved.providerId,
+      "x-remcochat-model-type": resolved.modelType,
+      "x-remcochat-provider-model-id": resolved.providerModelId,
+      "x-remcochat-model-id": resolved.modelId,
+      "x-remcochat-profile-instructions-rev": String(
+        profile.customInstructionsRevision
+      ),
+      "x-remcochat-chat-instructions-rev": "0",
+      "x-remcochat-profile-instructions-len": String(profileInstructions.length),
+      "x-remcochat-profile-instructions-hash": hash8(profileInstructions),
+      "x-remcochat-chat-instructions-len": "0",
+      "x-remcochat-chat-instructions-hash": hash8(""),
+      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
+      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+    };
+
+    const messageMetadata = () => ({
+      createdAt: now,
+      turnUserMessageId: lastUserMessageId || undefined,
+      profileInstructionsRevision: profile.customInstructionsRevision,
+      chatInstructionsRevision: 0,
+    });
+
     const result = streamText({
       model: resolved.model,
       system,
       messages: modelMessages,
       ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
             stopWhen: [
@@ -643,40 +689,103 @@ export async function POST(req: Request) {
               hasToolCall("displayNotes"),
               hasToolCall("displayMemoryAnswer"),
               hasToolCall("displayList"),
-              stepCountIs(5),
+              stepCountIs(maxSteps),
             ],
-            tools: chatTools,
+            tools: { ...chatTools, ...webTools.tools },
           }
         : { stopWhen: [stepCountIs(5)] }),
     });
 
-    return result.toUIMessageStreamResponse({
-      headers: {
-        "x-remcochat-api-version": REMCOCHAT_API_VERSION,
-        "x-remcochat-temporary": "1",
-        "x-remcochat-profile-id": profile.id,
-        "x-remcochat-provider-id": resolved.providerId,
-        "x-remcochat-model-type": resolved.modelType,
-        "x-remcochat-provider-model-id": resolved.providerModelId,
-        "x-remcochat-model-id": resolved.modelId,
-        "x-remcochat-profile-instructions-rev": String(
-          profile.customInstructionsRevision
-        ),
-        "x-remcochat-chat-instructions-rev": "0",
-        "x-remcochat-profile-instructions-len": String(
-          profileInstructions.length
-        ),
-        "x-remcochat-profile-instructions-hash": hash8(profileInstructions),
-        "x-remcochat-chat-instructions-len": "0",
-        "x-remcochat-chat-instructions-hash": hash8(""),
+    const shouldAutoContinuePerplexity =
+      webTools.enabled &&
+      Object.prototype.hasOwnProperty.call(webTools.tools, "perplexity_search");
+
+    if (!shouldAutoContinuePerplexity) {
+      return result.toUIMessageStreamResponse({
+        headers,
+        generateMessageId: nanoid,
+        messageMetadata,
+      });
+    }
+
+    const collected = await collectUIMessageChunks(
+      result.toUIMessageStream({
+        generateMessageId: nanoid,
+        messageMetadata,
+      })
+    );
+
+    const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+    const needsContinuation =
+      collected.finishReason === "tool-calls" &&
+      !collected.hasUserVisibleOutput &&
+      perplexityOutput != null;
+
+    if (!needsContinuation) {
+      return createUIMessageStreamResponse({
+        headers,
+        stream: createBufferedUIMessageStream(collected.chunks),
+      });
+    }
+
+    const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
+      maxResults: 5,
+      maxSnippetChars: 420,
+    });
+
+    if (!formatted.ok) {
+      return uiTextResponse({
+        headers,
+        text: `Web search error: ${formatted.errorText}`,
+        messageMetadata: messageMetadata(),
+      });
+    }
+
+    const continuationText = [
+      "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
+      lastUserText ? `User question: ${lastUserText}` : "",
+      formatted.text,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const continuationMessages = modelMessages.concat([
+      {
+        role: "user" as const,
+        content: [{ type: "text" as const, text: continuationText }],
       },
+    ]);
+
+    const tools = { ...chatTools, ...webTools.tools } as Record<string, any>;
+    delete tools.perplexity_search;
+
+    const continued = streamText({
+      model: resolved.model,
+      system,
+      messages: continuationMessages,
+      ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
+      ...(resolved.capabilities.tools
+        ? {
+            stopWhen: [
+              hasToolCall("displayWeather"),
+              hasToolCall("displayWeatherForecast"),
+              hasToolCall("displayTimezones"),
+              hasToolCall("displayUrlSummary"),
+              hasToolCall("displayNotes"),
+              hasToolCall("displayMemoryAnswer"),
+              hasToolCall("displayList"),
+              stepCountIs(maxSteps),
+            ],
+            tools,
+          }
+        : { stopWhen: [stepCountIs(5)] }),
+    });
+
+    return continued.toUIMessageStreamResponse({
+      headers,
       generateMessageId: nanoid,
-      messageMetadata: () => ({
-        createdAt: now,
-        turnUserMessageId: lastUserMessageId || undefined,
-        profileInstructionsRevision: profile.customInstructionsRevision,
-        chatInstructionsRevision: 0,
-      }),
+      messageMetadata,
     });
   }
 
@@ -995,6 +1104,14 @@ export async function POST(req: Request) {
     );
   }
 
+  const webTools = resolved.capabilities.tools
+    ? createWebTools({
+        providerId: resolved.providerId,
+        modelType: resolved.modelType,
+        providerModelId: resolved.providerModelId,
+      })
+    : { enabled: false, tools: {} };
+
   const systemParts: string[] = [
     buildSystemPrompt({
       isTemporary: false,
@@ -1004,6 +1121,7 @@ export async function POST(req: Request) {
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryLines,
       toolsEnabled: resolved.capabilities.tools,
+      webToolsEnabled: webTools.enabled,
     }),
   ];
 
@@ -1063,12 +1181,21 @@ export async function POST(req: Request) {
     return true;
   });
 
-  const modelMessages = await convertToModelMessages(filteredMessages);
+  const modelMessages = await convertToModelMessages(
+    stripWebToolPartsFromMessages(filteredMessages),
+    { ignoreIncompleteToolCalls: true }
+  );
 
   const chatTools = createTools({
     profileId: profile.id,
     summaryModel: resolved.model,
     summarySupportsTemperature: resolved.capabilities.temperature,
+  });
+  const maxSteps = webTools.enabled ? 12 : 5;
+  const providerOptions = createProviderOptionsForWebTools({
+    modelType: resolved.modelType,
+    providerModelId: resolved.providerModelId,
+    webToolsEnabled: webTools.enabled,
   });
   const result = streamText({
     model: resolved.model,
@@ -1077,6 +1204,7 @@ export async function POST(req: Request) {
     ...(resolved.capabilities.temperature
       ? { temperature: isRegenerate ? 0.9 : 0 }
       : {}),
+    ...(providerOptions ? { providerOptions } : {}),
     ...(resolved.capabilities.tools
       ? {
           stopWhen: [
@@ -1087,9 +1215,9 @@ export async function POST(req: Request) {
             hasToolCall("displayNotes"),
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
-            stepCountIs(5),
+            stepCountIs(maxSteps),
           ],
-          tools: chatTools,
+          tools: { ...chatTools, ...webTools.tools },
         }
       : { stopWhen: [stepCountIs(5)] }),
   });
@@ -1119,6 +1247,8 @@ export async function POST(req: Request) {
       "x-remcochat-profile-instructions-stored-hash": hash8(
         storedProfileInstructions
       ),
+      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
+      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
     };
 
   const messageMetadata = () => ({
@@ -1128,7 +1258,95 @@ export async function POST(req: Request) {
     chatInstructionsRevision: currentChatRevision,
   });
 
-  return result.toUIMessageStreamResponse({
+  const shouldAutoContinuePerplexity =
+    webTools.enabled &&
+    Object.prototype.hasOwnProperty.call(webTools.tools, "perplexity_search");
+
+  if (!shouldAutoContinuePerplexity) {
+    return result.toUIMessageStreamResponse({
+      headers,
+      generateMessageId: nanoid,
+      messageMetadata,
+    });
+  }
+
+  const collected = await collectUIMessageChunks(
+    result.toUIMessageStream({
+      generateMessageId: nanoid,
+      messageMetadata,
+    })
+  );
+
+  const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+  const needsContinuation =
+    collected.finishReason === "tool-calls" &&
+    !collected.hasUserVisibleOutput &&
+    perplexityOutput != null;
+
+  if (!needsContinuation) {
+    return createUIMessageStreamResponse({
+      headers,
+      stream: createBufferedUIMessageStream(collected.chunks),
+    });
+  }
+
+  const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
+    maxResults: 5,
+    maxSnippetChars: 420,
+  });
+
+  if (!formatted.ok) {
+    return uiTextResponse({
+      headers,
+      text: `Web search error: ${formatted.errorText}`,
+      messageMetadata: messageMetadata(),
+    });
+  }
+
+  const continuationText = [
+    "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
+    lastUserText ? `User question: ${lastUserText}` : "",
+    formatted.text,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const continuationMessages = modelMessages.concat([
+    {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: continuationText }],
+    },
+  ]);
+
+  const tools = { ...chatTools, ...webTools.tools } as Record<string, any>;
+  delete tools.perplexity_search;
+
+  const continued = streamText({
+    model: resolved.model,
+    system,
+    messages: continuationMessages,
+    ...(resolved.capabilities.temperature
+      ? { temperature: isRegenerate ? 0.9 : 0 }
+      : {}),
+    ...(providerOptions ? { providerOptions } : {}),
+    ...(resolved.capabilities.tools
+      ? {
+          stopWhen: [
+            hasToolCall("displayWeather"),
+            hasToolCall("displayWeatherForecast"),
+            hasToolCall("displayTimezones"),
+            hasToolCall("displayUrlSummary"),
+            hasToolCall("displayNotes"),
+            hasToolCall("displayMemoryAnswer"),
+            hasToolCall("displayList"),
+            stepCountIs(maxSteps),
+          ],
+          tools,
+        }
+      : { stopWhen: [stepCountIs(5)] }),
+  });
+
+  return continued.toUIMessageStreamResponse({
     headers,
     generateMessageId: nanoid,
     messageMetadata,

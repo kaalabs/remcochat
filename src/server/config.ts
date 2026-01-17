@@ -46,11 +46,22 @@ const IntentRouterSchema = z
   })
   .optional();
 
+const WebToolsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    max_results: z.number().int().min(1).max(20).optional(),
+    recency: z.enum(["day", "week", "month", "year"]).optional(),
+    allowed_domains: z.array(z.string().min(1)).optional(),
+    blocked_domains: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+
 const RawConfigSchema = z.object({
   version: z.literal(1),
   app: z.object({
     default_provider_id: z.string().min(1),
     router: IntentRouterSchema,
+    web_tools: WebToolsSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
 });
@@ -88,6 +99,13 @@ export type RemcoChatConfig = {
     modelId: string;
     minConfidence: number;
     maxInputChars: number;
+  } | null;
+  webTools: {
+    enabled: boolean;
+    maxResults: number;
+    recency: "day" | "week" | "month" | "year" | null;
+    allowedDomains: string[];
+    blockedDomains: string[];
   } | null;
 };
 
@@ -185,11 +203,43 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     };
   }
 
+  let webTools: RemcoChatConfig["webTools"] = null;
+  const rawWebTools = raw.app.web_tools ?? {};
+  const webEnabled = Boolean(rawWebTools.enabled ?? false);
+  if (webEnabled) {
+    const maxResults = Math.min(
+      20,
+      Math.max(1, Math.floor(Number(rawWebTools.max_results ?? 8)))
+    );
+    const recency = rawWebTools.recency ?? null;
+    const allowedDomains = Array.isArray(rawWebTools.allowed_domains)
+      ? rawWebTools.allowed_domains.map((d) => String(d).trim()).filter(Boolean)
+      : [];
+    const blockedDomains = Array.isArray(rawWebTools.blocked_domains)
+      ? rawWebTools.blocked_domains.map((d) => String(d).trim()).filter(Boolean)
+      : [];
+
+    if (allowedDomains.length > 0 && blockedDomains.length > 0) {
+      throw new Error(
+        "config.toml: app.web_tools.allowed_domains and app.web_tools.blocked_domains cannot both be set"
+      );
+    }
+
+    webTools = {
+      enabled: true,
+      maxResults,
+      recency,
+      allowedDomains,
+      blockedDomains,
+    };
+  }
+
   return {
     version: 1,
     defaultProviderId,
     providers,
     intentRouter,
+    webTools,
   };
 }
 

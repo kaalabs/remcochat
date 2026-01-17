@@ -20,6 +20,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
 - Memory-derived answers shown as a card (brain icon)
 - Temporary chat (no history/no memory)
 - Theme (light/dark) + keyboard shortcuts
+- Optional agentic web tools (search/fetch) exposed to tool-capable models (model decides when to use)
 - Generative UI tools: weather + forecast cards (Open-Meteo), to-do/grocery list cards (shareable across profiles), timezones card, URL summary card, quick notes card
 
 ### Later
