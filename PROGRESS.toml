@@ -1635,3 +1635,19 @@ summary = "Prevent list actions from triggering memory flow"
 details = "Added list-intent detection so commands like 'add issue to the RemcoChat issues list' bypass memory parsing and intent routing. This keeps list updates in the list tool flow even when memory is disabled."
 tests = ["npm run test:unit (pass)"]
 files = ["src/server/list-intent.ts", "src/app/api/chat/route.ts", "tests/list-intent.test.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-18T01:07:22Z"
+type = "feat"
+summary = "Make the app shell responsive on mobile"
+details = "Switched the main layout to a md breakpoint shell: desktop keeps the sidebar, mobile gets a drawer menu. Added safe-area padding and a small visualViewport-based keyboard inset helper to keep the composer usable on iOS. Theme toggle is always visible in the mobile header and the admin link now opens in the same tab."
+tests = ["npm run test:unit (pass)", "npm run test:e2e (pass)"]
+files = ["src/app/layout.tsx", "src/app/globals.css", "src/components/viewport-insets.tsx", "src/components/theme-provider.tsx", "src/app/home-client.tsx", "src/app/admin/admin-client.tsx", "e2e/mobile-shell.spec.ts", "e2e/instructions.spec.ts", "e2e/list-tool.spec.ts", "e2e/memory-card.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-18T01:12:05Z"
+type = "fix"
+summary = "Make mobile sidebar drawer dialog accessible"
+details = "Added a visually-hidden DialogTitle to the mobile sidebar drawer to satisfy Radix Dialog accessibility requirements and remove the runtime console error."
+tests = ["npm run test:unit (pass)"]
+files = ["src/app/home-client.tsx", "PROGRESS.toml"]

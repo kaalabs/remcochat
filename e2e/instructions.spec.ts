@@ -502,9 +502,9 @@ test("Profile reselect restores composer focus (WebKit)", async ({ page }) => {
   expect(current).not.toBe("");
 
   await trigger.click();
-  const option = page.getByRole("option", { name: current });
-  await expect(option).toBeVisible();
-  await option.click();
+  const selectContent = page.locator('[data-slot="select-content"]');
+  await expect(selectContent).toBeVisible();
+  await selectContent.locator('[data-slot="select-item"]', { hasText: current }).click();
 
   await expect(composer).toBeFocused();
 });
@@ -512,7 +512,7 @@ test("Profile reselect restores composer focus (WebKit)", async ({ page }) => {
 test("Theme toggle restores composer focus (WebKit)", async ({ page }) => {
   await page.goto("/");
 
-  const themeToggle = page.getByLabel("Toggle theme");
+  const themeToggle = page.locator('button[aria-label="Toggle theme"]:visible');
   await expect(themeToggle).toBeVisible();
   await expect(themeToggle.locator("svg")).toHaveCount(1);
 
