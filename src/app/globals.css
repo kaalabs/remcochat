@@ -48,6 +48,8 @@
 
 :root {
   --radius: 0.625rem;
+  --rc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --rc-keyboard-inset: 0px;
   /* Light theme surface palette (from screenshot): */
   --background: #f7f7f4;
   --foreground: oklch(0.145 0 0);

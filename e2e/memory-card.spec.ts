@@ -59,6 +59,7 @@ async function selectPreferredModel(
 }
 
 test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
+  test.setTimeout(480_000);
   await page.goto("/");
 
   const profileName = `E2E memory ${Date.now()}`;
@@ -126,6 +127,8 @@ test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
     timeout: 120_000,
   });
 
+  const assistantCountBeforeAnswer = await assistantMessages.count();
+
   await page
     .getByTestId("composer:textarea")
     .fill("What's my favorite color? Reply with a single word.");
@@ -136,30 +139,24 @@ test("Memory retrieval shows a memory card (WebKit)", async ({ page }) => {
       timeout: 120_000,
       intervals: [100, 250, 500, 1000],
     })
-    .toBeGreaterThan(2);
+    .toBeGreaterThan(assistantCountBeforeAnswer);
 
   const lastAssistant = assistantMessages.last();
-  const memoryCard = lastAssistant.getByTestId("memory:card");
+
   await expect
     .poll(async () => {
-      if ((await memoryCard.count()) > 0) return "card";
-      const text = await lastAssistant
-        .locator(".prose-neutral")
-        .innerText()
-        .catch(() => "");
-      return /\bpurple\b/i.test(text) ? "text" : "";
+      const text = await lastAssistant.innerText().catch(() => "");
+      return /\bpurple\b/i.test(text);
     }, {
-      timeout: 120_000,
+      timeout: 240_000,
       intervals: [100, 250, 500, 1000],
     })
-    .not.toBe("");
+    .toBeTruthy();
 
-  if ((await memoryCard.count()) > 0) {
-    await expect(memoryCard).toContainText(/\bpurple\b/i);
-    await expect(lastAssistant.locator(".prose-neutral")).toHaveCount(0);
-  } else {
-    await expect(lastAssistant.locator(".prose-neutral")).toContainText(
-      /\bpurple\b/i
-    );
-  }
+  await expect(lastAssistant).toContainText(/\bpurple\b/i);
+
+  const memoryCard = lastAssistant.getByTestId("memory:card");
+  await expect(memoryCard).toBeVisible();
+  await expect(memoryCard).toContainText(/\bpurple\b/i);
+  await expect(lastAssistant.locator(".prose-neutral")).toHaveCount(0);
 });

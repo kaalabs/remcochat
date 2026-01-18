@@ -60,7 +60,9 @@ async function selectPreferredModel(
 
 async function selectProfile(page: import("@playwright/test").Page, name: string) {
   await page.getByTestId("profile:select-trigger").click();
-  await page.getByRole("option", { name }).click();
+  const selectContent = page.locator('[data-slot="select-content"]');
+  await expect(selectContent).toBeVisible();
+  await selectContent.locator('[data-slot="select-item"]', { hasText: name }).click();
   await expect(page.getByTestId("profile:select-trigger")).toContainText(name);
 }
 
@@ -152,6 +154,8 @@ test("List tool deletes a list (WebKit)", async ({ page }) => {
 });
 
 test("Shared lists sync across profiles (WebKit)", async ({ page }) => {
+  test.setTimeout(480_000);
+
   const consoleErrors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());

@@ -160,7 +160,7 @@ export function AdminClient() {
   return (
     <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b bg-sidebar px-4 py-3 text-sidebar-foreground">
+        <header className="flex items-center justify-between gap-3 border-b bg-sidebar pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] text-sidebar-foreground">
           <div className="flex min-w-0 items-center gap-3">
             <ShieldIcon className="size-4 shrink-0" />
             <div className="min-w-0">

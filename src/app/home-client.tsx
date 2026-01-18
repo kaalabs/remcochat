@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -57,23 +58,26 @@ import type { TimezonesToolOutput } from "@/ai/timezones";
 import type { UrlSummaryToolOutput } from "@/ai/url-summary";
 import type { NotesToolOutput } from "@/lib/types";
 import {
-	  ArchiveIcon,
-	  BookmarkIcon,
-	  ChevronDownIcon,
-	  ShieldIcon,
-	  DownloadIcon,
-	  MoreVerticalIcon,
-	  PlusIcon,
-	  PencilIcon,
-	  LockIcon,
-	  LockOpenIcon,
-	  RotateCcwIcon,
-	  SettingsIcon,
-  SlidersHorizontalIcon,
-  Trash2Icon,
-  Undo2Icon,
-} from "lucide-react";
+		  ArchiveIcon,
+		  BookmarkIcon,
+		  ChevronDownIcon,
+		  ShieldIcon,
+		  DownloadIcon,
+      MenuIcon,
+		  MoreVerticalIcon,
+		  PlusIcon,
+		  PencilIcon,
+      XIcon,
+		  LockIcon,
+		  LockOpenIcon,
+		  RotateCcwIcon,
+		  SettingsIcon,
+	  SlidersHorizontalIcon,
+	  Trash2Icon,
+	  Undo2Icon,
+	} from "lucide-react";
 import { nanoid } from "nanoid";
+import Link from "next/link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -347,6 +351,7 @@ export function HomeClient({
 
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [profileSelectOpen, setProfileSelectOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -1315,368 +1320,451 @@ export function HomeClient({
     [activeProfile, chatRequestBody, sendMessage, status]
   );
 
-  return (
-    <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
-      <div className="grid h-full min-h-0 grid-cols-[18rem_1fr]">
-        <aside className="flex min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground">
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-            <div className="font-semibold tracking-tight">RemcoChat</div>
-            <ThemeToggle />
-          </div>
+  const closeSidebarDrawer = useCallback(() => {
+    setSidebarOpen(false);
+    window.setTimeout(() => focusComposer({ toEnd: true }), 0);
+  }, [focusComposer]);
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <div className="flex items-center justify-between gap-2 px-2 py-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                Chats
-	              </div>
-	              <Button
-	                aria-label="New chat"
-	                className="h-7 w-7 px-0"
-	                data-testid="sidebar:new-chat"
-	                onClick={() => createChat()}
-	                title="New chat"
-	                type="button"
-	                variant="secondary"
-	              >
-	                <PlusIcon className="size-4" />
-	              </Button>
-	            </div>
-            {deleteChatError ? (
-              <div className="px-2 pb-2 text-xs text-destructive">
-                {deleteChatError}
-              </div>
-            ) : null}
+  const renderSidebar = (mode: "desktop" | "drawer") => {
+    const closeIfDrawer = () => {
+      if (mode !== "drawer") return;
+      closeSidebarDrawer();
+    };
 
-            <div className="space-y-1 px-1 pb-2" data-testid="sidebar:chats-active">
-              {chats
-                .filter((c) => !c.archivedAt)
-                .map((chat) => (
-                  <div
-                    className={
-                      "group flex items-center gap-1 rounded-md transition-colors " +
-                      (chat.id === activeChatId && !isTemporaryChat
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "hover:bg-sidebar-accent/70")
-                    }
-                    key={chat.id}
-                  >
-                    <button
-                      className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
-                      data-testid={`sidebar:chat:${chat.id}`}
-                      onClick={() => {
-                        setIsTemporaryChat(false);
-                        setActiveChatId(chat.id);
-                      }}
-                      type="button"
-                    >
-                      <div className="truncate">
-                        {chat.title.trim() ? chat.title : "New chat"}
-                      </div>
-                    </button>
-
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                          data-testid={`sidebar:chat-menu:${chat.id}`}
-                          disabled={!activeProfile || status !== "ready"}
-                          suppressHydrationWarning
-                          type="button"
-                          variant="ghost"
-                        >
-                          <MoreVerticalIcon className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          data-testid={`chat-action:archive:${chat.id}`}
-                          onClick={() => archiveChatById(chat.id)}
-                        >
-                          <ArchiveIcon />
-                          Archive
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          data-testid={`chat-action:export-md:${chat.id}`}
-                          onClick={() => exportChatById(chat.id, "md")}
-                        >
-                          <DownloadIcon />
-                          Export Markdown
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          data-testid={`chat-action:export-json:${chat.id}`}
-                          onClick={() => exportChatById(chat.id, "json")}
-                        >
-                          <DownloadIcon />
-                          Export JSON
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          data-testid={`chat-action:delete:${chat.id}`}
-                          onClick={() => deleteChatById(chat.id)}
-                          variant="destructive"
-                        >
-                          <Trash2Icon />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ))}
-            </div>
-
-            {chats.some((c) => Boolean(c.archivedAt)) ? (
-              <div className="pt-2">
-                <Collapsible onOpenChange={setArchivedOpen} open={archivedOpen}>
-                  <CollapsibleTrigger asChild>
-                    <button
-                      className="flex w-full items-center justify-between gap-2 px-3 pb-1 text-left text-xs font-medium text-muted-foreground"
-                      data-testid="sidebar:archived-toggle"
-                      suppressHydrationWarning
-                      type="button"
-                    >
-                      <span>
-                        Archived ({chats.filter((c) => Boolean(c.archivedAt)).length})
-                      </span>
-                      <ChevronDownIcon
-                        className={
-                          "size-3 transition-transform " +
-                          (archivedOpen ? "rotate-180" : "")
-                        }
-                      />
-                    </button>
-                  </CollapsibleTrigger>
-
-                  <CollapsibleContent>
-                    <div
-                      className="space-y-1 px-1 pb-2"
-                      data-testid="sidebar:chats-archived"
-                    >
-                      {chats
-                        .filter((c) => Boolean(c.archivedAt))
-                        .map((chat) => (
-                          <div
-                            className={
-                              "group flex items-center gap-1 rounded-md transition-colors " +
-                              (chat.id === activeChatId && !isTemporaryChat
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                : "hover:bg-sidebar-accent/70")
-                            }
-                            key={chat.id}
-                          >
-                            <button
-                              className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
-                              data-testid={`sidebar:archived-chat:${chat.id}`}
-                              onClick={() => {
-                                setIsTemporaryChat(false);
-                                setActiveChatId(chat.id);
-                              }}
-                              type="button"
-                            >
-                              <div className="truncate">
-                                {chat.title.trim() ? chat.title : "New chat"}
-                              </div>
-                            </button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                                  data-testid={`sidebar:archived-chat-menu:${chat.id}`}
-                                  disabled={!activeProfile || status !== "ready"}
-                                  suppressHydrationWarning
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <MoreVerticalIcon className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  data-testid={`chat-action:unarchive:${chat.id}`}
-                                  onClick={() => unarchiveChatById(chat.id)}
-                                >
-                                  <Undo2Icon />
-                                  Unarchive
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  data-testid={`chat-action:export-md:${chat.id}`}
-                                  onClick={() => exportChatById(chat.id, "md")}
-                                >
-                                  <DownloadIcon />
-                                  Export Markdown
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  data-testid={`chat-action:export-json:${chat.id}`}
-                                  onClick={() => exportChatById(chat.id, "json")}
-                                >
-                                  <DownloadIcon />
-                                  Export JSON
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  data-testid={`chat-action:delete:${chat.id}`}
-                                  onClick={() => deleteChatById(chat.id)}
-                                  variant="destructive"
-                                >
-                                  <Trash2Icon />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        ))}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="border-t p-4">
-            <div className="mb-2 text-xs font-medium text-muted-foreground">
-              Profile
-            </div>
-            <div className="flex items-center gap-2">
-              <Select
-                onOpenChange={(open) => {
-                  setProfileSelectOpen(open);
-                  if (open) return;
-                  window.setTimeout(() => focusComposer({ toEnd: true }), 0);
-                }}
-                onValueChange={setActiveProfileId}
-                value={activeProfile?.id ?? ""}
-              >
-                <SelectTrigger
-                  className="h-9 flex-1"
-                  data-testid="profile:select-trigger"
-                  suppressHydrationWarning
-                >
-                  <SelectValue placeholder="Select profile" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-	              <Button
-	                aria-label="New profile"
-	                className="h-9 w-9 px-0"
-	                data-testid="profile:new"
-	                onClick={() => setCreateOpen(true)}
-	                title="New profile"
-	                type="button"
-	                variant="secondary"
-	              >
-	                <PlusIcon className="size-4" />
-	              </Button>
-	            </div>
-
-            <div className="mt-3 flex items-center gap-2">
+    return (
+      <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="font-semibold tracking-tight">RemcoChat</div>
+          {mode === "drawer" ? (
+            <DialogClose asChild>
               <Button
-                className="h-9 w-full justify-start gap-2"
-                data-testid="profile:settings-open"
-                disabled={status !== "ready"}
-                onClick={() => setSettingsOpen(true)}
+                aria-label="Close menu"
+                className="h-8 w-8"
+                size="icon"
                 type="button"
                 variant="ghost"
               >
-                <SettingsIcon className="size-4" />
-                <span>Settings</span>
+                <XIcon className="size-4" />
+              </Button>
+            </DialogClose>
+          ) : (
+            <div className="hidden md:block">
+              <ThemeToggle />
+            </div>
+          )}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="flex items-center justify-between gap-2 px-2 py-2">
+            <div className="text-xs font-medium text-muted-foreground">Chats</div>
+            <Button
+              aria-label="New chat"
+              className="h-7 w-7 px-0"
+              data-testid="sidebar:new-chat"
+              onClick={() => {
+                createChat();
+                closeIfDrawer();
+              }}
+              title="New chat"
+              type="button"
+              variant="secondary"
+            >
+              <PlusIcon className="size-4" />
+            </Button>
+          </div>
+          {deleteChatError ? (
+            <div className="px-2 pb-2 text-xs text-destructive">
+              {deleteChatError}
+            </div>
+          ) : null}
+
+          <div className="space-y-1 px-1 pb-2" data-testid="sidebar:chats-active">
+            {chats
+              .filter((c) => !c.archivedAt)
+              .map((chat) => (
+                <div
+                  className={
+                    "group flex items-center gap-1 rounded-md transition-colors " +
+                    (chat.id === activeChatId && !isTemporaryChat
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "hover:bg-sidebar-accent/70")
+                  }
+                  key={chat.id}
+                >
+                  <button
+                    className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                    data-testid={`sidebar:chat:${chat.id}`}
+                    onClick={() => {
+                      setIsTemporaryChat(false);
+                      setActiveChatId(chat.id);
+                      closeIfDrawer();
+                    }}
+                    type="button"
+                  >
+                    <div className="truncate">
+                      {chat.title.trim() ? chat.title : "New chat"}
+                    </div>
+                  </button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                        data-testid={`sidebar:chat-menu:${chat.id}`}
+                        disabled={!activeProfile || status !== "ready"}
+                        suppressHydrationWarning
+                        type="button"
+                        variant="ghost"
+                      >
+                        <MoreVerticalIcon className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        data-testid={`chat-action:archive:${chat.id}`}
+                        onClick={() => {
+                          archiveChatById(chat.id);
+                          closeIfDrawer();
+                        }}
+                      >
+                        <ArchiveIcon />
+                        Archive
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        data-testid={`chat-action:export-md:${chat.id}`}
+                        onClick={() => exportChatById(chat.id, "md")}
+                      >
+                        <DownloadIcon />
+                        Export Markdown
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-testid={`chat-action:export-json:${chat.id}`}
+                        onClick={() => exportChatById(chat.id, "json")}
+                      >
+                        <DownloadIcon />
+                        Export JSON
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        data-testid={`chat-action:delete:${chat.id}`}
+                        onClick={() => {
+                          deleteChatById(chat.id);
+                          closeIfDrawer();
+                        }}
+                        variant="destructive"
+                      >
+                        <Trash2Icon />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ))}
+          </div>
+
+          {chats.some((c) => Boolean(c.archivedAt)) ? (
+            <div className="pt-2">
+              <Collapsible onOpenChange={setArchivedOpen} open={archivedOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className="flex w-full items-center justify-between gap-2 px-3 pb-1 text-left text-xs font-medium text-muted-foreground"
+                    data-testid="sidebar:archived-toggle"
+                    suppressHydrationWarning
+                    type="button"
+                  >
+                    <span>
+                      Archived (
+                      {chats.filter((c) => Boolean(c.archivedAt)).length})
+                    </span>
+                    <ChevronDownIcon
+                      className={
+                        "size-3 transition-transform " +
+                        (archivedOpen ? "rotate-180" : "")
+                      }
+                    />
+                  </button>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent>
+                  <div
+                    className="space-y-1 px-1 pb-2"
+                    data-testid="sidebar:chats-archived"
+                  >
+                    {chats
+                      .filter((c) => Boolean(c.archivedAt))
+                      .map((chat) => (
+                        <div
+                          className={
+                            "group flex items-center gap-1 rounded-md transition-colors " +
+                            (chat.id === activeChatId && !isTemporaryChat
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : "hover:bg-sidebar-accent/70")
+                          }
+                          key={chat.id}
+                        >
+                          <button
+                            className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                            data-testid={`sidebar:archived-chat:${chat.id}`}
+                            onClick={() => {
+                              setIsTemporaryChat(false);
+                              setActiveChatId(chat.id);
+                              closeIfDrawer();
+                            }}
+                            type="button"
+                          >
+                            <div className="truncate">
+                              {chat.title.trim() ? chat.title : "New chat"}
+                            </div>
+                          </button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                data-testid={`sidebar:archived-chat-menu:${chat.id}`}
+                                disabled={!activeProfile || status !== "ready"}
+                                suppressHydrationWarning
+                                type="button"
+                                variant="ghost"
+                              >
+                                <MoreVerticalIcon className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                data-testid={`chat-action:unarchive:${chat.id}`}
+                                onClick={() => {
+                                  unarchiveChatById(chat.id);
+                                  closeIfDrawer();
+                                }}
+                              >
+                                <Undo2Icon />
+                                Unarchive
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                data-testid={`chat-action:export-md:${chat.id}`}
+                                onClick={() => exportChatById(chat.id, "md")}
+                              >
+                                <DownloadIcon />
+                                Export Markdown
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                data-testid={`chat-action:export-json:${chat.id}`}
+                                onClick={() => exportChatById(chat.id, "json")}
+                              >
+                                <DownloadIcon />
+                                Export JSON
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                data-testid={`chat-action:delete:${chat.id}`}
+                                onClick={() => {
+                                  deleteChatById(chat.id);
+                                  closeIfDrawer();
+                                }}
+                                variant="destructive"
+                              >
+                                <Trash2Icon />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="border-t p-4">
+          <div className="mb-2 text-xs font-medium text-muted-foreground">
+            Profile
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              onOpenChange={(open) => {
+                setProfileSelectOpen(open);
+                if (open) return;
+                window.setTimeout(() => focusComposer({ toEnd: true }), 0);
+              }}
+              onValueChange={(value) => {
+                setActiveProfileId(value);
+                closeIfDrawer();
+              }}
+              value={activeProfile?.id ?? ""}
+            >
+              <SelectTrigger
+                className="h-9 flex-1"
+                data-testid="profile:select-trigger"
+                suppressHydrationWarning
+              >
+                <SelectValue placeholder="Select profile" />
+              </SelectTrigger>
+              <SelectContent>
+                {profiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              aria-label="New profile"
+              className="h-9 w-9 px-0"
+              data-testid="profile:new"
+              onClick={() => {
+                setCreateOpen(true);
+                closeIfDrawer();
+              }}
+              title="New profile"
+              type="button"
+              variant="secondary"
+            >
+              <PlusIcon className="size-4" />
+            </Button>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <Button
+              className="h-9 w-full justify-start gap-2"
+              data-testid="profile:settings-open"
+              disabled={status !== "ready"}
+              onClick={() => {
+                setSettingsOpen(true);
+                closeIfDrawer();
+              }}
+              type="button"
+              variant="ghost"
+            >
+              <SettingsIcon className="size-4" />
+              <span>Settings</span>
+            </Button>
+          </div>
+
+          {adminEnabled ? (
+            <div className="mt-2">
+              <Button
+                asChild
+                className="h-9 w-full justify-start gap-2"
+                data-testid="admin:open"
+                variant="ghost"
+              >
+                <Link href="/admin">
+                  <ShieldIcon className="size-4" />
+                  <span>Admin</span>
+                </Link>
               </Button>
             </div>
+          ) : null}
 
-		            {adminEnabled ? (
-		              <div className="mt-2">
-		                <Button
-		                  className="h-9 w-full justify-start gap-2"
-		                  data-testid="admin:open"
-		                  onClick={() => window.open("/admin", "_blank", "noopener,noreferrer")}
-		                  type="button"
-		                  variant="ghost"
-		                >
-		                  <ShieldIcon className="size-4" />
-		                  <span>Admin</span>
+          {appVersion ? (
+            <div
+              className="mt-3 text-[11px] text-muted-foreground"
+              data-testid="app:version"
+            >
+              v{appVersion} · (c) kaaLabs &apos;26
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+	    <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
+	      <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[18rem_1fr]">
+	        <aside className="hidden min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
+	          {renderSidebar("desktop")}
+	        </aside>
+
+	        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+	          <header className="border-b">
+	            <div className="flex flex-wrap items-center gap-3 pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
+	              <div className="flex min-w-0 items-center gap-2 md:hidden">
+	                <Button
+	                  aria-label="Open menu"
+	                  onClick={() => setSidebarOpen(true)}
+	                  size="icon"
+	                  type="button"
+	                  variant="ghost"
+	                >
+	                  <MenuIcon className="size-4" />
+	                </Button>
+	                <div className="truncate font-semibold tracking-tight">RemcoChat</div>
+	              </div>
+
+	              <div className="order-last flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
+	                <div className="hidden shrink-0 text-sm text-muted-foreground md:block">
+	                  Model
+	                </div>
+	                <ModelPicker
+	                  className="min-w-0 w-full md:w-auto"
+	                  onChange={(modelId) => {
+	                    if (activeProfile && isAllowedModel(modelId)) {
+	                      window.localStorage.setItem(
+	                        lastUsedModelKey(activeProfile.id),
+	                        modelId
+	                      );
+	                    }
+	                    if (isTemporaryChat) {
+	                      if (isAllowedModel(modelId)) setTemporaryModelId(modelId);
+	                      return;
+	                    }
+	                    setChatModel(modelId);
+	                  }}
+	                  options={modelOptions}
+	                  triggerTestId="model:picker-trigger"
+	                  value={effectiveModelId}
+	                />
+	              </div>
+
+	              <div className="ml-auto flex items-center gap-2">
+	                <div className="md:hidden">
+	                  <ThemeToggle />
+	                </div>
+	                <div className="hidden text-sm text-muted-foreground md:block">
+	                  {isTemporaryChat
+	                    ? "Temporary chat"
+	                    : modelOptions.find((m) => m.id === effectiveModelId)?.label ??
+	                      effectiveModelId}
+	                </div>
+	                <Button
+	                  aria-label={
+	                    isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"
+	                  }
+	                  className={
+	                    "h-8 w-9 px-0 " +
+	                    (isTemporaryChat
+	                      ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
+	                      : "border-ring/50 text-ring bg-transparent hover:bg-muted hover:text-ring focus-visible:border-ring focus-visible:ring-ring/30 dark:border-ring/50 dark:bg-input/30 dark:hover:bg-input/50 dark:hover:text-ring")
+	                  }
+	                  data-testid="chat:temporary-toggle"
+	                  onClick={() => toggleTemporaryChat()}
+	                  title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
+	                  type="button"
+	                  variant="outline"
+	                >
+	                  {isTemporaryChat ? (
+	                    <LockIcon className="size-4" />
+	                  ) : (
+	                    <LockOpenIcon className="size-4" />
+	                  )}
 	                </Button>
 	              </div>
-	            ) : null}
-
-		            {appVersion ? (
-			              <div
-			                className="mt-3 text-[11px] text-muted-foreground"
-			                data-testid="app:version"
-			              >
-			                v{appVersion} · (c) kaaLabs &apos;26
-			              </div>
-			            ) : null}
-		          </div>
-		        </aside>
-
-        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <header className="flex items-center justify-between gap-3 border-b px-4 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="shrink-0 text-sm text-muted-foreground">Model</div>
-              <ModelPicker
-                className="min-w-0"
-                onChange={(modelId) => {
-                  if (activeProfile && isAllowedModel(modelId)) {
-                    window.localStorage.setItem(
-                      lastUsedModelKey(activeProfile.id),
-                      modelId
-                    );
-                  }
-                  if (isTemporaryChat) {
-                    if (isAllowedModel(modelId)) setTemporaryModelId(modelId);
-                    return;
-                  }
-                  setChatModel(modelId);
-                }}
-                options={modelOptions}
-                triggerTestId="model:picker-trigger"
-                value={effectiveModelId}
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-sm text-muted-foreground">
-                {isTemporaryChat
-                  ? "Temporary chat"
-                  : modelOptions.find((m) => m.id === effectiveModelId)?.label ??
-                    effectiveModelId}
-              </div>
-              <Button
-                aria-label={isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"}
-	                className={
-	                  "h-8 w-9 px-0 " +
-	                  (isTemporaryChat
-	                    ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
-		                    : "border-ring/50 text-ring bg-transparent hover:bg-muted hover:text-ring focus-visible:border-ring focus-visible:ring-ring/30 dark:border-ring/50 dark:bg-input/30 dark:hover:bg-input/50 dark:hover:text-ring")
-		                }
-                data-testid="chat:temporary-toggle"
-                onClick={() => toggleTemporaryChat()}
-                title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
-                type="button"
-                variant="outline"
-              >
-                {isTemporaryChat ? (
-                  <LockIcon className="size-4" />
-                ) : (
-                  <LockOpenIcon className="size-4" />
-                )}
-              </Button>
-            </div>
-          </header>
+	            </div>
+	          </header>
 
           <StickToBottom
             className="min-h-0 flex-1 overflow-hidden"
             initial="instant"
             resize="smooth"
           >
-            <StickToBottom.Content className="w-full px-6 py-8">
+            <StickToBottom.Content className="w-full py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:py-6 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:py-8 md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
               <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
                 {messages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground">
@@ -2191,11 +2279,11 @@ export function HomeClient({
             </StickToBottom.Content>
           </StickToBottom>
 
-		          <div className="shrink-0 border-t bg-sidebar px-6 py-4">
-		            <div className="mx-auto w-full max-w-3xl">
-		              <PromptInput
-		                className={
-		                  "bg-sidebar " +
+			          <div className="shrink-0 border-t bg-sidebar pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-4">
+			            <div className="mx-auto w-full max-w-3xl">
+			              <PromptInput
+			                className={
+			                  "bg-sidebar " +
 		                  (isTemporaryChat
 		                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
 		                    : "")
@@ -2267,9 +2355,27 @@ export function HomeClient({
 	                </div>
 	              </PromptInput>
 	            </div>
-	          </div>
-        </main>
-      </div>
+		          </div>
+	        </main>
+	      </div>
+
+	        <Dialog
+	          onOpenChange={(open) => {
+	            setSidebarOpen(open);
+	            if (open) return;
+	            window.setTimeout(() => focusComposer({ toEnd: true }), 0);
+	          }}
+	          open={sidebarOpen}
+	        >
+	          <DialogContent
+	            className="left-0 top-0 grid h-dvh w-[18rem] max-w-[85vw] translate-x-0 translate-y-0 gap-0 rounded-none border-0 border-r p-0 data-[state=closed]:slide-out-to-left-2 data-[state=open]:slide-in-from-left-2 md:hidden"
+	            data-testid="sidebar:drawer"
+	            showCloseButton={false}
+	          >
+		            <DialogTitle className="sr-only">Menu</DialogTitle>
+		            {renderSidebar("drawer")}
+		          </DialogContent>
+	        </Dialog>
 
       <Dialog onOpenChange={setCreateOpen} open={createOpen}>
         <DialogContent>
