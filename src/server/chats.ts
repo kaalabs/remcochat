@@ -115,7 +115,7 @@ export function listTurnAssistantTexts(input: {
 
 function rowToChat(row: ChatRow): Chat {
   const { provider } = getActiveProviderConfig();
-  const allowed = new Set(provider.models.map((m) => m.id));
+  const allowed = new Set(provider.allowedModelIds);
   const modelId = allowed.has(String(row.model_id))
     ? String(row.model_id)
     : provider.defaultModelId;
@@ -173,7 +173,7 @@ export function createChat(input: {
 }): Chat {
   const profile = getProfile(input.profileId);
   const { provider } = getActiveProviderConfig();
-  const allowed = new Set(provider.models.map((m) => m.id));
+  const allowed = new Set(provider.allowedModelIds);
   const profileDefaultModelId = allowed.has(profile.defaultModelId)
     ? profile.defaultModelId
     : provider.defaultModelId;
@@ -233,7 +233,7 @@ export function updateChat(
     patch.modelId != null
       ? (() => {
           const { provider } = getActiveProviderConfig();
-          const allowed = new Set(provider.models.map((m) => m.id));
+          const allowed = new Set(provider.allowedModelIds);
           return allowed.has(patch.modelId) ? patch.modelId : provider.defaultModelId;
         })()
       : current.modelId;

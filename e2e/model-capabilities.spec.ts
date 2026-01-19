@@ -32,13 +32,13 @@ test("Model with tools disabled returns text (no tool calls)", async ({
   const baseJson = (await base.json()) as { defaultProviderId: string };
 
   try {
-    await switchProvider(request, "e2e_alt");
+    await switchProvider(request, "e2e_vercel");
     const profileId = await createProfile(request);
 
     const chatRes = await request.post("/api/chat", {
       data: {
         profileId,
-        modelId: "opencode/gpt-5-nano-no-tools-alt",
+        modelId: "openai/gpt-3.5-turbo",
         temporary: true,
         messages: [
           {
@@ -53,7 +53,8 @@ test("Model with tools disabled returns text (no tool calls)", async ({
     expect(chatRes.ok()).toBeTruthy();
 
     const headers = chatRes.headers();
-    expect(headers["x-remcochat-model-type"]).toBe("openai_responses");
+    expect(headers["x-remcochat-model-type"]).toBe("vercel_ai_gateway");
+    expect(headers["x-remcochat-web-tools-enabled"]).toBe("0");
 
     const chunks = parseUIMessageStreamChunks(await chatRes.body());
     expect(getUIMessageStreamErrors(chunks)).toEqual([]);
@@ -66,4 +67,3 @@ test("Model with tools disabled returns text (no tool calls)", async ({
     await switchProvider(request, baseJson.defaultProviderId);
   }
 });
-

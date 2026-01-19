@@ -1,12 +1,13 @@
 {
   "name": "remcochat",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "scripts": {
     "dev": "node scripts/check-env.mjs && next dev",
     "build": "next build",
     "start": "node scripts/check-env.mjs && next start",
     "lint": "eslint",
+    "test:agent-browser": "node scripts/test-agent-browser.mjs",
     "test:e2e": "playwright test",
     "test:unit": "tsx --test tests/**/*.test.ts"
   },

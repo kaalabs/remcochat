@@ -4,3 +4,48 @@ date_in = "2026-01-19"
 description = "stream text window does not always stick at bottom while steaming"
 status = "fix"
 priority = "regular"
+
+[__reqman]
+schema_version = 1
+schema_json = """
+{
+  "name": "issues",
+  "fields": [
+    {
+      "name": "id",
+      "type": "number",
+      "required": true
+    },
+    {
+      "name": "date_in",
+      "type": "date",
+      "required": true
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "status",
+      "type": "choice",
+      "options": [
+        "investigate",
+        "fix",
+        "fixed",
+        "ignore"
+      ]
+    },
+    {
+      "name": "priority",
+      "type": "choice",
+      "options": [
+        "priority",
+        "regular",
+        "low"
+      ]
+    }
+  ],
+  "primaryKey": "id",
+  "description": "Issues list"
+}"""

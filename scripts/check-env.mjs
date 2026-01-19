@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import TOML from "@iarna/toml";
 import Database from "better-sqlite3";
 
@@ -29,6 +30,20 @@ try {
   }
 } catch {
   console.error(`RemcoChat config path is not a file: ${configPath}`);
+  process.exit(1);
+}
+
+try {
+  execFileSync("modelsdev", ["--version"], { stdio: "ignore" });
+} catch {
+  console.error(
+    [
+      "Missing required CLI dependency: modelsdev",
+      "",
+      "Install modelsdev and ensure it's available on PATH:",
+      "  https://models.dev",
+    ].join("\n")
+  );
   process.exit(1);
 }
 
@@ -100,9 +115,20 @@ try {
   process.exit(1);
 }
 
-if (parsedConfig?.version !== 1) {
+if (parsedConfig?.version !== 2) {
   console.error(
-    `Unsupported RemcoChat config version: ${String(parsedConfig?.version)}`
+    [
+      `Unsupported RemcoChat config version: ${String(parsedConfig?.version)}`,
+      "",
+      "This repo expects config.toml schema version = 2.",
+      "",
+      "To migrate quickly:",
+      "  cp config.toml.example config.toml",
+      "",
+      "Or update your existing file by removing [[providers.<id>.models]] blocks and adding:",
+      "  providers.<id>.allowed_model_ids = [...]",
+      "  providers.<id>.default_model_id = \"...\"",
+    ].join("\n")
   );
   process.exit(1);
 }
@@ -170,19 +196,11 @@ if (routerEnabled) {
   }
 }
 
-const allowedModelTypes = new Set([
-  "vercel_ai_gateway",
-  "openai_responses",
-  "openai_compatible",
-  "anthropic_messages",
-  "google_generative_ai",
-]);
-
 for (const [providerId, provider] of Object.entries(providers)) {
   const apiKeyEnv = provider?.api_key_env;
   const baseUrl = provider?.base_url;
   const defaultModelId = provider?.default_model_id;
-  const models = provider?.models;
+  const allowedModelIds = provider?.allowed_model_ids;
 
   if (typeof provider?.name !== "string" || !provider.name.trim()) {
     console.error(`Invalid config.toml: providers.${providerId}.name is required`);
@@ -210,84 +228,23 @@ for (const [providerId, provider] of Object.entries(providers)) {
     process.exit(1);
   }
 
-  if (!Array.isArray(models) || models.length === 0) {
+  if (!Array.isArray(allowedModelIds) || allowedModelIds.length === 0) {
     console.error(
-      `Invalid config.toml: providers.${providerId}.models must be a non-empty array`
+      `Invalid config.toml: providers.${providerId}.allowed_model_ids must be a non-empty array`
     );
     process.exit(1);
   }
-
-  for (const [i, model] of models.entries()) {
-    const id = model?.id;
-    const label = model?.label;
-    const type = model?.type;
-    const capabilities = model?.capabilities;
-
-    if (typeof id !== "string" || !id.trim()) {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].id is required`
-      );
-      process.exit(1);
-    }
-    if (typeof label !== "string" || !label.trim()) {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].label is required`
-      );
-      process.exit(1);
-    }
-    if (typeof type !== "string" || !allowedModelTypes.has(type)) {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].type must be one of: ${Array.from(
-          allowedModelTypes
-        ).join(", ")}`
-      );
-      process.exit(1);
-    }
-
-    if (!capabilities || typeof capabilities !== "object") {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].capabilities is required`
-      );
-      process.exit(1);
-    }
-
-    if (typeof capabilities.tools !== "boolean") {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].capabilities.tools must be a boolean`
-      );
-      process.exit(1);
-    }
-    if (typeof capabilities.temperature !== "boolean") {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].capabilities.temperature must be a boolean`
-      );
-      process.exit(1);
-    }
-    if (typeof capabilities.attachments !== "boolean") {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].capabilities.attachments must be a boolean`
-      );
-      process.exit(1);
-    }
-    if (typeof capabilities.structured_output !== "boolean") {
-      console.error(
-        `Invalid config.toml: providers.${providerId}.models[${i}].capabilities.structured_output must be a boolean`
-      );
-      process.exit(1);
-    }
-  }
-
-  if (!models.some((m) => m?.id === defaultModelId)) {
+  if (!allowedModelIds.some((id) => typeof id === "string" && id === defaultModelId)) {
     console.error(
-      `Invalid config.toml: providers.${providerId}.default_model_id "${defaultModelId}" is not present in providers.${providerId}.models`
+      `Invalid config.toml: providers.${providerId}.default_model_id "${defaultModelId}" is not present in providers.${providerId}.allowed_model_ids`
     );
     process.exit(1);
   }
 
   if (routerEnabled && providerId === routerProviderId) {
-    if (!models.some((m) => m?.id === routerModelId)) {
+    if (!allowedModelIds.some((id) => typeof id === "string" && id === routerModelId)) {
       console.error(
-        `Invalid config.toml: app.router.model_id "${routerModelId}" is not present in providers.${providerId}.models`
+        `Invalid config.toml: app.router.model_id "${routerModelId}" is not present in providers.${providerId}.allowed_model_ids`
       );
       process.exit(1);
     }

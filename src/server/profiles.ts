@@ -15,7 +15,7 @@ type ProfileRow = {
 
 function rowToProfile(row: ProfileRow): Profile {
   const { provider } = getActiveProviderConfig();
-  const allowed = new Set(provider.models.map((m) => m.id));
+  const allowed = new Set(provider.allowedModelIds);
   const defaultModelId = allowed.has(String(row.default_model_id))
     ? String(row.default_model_id)
     : provider.defaultModelId;
@@ -66,7 +66,7 @@ export function createProfile(input: { name: string; defaultModelId?: string }) 
   }
 
   const { provider } = getActiveProviderConfig();
-  const allowed = new Set(provider.models.map((m) => m.id));
+  const allowed = new Set(provider.allowedModelIds);
   const defaultModelId =
     typeof input.defaultModelId === "string" && allowed.has(input.defaultModelId)
       ? input.defaultModelId
@@ -113,7 +113,7 @@ export function updateProfile(
     patch.defaultModelId != null
       ? (() => {
           const { provider } = getActiveProviderConfig();
-          const allowed = new Set(provider.models.map((m) => m.id));
+          const allowed = new Set(provider.allowedModelIds);
           return allowed.has(patch.defaultModelId)
             ? patch.defaultModelId
             : provider.defaultModelId;

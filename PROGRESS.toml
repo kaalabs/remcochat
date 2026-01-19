@@ -1651,3 +1651,11 @@ summary = "Make mobile sidebar drawer dialog accessible"
 details = "Added a visually-hidden DialogTitle to the mobile sidebar drawer to satisfy Radix Dialog accessibility requirements and remove the runtime console error."
 tests = ["npm run test:unit (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-19T18:35:58Z"
+type = "feat"
+summary = "Derive model capabilities from modelsdev (with admin observability)"
+details = "Switched to config v2 where providers only define connection info + an allowlist, and all model metadata/capabilities are derived via the `modelsdev` CLI at runtime (cached in-memory until server restart). The model picker now displays capability badges (incl. reasoning) from models.dev flags, `/api/providers` serves the derived catalog, and the admin UI exposes the in-memory catalog via `/api/admin/models-catalog`."
+tests = ["npm run test:unit (pass)", "npm run test:e2e (pass)", "npm run test:agent-browser (pass)"]
+files = ["src/server/config.ts", "src/server/modelsdev-catalog.ts", "src/server/llm-provider.ts", "src/server/model-registry.ts", "src/app/api/providers/route.ts", "src/app/api/admin/models-catalog/route.ts", "src/app/admin/admin-client.tsx", "src/components/model-picker.tsx", "src/lib/models.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "e2e/model-selector-config.spec.ts", "e2e/model-capabilities.spec.ts", "config.toml.example", "scripts/test-agent-browser.mjs", "package.json", "docs/agents/testing.md", "PLAN.md", "README.md", "PROGRESS.toml"]

@@ -11,9 +11,10 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ModelOption } from "@/lib/models";
+import { listModelCapabilityBadges, type ModelOption } from "@/lib/models";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -99,12 +100,36 @@ export function ModelPicker({
                     option.id === value ? "opacity-100" : "opacity-0"
                   )}
                 />
-                <ModelSelectorName>{option.label}</ModelSelectorName>
-                {option.description ? (
-                  <span className="text-muted-foreground text-xs">
-                    {option.description}
-                  </span>
-                ) : null}
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <ModelSelectorName>{option.label}</ModelSelectorName>
+                    {option.description ? (
+                      <span className="truncate text-muted-foreground text-xs">
+                        {option.description}
+                      </span>
+                    ) : null}
+                  </div>
+                  {option.capabilities ? (
+                    <div className="flex flex-wrap gap-1">
+                      {listModelCapabilityBadges(option.capabilities).map(
+                        ({ key, label, enabled }) => (
+                          <Badge
+                            className={cn(
+                              "pointer-events-none px-1.5 py-0 text-[10px]",
+                              enabled ? "" : "opacity-50"
+                            )}
+                            data-enabled={enabled ? "true" : "false"}
+                            data-testid={`model-feature:${option.id}:${key}`}
+                            key={key}
+                            variant={enabled ? "secondary" : "outline"}
+                          >
+                            {label}
+                          </Badge>
+                        )
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               </ModelSelectorItem>
             ))}
           </ModelSelectorGroup>

@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import TOML from "@iarna/toml";
 
-const MODEL_TYPES = [
+export const MODEL_TYPES = [
   "vercel_ai_gateway",
   "openai_responses",
   "openai_compatible",
@@ -12,28 +12,13 @@ const MODEL_TYPES = [
 ] as const;
 export type ModelType = (typeof MODEL_TYPES)[number];
 
-const ModelCapabilitiesSchema = z.object({
-  tools: z.boolean(),
-  temperature: z.boolean(),
-  attachments: z.boolean(),
-  structured_output: z.boolean(),
-});
-
-const ModelSchema = z.object({
-  type: z.enum(MODEL_TYPES),
-  id: z.string().min(1),
-  label: z.string().min(1),
-  description: z.string().min(1).optional(),
-  provider_model_id: z.string().min(1).optional(),
-  capabilities: ModelCapabilitiesSchema,
-});
-
 const ProviderSchema = z.object({
   name: z.string().min(1),
   default_model_id: z.string().min(1),
   base_url: z.string().min(1),
   api_key_env: z.string().min(1),
-  models: z.array(ModelSchema).min(1),
+  modelsdev_provider_id: z.string().min(1).optional(),
+  allowed_model_ids: z.array(z.string().min(1)).min(1),
 });
 
 const IntentRouterSchema = z
@@ -57,7 +42,7 @@ const WebToolsSchema = z
   .optional();
 
 const RawConfigSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   app: z.object({
     default_provider_id: z.string().min(1),
     router: IntentRouterSchema,
@@ -66,31 +51,18 @@ const RawConfigSchema = z.object({
   providers: z.record(z.string(), ProviderSchema),
 });
 
-export type RemcoChatProviderModel = {
-  type: ModelType;
-  id: string;
-  label: string;
-  description?: string;
-  providerModelId: string;
-  capabilities: {
-    tools: boolean;
-    temperature: boolean;
-    attachments: boolean;
-    structuredOutput: boolean;
-  };
-};
-
 export type RemcoChatProvider = {
   id: string;
   name: string;
   defaultModelId: string;
-  models: RemcoChatProviderModel[];
+  modelsdevProviderId: string;
+  allowedModelIds: string[];
   baseUrl: string;
   apiKeyEnv: string;
 };
 
 export type RemcoChatConfig = {
-  version: 1;
+  version: 2;
   defaultProviderId: string;
   providers: RemcoChatProvider[];
   intentRouter: {
@@ -118,21 +90,10 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       id,
       name: p.name,
       defaultModelId: p.default_model_id,
+      modelsdevProviderId: p.modelsdev_provider_id ?? id,
+      allowedModelIds: Array.from(new Set(p.allowed_model_ids)),
       baseUrl: p.base_url,
       apiKeyEnv: p.api_key_env,
-      models: p.models.map((m) => ({
-        type: m.type,
-        id: m.id,
-        label: m.label,
-        description: m.description,
-        providerModelId: m.provider_model_id ?? m.id,
-        capabilities: {
-          tools: m.capabilities.tools,
-          temperature: m.capabilities.temperature,
-          attachments: m.capabilities.attachments,
-          structuredOutput: m.capabilities.structured_output,
-        },
-      })),
     });
   }
 
@@ -151,10 +112,10 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
   }
 
   for (const provider of providers) {
-    const modelIds = new Set(provider.models.map((m) => m.id));
+    const modelIds = new Set(provider.allowedModelIds);
     if (!modelIds.has(provider.defaultModelId)) {
       throw new Error(
-        `config.toml: providers.${provider.id}.default_model_id "${provider.defaultModelId}" is not present in providers.${provider.id}.models`
+        `config.toml: providers.${provider.id}.default_model_id "${provider.defaultModelId}" is not present in providers.${provider.id}.allowed_model_ids`
       );
     }
   }
@@ -181,9 +142,9 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
         "config.toml: app.router.model_id is required when router is enabled"
       );
     }
-    if (!provider.models.some((m) => m.id === modelId)) {
+    if (!provider.allowedModelIds.includes(modelId)) {
       throw new Error(
-        `config.toml: app.router.model_id "${modelId}" is not present in providers.${providerId}.models`
+        `config.toml: app.router.model_id "${modelId}" is not present in providers.${providerId}.allowed_model_ids`
       );
     }
     const minConfidence = Math.min(
@@ -235,7 +196,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
   }
 
   return {
-    version: 1,
+    version: 2,
     defaultProviderId,
     providers,
     intentRouter,

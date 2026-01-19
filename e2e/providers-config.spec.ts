@@ -29,22 +29,23 @@ test("Providers config endpoint", async ({ request }) => {
   const providerIds = new Set(json.providers.map((p) => p.id));
   expect(providerIds.has(json.activeProviderId)).toBeTruthy();
 
-    for (const provider of json.providers) {
-      expect(provider.name).toBeTruthy();
-      expect(provider.defaultModelId).toBeTruthy();
-      expect(Array.isArray(provider.models)).toBeTruthy();
-      expect(provider.models.length).toBeGreaterThan(0);
-      expect(provider.models.some((m) => m.id === provider.defaultModelId)).toBeTruthy();
-      expect(provider.models.every((m) => Boolean(m.type))).toBeTruthy();
-      expect(
-        provider.models.every(
-          (m: any) =>
-            m.capabilities &&
-            typeof m.capabilities.tools === "boolean" &&
-            typeof m.capabilities.temperature === "boolean" &&
-            typeof m.capabilities.attachments === "boolean" &&
-            typeof m.capabilities.structuredOutput === "boolean"
-        )
-      ).toBeTruthy();
-    }
+  for (const provider of json.providers) {
+    expect(provider.name).toBeTruthy();
+    expect(provider.defaultModelId).toBeTruthy();
+    expect(Array.isArray(provider.models)).toBeTruthy();
+    expect(provider.models.length).toBeGreaterThan(0);
+    expect(provider.models.some((m) => m.id === provider.defaultModelId)).toBeTruthy();
+    expect(provider.models.every((m) => Boolean(m.type))).toBeTruthy();
+    expect(
+      provider.models.every(
+        (m: any) =>
+          m.capabilities &&
+          typeof m.capabilities.tools === "boolean" &&
+          typeof m.capabilities.reasoning === "boolean" &&
+          typeof m.capabilities.temperature === "boolean" &&
+          typeof m.capabilities.attachments === "boolean" &&
+          typeof m.capabilities.structuredOutput === "boolean"
+      )
+    ).toBeTruthy();
+  }
 });

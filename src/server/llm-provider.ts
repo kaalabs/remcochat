@@ -4,16 +4,18 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
+import type { ModelCapabilities } from "@/lib/models";
 import type { ModelType, RemcoChatProvider } from "@/server/config";
 import { getConfig } from "@/server/config";
 import { getActiveProviderConfig } from "@/server/model-registry";
+import { getModelsDevCatalog } from "@/server/modelsdev-catalog";
 
 type ResolvedModel = {
   providerId: string;
   modelType: ModelType;
   modelId: string;
   providerModelId: string;
-  capabilities: RemcoChatProvider["models"][number]["capabilities"];
+  capabilities: ModelCapabilities;
   model: LanguageModel;
 };
 
@@ -27,23 +29,41 @@ function requiredEnv(name: string, providerId: string) {
   return value;
 }
 
-function resolveProviderModelId(provider: RemcoChatProvider, modelId: unknown) {
+async function resolveProviderModel(
+  provider: RemcoChatProvider,
+  modelId: unknown
+): Promise<{
+  resolvedModelId: string;
+  providerModelId: string;
+  modelType: ModelType;
+  capabilities: ModelCapabilities;
+}> {
   const resolvedModelId =
-    typeof modelId === "string" &&
-    provider.models.some((m) => m.id === modelId)
+    typeof modelId === "string" && provider.allowedModelIds.includes(modelId)
       ? modelId
       : provider.defaultModelId;
+
+  const catalog = await getModelsDevCatalog();
+  const providerCatalog = catalog.providers[provider.id];
+  if (!providerCatalog) {
+    throw new Error(
+      `modelsdev catalog missing provider "${provider.id}". Check config.toml and modelsdev output.`
+    );
+  }
+
   const model =
-    provider.models.find((m) => m.id === resolvedModelId) ??
-    provider.models.find((m) => m.id === provider.defaultModelId);
+    providerCatalog.models[resolvedModelId] ??
+    providerCatalog.models[provider.defaultModelId];
   if (!model) {
-    throw new Error(`Provider "${provider.id}" has no models configured.`);
+    throw new Error(
+      `modelsdev catalog missing model "${resolvedModelId}" for provider "${provider.id}".`
+    );
   }
 
   return {
-    resolvedModelId,
+    resolvedModelId: model.id,
     providerModelId: model.providerModelId,
-    modelType: model.type,
+    modelType: model.modelType,
     capabilities: model.capabilities,
   };
 }
@@ -140,13 +160,14 @@ function getProviderById(providerId: string): RemcoChatProvider {
   return provider;
 }
 
-function resolveModelForProvider(
+async function resolveModelForProvider(
   providerId: string,
   provider: RemcoChatProvider,
   modelId: unknown
-): ResolvedModel {
+): Promise<ResolvedModel> {
   const { resolvedModelId, providerModelId, modelType, capabilities } =
-    resolveProviderModelId(provider, modelId);
+    await resolveProviderModel(provider, modelId);
+
   switch (modelType) {
     case "vercel_ai_gateway": {
       const gateway = getVercelGatewayClient(provider);
@@ -203,20 +224,25 @@ function resolveModelForProvider(
         model: google.chat(providerModelId),
       };
     }
+    default: {
+      throw new Error(`Unsupported model type: ${modelType}`);
+    }
   }
 }
 
-export function getLanguageModelForProvider(
+export async function getLanguageModelForProvider(
   providerId: string,
   modelId: unknown
-): ResolvedModel {
+): Promise<ResolvedModel> {
   const provider = getProviderById(providerId);
-  return resolveModelForProvider(providerId, provider, modelId);
+  return await resolveModelForProvider(providerId, provider, modelId);
 }
 
-export function getLanguageModelForActiveProvider(modelId: unknown): ResolvedModel {
+export async function getLanguageModelForActiveProvider(
+  modelId: unknown
+): Promise<ResolvedModel> {
   const { provider, activeProviderId } = getActiveProviderConfig();
-  return resolveModelForProvider(activeProviderId, provider, modelId);
+  return await resolveModelForProvider(activeProviderId, provider, modelId);
 }
 
 export function getGatewayProviderForProviderId(providerId: string) {

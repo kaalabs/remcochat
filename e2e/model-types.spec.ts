@@ -81,7 +81,7 @@ test("Chat works for OpenAI-compatible (chat/completions) model type", async ({ 
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "opencode/glm-4.7-free-alt",
+      modelId: "glm-4.7-free",
     });
 
     expect(headers["x-remcochat-model-type"]).toBe("openai_compatible");
@@ -107,7 +107,7 @@ test("Chat works for Google Generative AI model type", async ({ request }) => {
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "opencode/gemini-3-pro-alt",
+      modelId: "gemini-3-pro",
     });
 
     expect(headers["x-remcochat-model-type"]).toBe("google_generative_ai");

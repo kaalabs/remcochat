@@ -4,3 +4,49 @@ description = "Agenda tool"
 "approved for implementation" = true
 roadmap = "feature"
 planed-for = "2026-01-31"
+
+[[features]]
+id = 3
+description = "Enable reasoning in the agentic loop (only for reasoning models)"
+"approved for implementation" = true
+roadmap = "strategic"
+planed-for = "2026-01-31"
+
+[__reqman]
+schema_version = 1
+schema_json = """
+{
+  "name": "features",
+  "fields": [
+    {
+      "name": "id",
+      "type": "number",
+      "required": true
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "approved for implementation",
+      "type": "boolean",
+      "required": true
+    },
+    {
+      "name": "roadmap",
+      "type": "choice",
+      "options": [
+        "enhancement",
+        "feature",
+        "strategic"
+      ]
+    },
+    {
+      "name": "planed-for",
+      "type": "date"
+    }
+  ],
+  "primaryKey": "id",
+  "description": "Feature requests list"
+}"""

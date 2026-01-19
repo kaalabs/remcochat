@@ -49,7 +49,10 @@ export async function routeIntent(input: {
   if (!text) return null;
 
   const clipped = text.slice(0, router.maxInputChars);
-  const resolved = getLanguageModelForProvider(router.providerId, router.modelId);
+  const resolved = await getLanguageModelForProvider(
+    router.providerId,
+    router.modelId
+  );
 
   const { object } = await generateObject({
     model: resolved.model,

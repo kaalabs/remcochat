@@ -35,7 +35,7 @@ afterEach(() => {
 test("AI Gateway OpenAI models use web_search", () => {
   process.env.VERCEL_AI_GATEWAY_API_KEY = "test";
   const configPath = writeTempConfigToml(`
-version = 1
+version = 2
 
 [app]
 default_provider_id = "vercel"
@@ -48,16 +48,7 @@ name = "Vercel AI Gateway"
 api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
 base_url = "https://ai-gateway.vercel.sh/v3/ai"
 default_model_id = "openai/gpt-5.2-chat"
-
-[[providers.vercel.models]]
-type = "vercel_ai_gateway"
-id = "openai/gpt-5.2-chat"
-label = "GPT 5.2 Chat"
-[providers.vercel.models.capabilities]
-tools = true
-temperature = false
-attachments = false
-structured_output = false
+allowed_model_ids = ["openai/gpt-5.2-chat"]
 `);
 
   process.env.REMCOCHAT_CONFIG_PATH = configPath;
@@ -74,7 +65,7 @@ structured_output = false
 test("AI Gateway non-OpenAI models fall back to perplexity_search", () => {
   process.env.VERCEL_AI_GATEWAY_API_KEY = "test";
   const configPath = writeTempConfigToml(`
-version = 1
+version = 2
 
 [app]
 default_provider_id = "vercel"
@@ -87,16 +78,7 @@ name = "Vercel AI Gateway"
 api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
 base_url = "https://ai-gateway.vercel.sh/v3/ai"
 default_model_id = "anthropic/claude-sonnet-4.5"
-
-[[providers.vercel.models]]
-type = "vercel_ai_gateway"
-id = "anthropic/claude-sonnet-4.5"
-label = "Claude Sonnet"
-[providers.vercel.models.capabilities]
-tools = true
-temperature = true
-attachments = false
-structured_output = false
+allowed_model_ids = ["anthropic/claude-sonnet-4.5"]
 `);
 
   process.env.REMCOCHAT_CONFIG_PATH = configPath;

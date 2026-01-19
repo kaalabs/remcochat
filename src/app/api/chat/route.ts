@@ -183,6 +183,33 @@ function shouldRouteIntent(text: string) {
   return hasMemoryHint || hasWeatherHint;
 }
 
+function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
+  const text = String(userText ?? "").trim().toLowerCase();
+  if (!text) return false;
+  if (!Array.isArray(memoryLines) || memoryLines.length === 0) return false;
+
+  const looksPersonal = /\b(my|mine|me|i|we|our|us)\b/.test(text);
+  if (!looksPersonal) return false;
+
+  const queryTokens = new Set(
+    (text.match(/[a-z0-9]+/g) ?? []).filter((token) => token.length >= 4)
+  );
+  if (queryTokens.size === 0) return false;
+
+  for (const line of memoryLines) {
+    const lineTokens = (
+      String(line ?? "")
+        .toLowerCase()
+        .match(/[a-z0-9]+/g) ?? []
+    ).filter((token) => token.length >= 4);
+    for (const token of lineTokens) {
+      if (queryTokens.has(token)) return true;
+    }
+  }
+
+  return false;
+}
+
 function uiTextResponse(input: {
   text: string;
   messageMetadata?: RemcoChatMessageMetadata;
@@ -505,13 +532,13 @@ export async function POST(req: Request) {
     const candidateModelId =
       typeof body.modelId === "string" ? body.modelId : profile.defaultModelId;
     let resolved:
-      | ReturnType<typeof getLanguageModelForActiveProvider>
+      | Awaited<ReturnType<typeof getLanguageModelForActiveProvider>>
       | undefined;
-    const resolveModel = (): ReturnType<
-      typeof getLanguageModelForActiveProvider
+    const resolveModel = async (): Promise<
+      Awaited<ReturnType<typeof getLanguageModelForActiveProvider>>
     > => {
       if (!resolved) {
-        resolved = getLanguageModelForActiveProvider(candidateModelId);
+        resolved = await getLanguageModelForActiveProvider(candidateModelId);
       }
       return resolved;
     };
@@ -554,7 +581,7 @@ export async function POST(req: Request) {
       if (routed?.intent === "weather_current") {
         let resolvedForTools;
         try {
-          resolvedForTools = resolveModel();
+          resolvedForTools = await resolveModel();
         } catch (err) {
           return Response.json(
             {
@@ -579,7 +606,7 @@ export async function POST(req: Request) {
       if (routed?.intent === "weather_forecast") {
         let resolvedForTools;
         try {
-          resolvedForTools = resolveModel();
+          resolvedForTools = await resolveModel();
         } catch (err) {
           return Response.json(
             {
@@ -604,7 +631,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      resolved = resolveModel();
+      resolved = await resolveModel();
     } catch (err) {
       return Response.json(
         { error: err instanceof Error ? err.message : "Failed to load model." },
@@ -818,13 +845,13 @@ export async function POST(req: Request) {
   const currentChatRevision = effectiveChat.chatInstructionsRevision;
   const pendingMemory = getPendingMemory(effectiveChat.id);
   let resolved:
-    | ReturnType<typeof getLanguageModelForActiveProvider>
+    | Awaited<ReturnType<typeof getLanguageModelForActiveProvider>>
     | undefined;
-  const resolveModel = (): ReturnType<
-    typeof getLanguageModelForActiveProvider
+  const resolveModel = async (): Promise<
+    Awaited<ReturnType<typeof getLanguageModelForActiveProvider>>
   > => {
     if (!resolved) {
-      resolved = getLanguageModelForActiveProvider(effectiveChat.modelId);
+      resolved = await getLanguageModelForActiveProvider(effectiveChat.modelId);
     }
     return resolved;
   };
@@ -1030,7 +1057,7 @@ export async function POST(req: Request) {
     if (routed?.intent === "weather_current") {
       let resolvedForTools;
       try {
-        resolvedForTools = resolveModel();
+        resolvedForTools = await resolveModel();
       } catch (err) {
         return Response.json(
           {
@@ -1056,7 +1083,7 @@ export async function POST(req: Request) {
     if (routed?.intent === "weather_forecast") {
       let resolvedForTools;
       try {
-        resolvedForTools = resolveModel();
+        resolvedForTools = await resolveModel();
       } catch (err) {
         return Response.json(
           {
@@ -1100,7 +1127,7 @@ export async function POST(req: Request) {
   const profileInstructions = promptProfileInstructions;
 
   try {
-    resolved = resolveModel();
+    resolved = await resolveModel();
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Failed to load model." },
@@ -1201,6 +1228,10 @@ export async function POST(req: Request) {
     providerModelId: resolved.providerModelId,
     webToolsEnabled: webTools.enabled,
   });
+  const forceMemoryAnswerTool = shouldForceMemoryAnswerTool(
+    lastUserText,
+    memoryLines
+  );
   const result = streamText({
     model: resolved.model,
     system,
@@ -1211,6 +1242,9 @@ export async function POST(req: Request) {
     ...(providerOptions ? { providerOptions } : {}),
     ...(resolved.capabilities.tools
       ? {
+          ...(forceMemoryAnswerTool
+            ? { toolChoice: { type: "tool", toolName: "displayMemoryAnswer" } }
+            : {}),
           stopWhen: [
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),

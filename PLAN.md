@@ -45,7 +45,8 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - Configured via `config.toml` (see “Provider abstraction deliverables” below).
   - Active provider is **global** and can be switched via API (**no auth/gating**; LAN-only assumption).
   - Switching is **persistent** (stored in DB).
-  - Models are defined per provider in `config.toml`; this replaces any hardcoded allowlist/whitelist.
+  - `config.toml` defines provider connection info (`base_url`, `api_key_env`) and an allowlist (`allowed_model_ids`, `default_model_id`, optional `modelsdev_provider_id`).
+  - Model metadata (label/capabilities/adapter type) is resolved via the `modelsdev` CLI at runtime and cached in-memory until server restart.
   - `base_url` is required for every provider (explicit endpoints; no implicit SDK defaults).
 - Environment:
   - Today: require `VERCEL_AI_GATEWAY_API_KEY` to be exported in the shell for local runs.
@@ -122,6 +123,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - Weather tool renders a weather card
   - Export returns expected content
 - Current: `npm run test:e2e` runs a WebKit (Safari-engine) E2E against a dedicated SQLite DB (`data/remcochat-e2e.sqlite`). It uses the real AI Gateway key from your shell (same requirement as `npm run dev/start`).
+- Also run the end-user smoke via `agent-browser`: `npm run test:agent-browser`.
 
 ## Hardening (Optional)
 - Admin backup/export + reset tools are available when `REMCOCHAT_ENABLE_ADMIN=1` is set:
@@ -129,7 +131,7 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - Reset all data (wipe DB): `POST /api/admin/reset` with `{ "confirm": "RESET" }`
 
 ## Open Decisions
-- Provider + model configuration: `config.toml` becomes the source of truth (providers + allowed models + defaults).
+- Provider configuration: `config.toml` is the source of truth for providers + allowed models + defaults; `modelsdev` is the source of truth for model metadata/capabilities.
 - “Memorize this” UX specifics: snippet selection vs whole-message capture; default formatting/length limits for stored memory.
 
 ## Provider abstraction deliverables (config.toml)
@@ -139,7 +141,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 ### Deliverable 1 — Config foundation (read-only)
 **Deliverable**
 - Add `config.toml.example` (tracked) and load `config.toml` (untracked) as the global config file.
-- Implement config loader + validation and expose read-only config via `GET /api/providers` (providers + models + default provider).
+- Implement config loader + validation and expose a read-only model catalog via `GET /api/providers` (providers + allowed models + derived metadata + default provider).
 
 **Definition of Done**
 - App fails fast with a clear error when `config.toml` is missing (no internal fallback defaults).
@@ -178,7 +180,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 ### Deliverable 4 — Provider adapters for `/api/chat`
 **Deliverable**
 - Route `/api/chat` model creation through the active provider, using a model-level adapter selection.
-- Each configured model declares a `type` (API/protocol) that selects the adapter (`vercel_ai_gateway`, `openai_responses`, `openai_compatible`, `anthropic_messages`, `google_generative_ai`).
+- Adapter selection is derived from `modelsdev` provider/model metadata (npm adapter) and mapped to RemcoChat model types (`vercel_ai_gateway`, `openai_responses`, `openai_compatible`, `anthropic_messages`, `google_generative_ai`).
 - Implement at minimum the current Vercel AI Gateway adapter (preserving existing behavior), plus at least one additional adapter when configured in `config.toml`.
 
 **Definition of Done**
@@ -201,19 +203,20 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 **Testcase**
 - `npm run test:e2e -- -g "Admin panel switches provider"`
 
-### Deliverable 6 — OpenCode Zen Anthropic provider (Claude Opus 4.5)
+### Deliverable 6 — Models.dev-backed model catalog (modelsdev CLI)
 **Deliverable**
-- Move `type` from provider → model in `config.toml` so a single gateway provider can host models served via different APIs.
-- Add OpenCode Zen to `config.toml` with `Claude Opus 4.5` as an allowed model (`type = "anthropic_messages"`).
+- Make `modelsdev` the source of truth for model metadata (label/capabilities/adapter type), with `config.toml` only providing provider connection info + an allowlist.
+- Resolve model catalog via `modelsdev` CLI at runtime and cache it in-memory until server restart (no persisted `api.json` snapshots).
+- Fail-fast on: missing `modelsdev`, unknown `modelsdev` provider id, unknown allowlisted model id, or unsupported adapter mapping.
+- Expose the in-memory catalog via an admin API route and surface it in the admin UI for observability/debugging.
 
 **Definition of Done**
-- Provider entries have no `type`; each `[[providers.<id>.models]]` has a required `type` that selects the adapter.
-- `base_url` + `api_key_env` remain required for every provider; `default_model_id` must exist in its models.
-- `/api/chat` resolves and streams via the adapter defined by the selected model’s `type`.
-- `config.toml` contains an OpenCode Zen provider with an Opus 4.5 model mapping (`provider_model_id = "claude-opus-4-5"`, `type = "anthropic_messages"`).
+- `GET /api/providers` returns model metadata derived from `modelsdev` for each allowlisted model.
+- Switching active provider changes the active model list without requiring a rebuild (server restart still required for updated `modelsdev` metadata).
+- Admin can inspect the in-memory catalog snapshot (loadedAt + models + capabilities) via `/admin`.
 
 **Testcase**
-- `npm run test:e2e -- -g "Providers include anthropic model type"`
+- `npm run test:e2e`
 
 ### Deliverable 7 — Complete model-type adapters (Choice A: “any model type”)
 **Deliverable**
@@ -229,48 +232,46 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - `npm run test:e2e`
 - Optional (requires OpenCode Gemini access): `REMCOCHAT_E2E_ENABLE_GOOGLE_GEMINI=1 npm run test:e2e -- -g "Google Generative AI model type"`
 
-### Deliverable 8 — Model capabilities (tools / temperature / attachments / structured output)
+### Deliverable 8 — Model capability badges (tools / reasoning / temperature / files / JSON)
 **Deliverable**
-- Extend `config.toml` model entries with a required `capabilities` block:
-  - `tools`: whether the model can do tool calling (weather, forecast, memory cards)
-  - `temperature`: whether the model supports the `temperature` request setting
-  - `attachments`: whether the model supports non-text input (image/pdf/etc)
-  - `structured_output`: whether the model supports structured outputs
-- Expose capabilities in `GET /api/providers` so the UI can react to them.
-- Make `/api/chat` respect capabilities:
-  - If `capabilities.tools = false`, do not include tools in `streamText` and do not instruct tool usage in the system prompt.
-  - If `capabilities.temperature = false`, do not send a `temperature` parameter (avoid unsupported-feature warnings/errors).
+- Use `modelsdev` capability flags as the single source of truth:
+  - `tool_call` → `tools`
+  - `reasoning` → `reasoning`
+  - `temperature` → `temperature`
+  - `attachment` → `attachments`
+  - `structured_output` → `structuredOutput`
+- Expose capabilities via `GET /api/providers` and render them as badges in the model picker.
+- Make `/api/chat` respect capabilities (tools + temperature gating).
 
 **Definition of Done**
-- `config.toml` fails validation if any model lacks a `capabilities` block or required capability flags.
-- `/api/chat` never attempts tool calling when the selected model has `tools = false`.
-- `/api/chat` never sends `temperature` when the selected model has `temperature = false`.
-- `GET /api/providers` returns per-model capabilities.
+- Model picker renders capability badges for every model and includes a `Reasoning` badge.
+- `/api/chat` never attempts tool calling when the selected model lacks `tools`.
+- `/api/chat` never sends `temperature` when the selected model lacks `temperature`.
 
 **Testcase**
 - `npm run test:e2e`
-- `npm run test:e2e -- -g "Model with tools disabled"` (new)
 
 ## Spec — Model Types (Any Gateway / Any Model API)
 
-Goal: RemcoChat must be able to talk to **any model** exposed by an AI gateway/provider, as long as the model’s API protocol can be described in `config.toml` and mapped to a server-side adapter. Providers can host **mixed model protocols** (as OpenCode Zen does), so protocol is a **model characteristic**.
+Goal: RemcoChat must be able to talk to **any model** exposed by an AI gateway/provider, as long as the model’s API protocol can be derived from `modelsdev` metadata and mapped to a server-side adapter. Providers can host **mixed model protocols** (as OpenCode Zen does), so protocol is a **model characteristic**.
 
 ### Definitions
 - **Provider**: an AI gateway endpoint + credentials (`base_url`, `api_key_env`) and a set of allowed models.
-- **Model**: a selectable RemcoChat model id stored in DB/UI that maps to a provider-native model id and declares its **protocol**.
+- **Model**: a selectable RemcoChat model id stored in DB/UI (and passed through as the provider-native model id); protocol is derived from `modelsdev`.
 - **Model type**: the protocol/SDK adapter used to create an AI SDK `LanguageModel` for `streamText` (not a “provider type”).
 - **Adapter**: server-side implementation that can stream text and (optionally) tools for a given model type.
 
-### Config Contract (v1)
-- `config.toml` is the single source of truth for **allowed models** (no hidden allowlists).
+### Config Contract (v2 + modelsdev)
+- `config.toml` is the source of truth for **allowed models** and provider connection info; `modelsdev` is the source of truth for model metadata (adapter + capabilities).
 - Fail-fast:
   - missing `config.toml` → app must not start
   - missing `providers.<id>.base_url` / `api_key_env` → app must not start
-  - unknown model type (no adapter) → app must not start
+  - missing `modelsdev` CLI → app must not start
+  - unknown `modelsdev` provider id / allowlisted model id → app must not start
+  - unknown model type (no adapter mapping) → app must not start
 - Provider fields (required):
-  - `name`, `base_url`, `api_key_env`, `default_model_id`, `models[]`
-- Model fields (required):
-  - `id`, `label`, `type`, `provider_model_id` (defaults to `id` only if explicitly allowed by the schema; otherwise require it)
+  - `name`, `base_url`, `api_key_env`, `default_model_id`, `allowed_model_ids[]`
+  - optional: `modelsdev_provider_id` (defaults to provider id)
 
 ### Built-in Model Types (must exist in RemcoChat)
 Each model type defines (a) which AI SDK package is used, (b) how `base_url` is interpreted, and (c) which protocol endpoint path is implied by the SDK.
@@ -307,13 +308,12 @@ For each supported model type, RemcoChat must provide an adapter that:
 - Supports streaming via `streamText`.
 - Works with RemcoChat tools (weather, forecast, memory) when the underlying protocol supports tool calling.
 
-### Model Capabilities (Optional, v1 + future)
-Some “model types” differ in capabilities (tool calling, vision, structured output, temperature support).
-Spec direction:
-- Add optional `capabilities` under each model in `config.toml` (future work) so RemcoChat can:
-  - avoid passing unsupported settings (e.g. temperature)
-  - hide/disable features that require tools when a model cannot tool-call
-  - later: enable multimodal UI only for models that support it
+### Model Capabilities (modelsdev)
+Some “model types” differ in capabilities (tool calling, reasoning, vision, structured output, temperature support).
+RemcoChat uses `modelsdev` capability flags as the source of truth so it can:
+- avoid passing unsupported settings (e.g. temperature)
+- hide/disable features that require tools when a model cannot tool-call
+- later: enable multimodal UI only for models that support it
 
 ### Testing Requirements (No Mocks)
 - Every built-in model type must have E2E coverage that validates:

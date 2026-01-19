@@ -27,7 +27,7 @@ afterEach(() => {
 
 test("parses app.web_tools", () => {
   const configPath = writeTempConfigToml(`
-version = 1
+version = 2
 
 [app]
 default_provider_id = "vercel"
@@ -44,16 +44,7 @@ name = "Vercel AI Gateway"
 api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
 base_url = "https://ai-gateway.vercel.sh/v3/ai"
 default_model_id = "openai/gpt-4o-mini"
-
-[[providers.vercel.models]]
-type = "vercel_ai_gateway"
-id = "openai/gpt-4o-mini"
-label = "GPT 4o Mini"
-[providers.vercel.models.capabilities]
-tools = true
-temperature = true
-attachments = false
-structured_output = false
+allowed_model_ids = ["openai/gpt-4o-mini"]
 `);
 
   process.env.REMCOCHAT_CONFIG_PATH = configPath;
@@ -68,7 +59,7 @@ structured_output = false
 
 test("rejects mixed allowed_domains and blocked_domains", () => {
   const configPath = writeTempConfigToml(`
-version = 1
+version = 2
 
 [app]
 default_provider_id = "vercel"
@@ -83,19 +74,9 @@ name = "Vercel AI Gateway"
 api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
 base_url = "https://ai-gateway.vercel.sh/v3/ai"
 default_model_id = "openai/gpt-4o-mini"
-
-[[providers.vercel.models]]
-type = "vercel_ai_gateway"
-id = "openai/gpt-4o-mini"
-label = "GPT 4o Mini"
-[providers.vercel.models.capabilities]
-tools = true
-temperature = true
-attachments = false
-structured_output = false
+allowed_model_ids = ["openai/gpt-4o-mini"]
 `);
 
   process.env.REMCOCHAT_CONFIG_PATH = configPath;
   assert.throws(() => getConfig(), /app\.web_tools\.allowed_domains.*blocked_domains/);
 });
-

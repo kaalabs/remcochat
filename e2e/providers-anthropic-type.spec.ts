@@ -21,7 +21,7 @@ test("Providers include anthropic model type", async ({ request }) => {
   expect(
     alt?.models.some(
       (m) =>
-        m.id === "opencode/claude-opus-4-5-alt" &&
+        m.id === "claude-opus-4-5" &&
         m.type === "anthropic_messages"
     )
   ).toBeTruthy();
@@ -44,7 +44,7 @@ test("Providers include anthropic model type", async ({ request }) => {
       const chatRes = await request.post("/api/chat", {
         data: {
           profileId: profileJson.profile.id,
-          modelId: "opencode/claude-opus-4-5-alt",
+          modelId: "claude-opus-4-5",
           temporary: true,
           messages: [
             {
