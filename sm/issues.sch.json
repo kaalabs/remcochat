@@ -1,0 +1,12 @@
+{
+  "name": "issues",
+  "primaryKey": "id",
+  "description": "Issues list",
+  "fields": [
+    { "name": "id", "type": "number", "required": true },
+    { "name": "date_in", "type": "date", "required": true }, 
+    { "name": "description", "type": "text", "required": true },
+    { "name": "status", "type": "choice", "options": ["investigate", "fix", "fixed", "ignore"] },
+    { "name": "priority", "type": "choice", "options": ["priority", "regular", "low"] }
+  ]
+}

@@ -1,0 +1,6 @@
+[[features]]
+id = 1
+description = "Agenda tool"
+"approved for implementation" = true
+roadmap = "feature"
+planed-for = "2026-01-31"

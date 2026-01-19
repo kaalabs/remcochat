@@ -1,0 +1,12 @@
+{
+  "name": "features",
+  "primaryKey": "id",
+  "description": "Feature requests list",
+  "fields": [
+    { "name": "id", "type": "number", "required": true },
+    { "name": "description", "type": "text", "required": true },
+    { "name": "approved for implementation", "type": "boolean", "required": true },
+    { "name": "roadmap", "type": "choice", "options": ["enhancement", "feature", "strategic"] },
+    { "name": "planed-for", "type": "date" }
+  ]
+}

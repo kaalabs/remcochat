@@ -1,0 +1,6 @@
+[[issues]]
+id = 1
+date_in = "2026-01-19"
+description = "stream text window does not always stick at bottom while steaming"
+status = "fix"
+priority = "regular"
