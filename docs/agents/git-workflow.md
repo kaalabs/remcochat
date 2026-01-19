@@ -7,5 +7,5 @@
   - `git checkout main`
   - `git pull --ff-only`
   - `git checkout -b work/<topic>`
-- Do not add new long-lived branches or introduce `develop`, `staging`, or `release/*` unless explicitly requested.
+- Do not introduce `develop`, `staging`, or `release/*` unless explicitly requested.
 - Keep commits focused.
