@@ -1,4 +1,4 @@
-import { deleteChat, updateChat } from "@/server/chats";
+import { deleteChat, updateChatForProfile } from "@/server/chats";
 
 export async function PATCH(
   req: Request,
@@ -6,13 +6,18 @@ export async function PATCH(
 ) {
   const { chatId } = await context.params;
   const body = (await req.json()) as {
+    profileId?: string;
     title?: string;
     modelId?: string;
     chatInstructions?: string;
   };
 
   try {
-    const chat = updateChat(chatId, {
+    if (!body.profileId) {
+      return Response.json({ error: "Missing profileId." }, { status: 400 });
+    }
+
+    const chat = updateChatForProfile(body.profileId, chatId, {
       title: body.title,
       modelId: body.modelId,
       chatInstructions: body.chatInstructions,

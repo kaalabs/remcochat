@@ -52,6 +52,7 @@ import {
   type ChangeEventHandler,
   Children,
   type ClipboardEventHandler,
+  type CompositionEventHandler,
   type ComponentProps,
   createContext,
   type FormEvent,
@@ -818,6 +819,10 @@ export type PromptInputTextareaProps = ComponentProps<
 
 export const PromptInputTextarea = ({
   onChange,
+  onCompositionEnd,
+  onCompositionStart,
+  onKeyDown,
+  onPaste,
   className,
   placeholder = "What would you like to know?",
   ...props
@@ -826,7 +831,24 @@ export const PromptInputTextarea = ({
   const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
 
+  const handleCompositionStart: CompositionEventHandler<
+    HTMLTextAreaElement
+  > = (e) => {
+    setIsComposing(true);
+    onCompositionStart?.(e);
+  };
+
+  const handleCompositionEnd: CompositionEventHandler<
+    HTMLTextAreaElement
+  > = (e) => {
+    setIsComposing(false);
+    onCompositionEnd?.(e);
+  };
+
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented) return;
+
     if (e.key === "Enter") {
       if (isComposing || e.nativeEvent.isComposing) {
         return;
@@ -863,6 +885,9 @@ export const PromptInputTextarea = ({
   };
 
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = (event) => {
+    onPaste?.(event);
+    if (event.defaultPrevented) return;
+
     const items = event.clipboardData?.items;
 
     if (!items) {
@@ -902,8 +927,8 @@ export const PromptInputTextarea = ({
     <InputGroupTextarea
       className={cn("field-sizing-content max-h-48 min-h-16", className)}
       name="message"
-      onCompositionEnd={() => setIsComposing(false)}
-      onCompositionStart={() => setIsComposing(true)}
+      onCompositionEnd={handleCompositionEnd}
+      onCompositionStart={handleCompositionStart}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       placeholder={placeholder}

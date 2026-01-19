@@ -200,6 +200,34 @@ tests = ["npm run build (pass)", "npm run lint (pass)"]
 files = ["src/app/home-client.tsx", "PROGRESS.toml"]
 
 [[events]]
+ts = "2026-01-19T20:40:53Z"
+type = "feature"
+task = "Feature #4: Composer prompt history via ArrowUp/ArrowDown"
+summary = "ArrowUp recalls previous prompts in the composer; repeated ArrowUp/ArrowDown traverses chat prompt history and restores draft."
+challenges = [
+  "Integrate history navigation without breaking normal multiline cursor movement.",
+  "Compose new key handling with existing PromptInputTextarea (Enter-to-send, paste/attachments).",
+]
+solutions = [
+  "Added history extraction + navigation helpers and only intercept ArrowUp/ArrowDown when caret is on first/last line (no modifiers, no selection).",
+  "Updated PromptInputTextarea to compose caller-provided handlers with the built-in behavior.",
+]
+tests = [
+  "npm run test:unit (pass)",
+  "npm run test:e2e (fails: existing external provider flakiness/timeouts; new e2e/composer-history.spec.ts passes)",
+  "npm run test:agent-browser (pass)",
+]
+files = [
+  "feat-4-composer-history.md",
+  "src/app/home-client.tsx",
+  "src/components/ai-elements/prompt-input.tsx",
+  "src/lib/composer-history.ts",
+  "tests/composer-history.test.ts",
+  "e2e/composer-history.spec.ts",
+  "PROGRESS.toml",
+]
+
+[[events]]
 ts = "2026-01-13T16:29:18Z"
 type = "fix"
 summary = "Fix hydration mismatch in model selector label"
@@ -1659,3 +1687,11 @@ summary = "Derive model capabilities from modelsdev (with admin observability)"
 details = "Switched to config v2 where providers only define connection info + an allowlist, and all model metadata/capabilities are derived via the `modelsdev` CLI at runtime (cached in-memory until server restart). The model picker now displays capability badges (incl. reasoning) from models.dev flags, `/api/providers` serves the derived catalog, and the admin UI exposes the in-memory catalog via `/api/admin/models-catalog`."
 tests = ["npm run test:unit (pass)", "npm run test:e2e (pass)", "npm run test:agent-browser (pass)"]
 files = ["src/server/config.ts", "src/server/modelsdev-catalog.ts", "src/server/llm-provider.ts", "src/server/model-registry.ts", "src/app/api/providers/route.ts", "src/app/api/admin/models-catalog/route.ts", "src/app/admin/admin-client.tsx", "src/components/model-picker.tsx", "src/lib/models.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "e2e/model-selector-config.spec.ts", "e2e/model-capabilities.spec.ts", "config.toml.example", "scripts/test-agent-browser.mjs", "package.json", "docs/agents/testing.md", "PLAN.md", "README.md", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-19T21:08:40Z"
+type = "feat"
+summary = "Rename chat titles from the sidebar"
+details = "Added a Rename action to each chat’s sidebar menu (active + archived) that opens a small dialog and persists the new title via PATCH `/api/chats/:chatId`. The endpoint now requires `profileId` and enforces profile ownership and title validation (non-empty, <= 200 chars)."
+tests = ["npm run test:unit (pass)", "npm run test:e2e (1 failed: e2e/model-capabilities.spec.ts aborted stream due to upstream socket close)", "npm run test:agent-browser (pass)"]
+files = ["feat-5-rename-chat-titles.md", "src/lib/chat-title.ts", "src/server/chats.ts", "src/app/api/chats/[chatId]/route.ts", "src/app/home-client.tsx", "tests/chat-title.test.ts", "e2e/chat-title-rename.spec.ts", "scripts/test-agent-browser.mjs", "PROGRESS.toml"]

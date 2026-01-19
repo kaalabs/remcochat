@@ -1,4 +1,5 @@
 import type { Chat, RemcoChatMessageMetadata } from "@/lib/types";
+import { validateChatTitle } from "@/lib/chat-title";
 import type { UIMessage } from "ai";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
@@ -226,8 +227,14 @@ export function updateChat(
   const db = getDb();
   const current = getChat(chatId);
 
-  const title = patch.title != null ? patch.title.trim() : current.title;
-  if (title.length > 200) throw new Error("Chat title is too long.");
+  const title =
+    patch.title != null
+      ? (() => {
+          const next = validateChatTitle(String(patch.title));
+          if (!next.ok) throw new Error(next.error);
+          return next.title;
+        })()
+      : current.title;
 
   const modelId =
     patch.modelId != null
@@ -268,6 +275,15 @@ function assertChatWritable(profileId: string, chatId: string): Chat {
     throw new Error("Chat was deleted.");
   }
   return chat;
+}
+
+export function updateChatForProfile(
+  profileId: string,
+  chatId: string,
+  patch: Partial<Pick<Chat, "title" | "modelId" | "chatInstructions">>
+): Chat {
+  assertChatWritable(profileId, chatId);
+  return updateChat(chatId, patch);
 }
 
 export function archiveChat(profileId: string, chatId: string): Chat {

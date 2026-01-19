@@ -84,6 +84,8 @@ async function main() {
   try {
     await waitForHttpOk(`${BASE_URL}/admin`, 90_000);
 
+    await runAgentBrowser(["set", "viewport", "1280", "800"]);
+
     await runAgentBrowser(["open", `${BASE_URL}/admin`]);
     await runAgentBrowser(["wait", "--text", "Models catalog"]);
     await runAgentBrowser(["wait", "--text", "e2e_vercel"]);
@@ -91,6 +93,22 @@ async function main() {
     await runAgentBrowser(["find", "text", "E2E Vercel Catalog", "click"]);
     await runAgentBrowser(["wait", "--text", "openai/gpt-3.5-turbo"]);
     await runAgentBrowser(["wait", "--text", "anthropic/claude-opus-4.5"]);
+
+    await runAgentBrowser(["open", `${BASE_URL}/`]);
+    await runAgentBrowser(["wait", "--text", "RemcoChat"]);
+    await runAgentBrowser(["find", "first", "[data-testid='sidebar:new-chat']", "click"]);
+    await runAgentBrowser(["find", "first", "[data-testid^='sidebar:chat-menu:']", "click"]);
+    await runAgentBrowser(["find", "text", "Rename", "click"]);
+    await runAgentBrowser(["wait", "--text", "Rename chat"]);
+    await runAgentBrowser([
+      "find",
+      "first",
+      "[data-testid='chat:rename-input']",
+      "fill",
+      "Agent renamed chat",
+    ]);
+    await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"]);
+    await runAgentBrowser(["wait", "--text", "Agent renamed chat"]);
   } finally {
     await closeAgentBrowser();
 
@@ -108,4 +126,3 @@ main().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
-

@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ModelOption } from "@/lib/models";
+import { validateChatTitle } from "@/lib/chat-title";
 import type {
   Chat,
   MemoryItem,
@@ -37,11 +38,24 @@ import type {
   RemcoChatMessageMetadata,
   TaskList,
 } from "@/lib/types";
+import {
+  extractPromptHistory,
+  isCaretOnFirstLine,
+  isCaretOnLastLine,
+  navigatePromptHistory,
+} from "@/lib/composer-history";
 import { Loader } from "@/components/ai-elements/loader";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEventHandler,
+} from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { MessageActions, MessageAction } from "@/components/ai-elements/message";
 import { Weather } from "@/components/weather";
@@ -121,6 +135,21 @@ function signatureForChatState(
     .join(";");
 
   return `m:${messageSig};v:${variantSig}`;
+}
+
+function requestFocusComposer(opts?: { toEnd?: boolean }) {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    const el = document.querySelector(
+      '[data-testid="composer:textarea"]'
+    ) as HTMLTextAreaElement | null;
+    if (!el) return;
+    el.focus();
+    if (opts?.toEnd) {
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    }
+  });
 }
 
 export type HomeClientProps = {
@@ -309,8 +338,90 @@ export function HomeClient({
           return true;
         })()));
 
+  const promptHistory = useMemo(() => {
+    return extractPromptHistory(messages);
+  }, [messages]);
+
   const [input, setInput] = useState("");
   const canSend = status === "ready" && input.trim().length > 0;
+
+  const [promptHistoryCursor, setPromptHistoryCursor] = useState<number>(
+    Number.MAX_SAFE_INTEGER
+  );
+  const [promptHistoryDraft, setPromptHistoryDraft] = useState<string>("");
+
+  const promptHistoryLengthRef = useRef<number>(promptHistory.length);
+
+  useEffect(() => {
+    const prevLen = promptHistoryLengthRef.current;
+    const nextLen = promptHistory.length;
+    promptHistoryLengthRef.current = nextLen;
+
+    setPromptHistoryCursor((cursor) => {
+      if (cursor === prevLen || cursor > nextLen) return nextLen;
+      return cursor;
+    });
+  }, [promptHistory.length]);
+
+  useEffect(() => {
+    setPromptHistoryCursor(Number.MAX_SAFE_INTEGER);
+    setPromptHistoryDraft("");
+  }, [chatSessionKey]);
+
+  const handleComposerKeyDown: KeyboardEventHandler<HTMLTextAreaElement> =
+    useCallback(
+      (e) => {
+        if (e.defaultPrevented) return;
+        if (e.nativeEvent.isComposing) return;
+        if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+
+        const el = e.currentTarget;
+        const selectionStart = el.selectionStart;
+        const selectionEnd = el.selectionEnd;
+        if (selectionStart == null || selectionEnd == null) return;
+        if (selectionStart !== selectionEnd) return;
+
+        if (e.key === "ArrowUp") {
+          if (!isCaretOnFirstLine(el.value, selectionStart)) return;
+          const res = navigatePromptHistory({
+            direction: "up",
+            history: promptHistory,
+            cursor: promptHistoryCursor,
+            draft: promptHistoryDraft,
+            value: el.value,
+          });
+          if (!res.didNavigate) return;
+          e.preventDefault();
+          setPromptHistoryCursor(res.cursor);
+          setPromptHistoryDraft(res.draft);
+          setInput(res.value);
+          requestFocusComposer({ toEnd: true });
+          return;
+        }
+
+        if (e.key === "ArrowDown") {
+          if (!isCaretOnLastLine(el.value, selectionStart)) return;
+          const res = navigatePromptHistory({
+            direction: "down",
+            history: promptHistory,
+            cursor: promptHistoryCursor,
+            draft: promptHistoryDraft,
+            value: el.value,
+          });
+          if (!res.didNavigate) return;
+          e.preventDefault();
+          setPromptHistoryCursor(res.cursor);
+          setPromptHistoryDraft(res.draft);
+          setInput(res.value);
+          requestFocusComposer({ toEnd: true });
+        }
+      },
+      [
+        promptHistory,
+        promptHistoryCursor,
+        promptHistoryDraft,
+      ]
+    );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -341,6 +452,12 @@ export function HomeClient({
   const [chatSettingsSaving, setChatSettingsSaving] = useState(false);
   const [chatSettingsError, setChatSettingsError] = useState<string | null>(null);
 
+  const [renameChatOpen, setRenameChatOpen] = useState(false);
+  const [renameChatId, setRenameChatId] = useState<string>("");
+  const [renameChatDraft, setRenameChatDraft] = useState("");
+  const [renameChatSaving, setRenameChatSaving] = useState(false);
+  const [renameChatError, setRenameChatError] = useState<string | null>(null);
+
   const [memorizeOpen, setMemorizeOpen] = useState(false);
   const [memorizeText, setMemorizeText] = useState("");
   const [memorizeSaving, setMemorizeSaving] = useState(false);
@@ -370,19 +487,27 @@ export function HomeClient({
     setDeleteProfileConfirm("");
   }, [deleteProfileOpen]);
 
+  useEffect(() => {
+    if (renameChatOpen) return;
+    setRenameChatId("");
+    setRenameChatDraft("");
+    setRenameChatError(null);
+    setRenameChatSaving(false);
+  }, [renameChatOpen]);
+
+  const renameChatValidation = useMemo(() => {
+    return validateChatTitle(renameChatDraft);
+  }, [renameChatDraft]);
+
+  const canSaveRenameChat =
+    Boolean(activeProfile) &&
+    status === "ready" &&
+    Boolean(renameChatId) &&
+    !renameChatSaving &&
+    renameChatValidation.ok;
+
   const focusComposer = useCallback((opts?: { toEnd?: boolean }) => {
-    if (typeof window === "undefined") return;
-    window.requestAnimationFrame(() => {
-      const el = document.querySelector(
-        '[data-testid="composer:textarea"]'
-      ) as HTMLTextAreaElement | null;
-      if (!el) return;
-      el.focus();
-      if (opts?.toEnd) {
-        const len = el.value.length;
-        el.setSelectionRange(len, len);
-      }
-    });
+    requestFocusComposer(opts);
   }, []);
 
   const syncRef = useRef<{
@@ -672,6 +797,71 @@ export function HomeClient({
     }
   }, [activeProfile, deleteChatSaving, refreshChats, status]);
 
+  const openRenameChat = useCallback(
+    (chatId: string) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+      const target = chats.find((c) => c.id === chatId);
+      if (!target) return;
+      setRenameChatId(chatId);
+      setRenameChatDraft(target.title);
+      setRenameChatError(null);
+      setRenameChatOpen(true);
+    },
+    [activeProfile, chats, status]
+  );
+
+  const renameChatTitle = useCallback(async () => {
+    if (!activeProfile) return;
+    if (status !== "ready") return;
+    if (renameChatSaving) return;
+    if (!renameChatId) return;
+
+    const nextTitle = validateChatTitle(renameChatDraft);
+    if (!nextTitle.ok) {
+      setRenameChatError(nextTitle.error);
+      return;
+    }
+
+    setRenameChatSaving(true);
+    setRenameChatError(null);
+    try {
+      const res = await fetch(`/api/chats/${renameChatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: activeProfile.id, title: nextTitle.title }),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { chat?: Chat; error?: string }
+        | null;
+      if (!res.ok || !data?.chat) {
+        throw new Error(data?.error || "Failed to rename chat.");
+      }
+
+      const updated = data.chat;
+      setChats((prev) => {
+        const next = prev.map((c) => (c.id === updated.id ? updated : c));
+        next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        return next;
+      });
+
+      setRenameChatOpen(false);
+    } catch (err) {
+      setRenameChatError(
+        err instanceof Error ? err.message : "Failed to rename chat."
+      );
+    } finally {
+      setRenameChatSaving(false);
+    }
+  }, [
+    activeProfile,
+    renameChatDraft,
+    renameChatId,
+    renameChatSaving,
+    status,
+  ]);
+
   const setChatModel = async (nextModelId: string) => {
     if (!activeProfile) return;
     if (!activeChat) return;
@@ -681,7 +871,7 @@ export function HomeClient({
     const res = await fetch(`/api/chats/${activeChat.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelId: nextModelId }),
+      body: JSON.stringify({ profileId: activeProfile.id, modelId: nextModelId }),
     });
 
     const data = (await res.json()) as { chat?: Chat };
@@ -1192,6 +1382,7 @@ export function HomeClient({
   }, [activeChat, chatSettingsChatId, chatSettingsOpen, chats]);
 
   const saveChatSettings = useCallback(async () => {
+    if (!activeProfile) return;
     const targetChatId = chatSettingsChatId || activeChat?.id || "";
     if (!targetChatId) return;
     if (chatSettingsSaving) return;
@@ -1202,7 +1393,10 @@ export function HomeClient({
       const res = await fetch(`/api/chats/${targetChatId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatInstructions: chatInstructionsDraft }),
+        body: JSON.stringify({
+          profileId: activeProfile.id,
+          chatInstructions: chatInstructionsDraft,
+        }),
       });
 
       const data = (await res.json()) as { chat?: Chat; error?: string };
@@ -1430,6 +1624,13 @@ export function HomeClient({
                         <ArchiveIcon />
                         Archive
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        data-testid={`chat-action:rename:${chat.id}`}
+                        onClick={() => openRenameChat(chat.id)}
+                      >
+                        <PencilIcon />
+                        Rename
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         data-testid={`chat-action:export-md:${chat.id}`}
@@ -1541,6 +1742,13 @@ export function HomeClient({
                               >
                                 <Undo2Icon />
                                 Unarchive
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                data-testid={`chat-action:rename:${chat.id}`}
+                                onClick={() => openRenameChat(chat.id)}
+                              >
+                                <PencilIcon />
+                                Rename
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -2301,6 +2509,8 @@ export function HomeClient({
                     }
                   );
                   setInput("");
+                  setPromptHistoryCursor(Number.MAX_SAFE_INTEGER);
+                  setPromptHistoryDraft("");
                 }}
               >
                 <PromptInputTextarea
@@ -2308,6 +2518,7 @@ export function HomeClient({
                   data-testid="composer:textarea"
                   name="message"
                   onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleComposerKeyDown}
                   value={input}
                 />
                 <div className="flex items-center justify-end gap-2 pr-2">
@@ -2698,6 +2909,70 @@ export function HomeClient({
                 disabled={chatSettingsSaving}
                 data-testid="chat:settings-save"
                 onClick={() => saveChatSettings()}
+                type="button"
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setRenameChatOpen} open={renameChatOpen}>
+        <DialogContent data-testid="chat:rename-dialog">
+          <DialogHeader>
+            <DialogTitle>Rename chat</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              autoFocus
+              data-testid="chat:rename-input"
+              onChange={(e) => {
+                setRenameChatDraft(e.target.value);
+                if (renameChatError) setRenameChatError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setRenameChatOpen(false);
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (canSaveRenameChat) {
+                    renameChatTitle();
+                  } else if (!renameChatValidation.ok) {
+                    setRenameChatError(renameChatValidation.error);
+                  }
+                }
+              }}
+              placeholder="Chat title"
+              value={renameChatDraft}
+            />
+
+            {renameChatError ? (
+              <div className="text-sm text-destructive">{renameChatError}</div>
+            ) : !renameChatValidation.ok ? (
+              <div className="text-sm text-destructive">
+                {renameChatValidation.error}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                data-testid="chat:rename-cancel"
+                disabled={renameChatSaving}
+                onClick={() => setRenameChatOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="chat:rename-save"
+                disabled={!canSaveRenameChat}
+                onClick={() => renameChatTitle()}
                 type="button"
               >
                 Save
