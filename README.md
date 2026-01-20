@@ -44,7 +44,16 @@ This enables:
 - `GET /api/admin/export` (download full JSON backup)
 - `POST /api/admin/reset` with body `{ "confirm": "RESET" }` (wipe local DB)
 
-## E2E (Playwright)
+## E2E
+
+### Playwright
 
 - Install WebKit once: `npx playwright install webkit`
 - Run WebKit E2E: `npm run test:e2e`
+
+### Agent-browser
+Install agent-browser once:
+  `npm install -g agent-browser`
+  `agent-browser install`
+Run agent-browser integrated user tests:
+  `npm run test:agent-browser`
