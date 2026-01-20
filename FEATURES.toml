@@ -12,6 +12,13 @@ description = "Enable reasoning in the agentic loop (only for reasoning models)"
 roadmap = "strategic"
 planed-for = "2026-01-31"
 
+[[features]]
+id = 4
+description = "enable safe user document attachments handling from the composer"
+"approved for implementation" = true
+roadmap = "feature"
+planed-for = "2026-01-31"
+
 [__reqman]
 schema_version = 1
 schema_json = """
