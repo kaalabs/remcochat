@@ -21,6 +21,7 @@ import {
 import crypto from "node:crypto";
 import { createTools } from "@/ai/tools";
 import { createWebTools } from "@/ai/web-tools";
+import { createBashTools } from "@/ai/bash-tools";
 import { buildSystemPrompt } from "@/ai/system-prompt";
 import { createProviderOptionsForWebTools } from "@/ai/provider-options";
 import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
@@ -37,6 +38,7 @@ import { isListIntent } from "@/server/list-intent";
 export const maxDuration = 30;
 
 const REMCOCHAT_API_VERSION = "instruction-frame-v1";
+type StreamTextToolSet = NonNullable<Parameters<typeof streamText>[0]["tools"]>;
 
 type ChatRequestBody = {
   messages: UIMessage<RemcoChatMessageMetadata>[];
@@ -44,6 +46,7 @@ type ChatRequestBody = {
   profileId?: string;
   chatId?: string;
   temporary?: boolean;
+  temporarySessionId?: string;
   regenerate?: boolean;
   regenerateMessageId?: string;
 };
@@ -423,18 +426,22 @@ function isWebToolName(toolName: string) {
   return WEB_TOOL_NAMES.has(toolName);
 }
 
-function createBufferedUIMessageStream(chunks: unknown[]): ReadableStream<any> {
+function createBufferedUIMessageStream<T>(chunks: T[]): ReadableStream<T> {
   return new ReadableStream({
     start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk as any);
+      for (const chunk of chunks) controller.enqueue(chunk);
       controller.close();
     },
   });
 }
 
-async function collectUIMessageChunks(stream: ReadableStream<any>) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+async function collectUIMessageChunks<T>(stream: ReadableStream<T>) {
   const reader = stream.getReader();
-  const chunks: any[] = [];
+  const chunks: T[] = [];
   const toolNamesByCallId = new Map<string, string>();
   const webToolOutputs = new Map<string, unknown>();
   let finishReason: unknown = undefined;
@@ -443,8 +450,10 @@ async function collectUIMessageChunks(stream: ReadableStream<any>) {
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    const chunk = value as any;
-    chunks.push(chunk);
+    chunks.push(value);
+
+    const chunk = value as unknown;
+    if (!isRecord(chunk)) continue;
 
     if (
       chunk?.type === "tool-input-start" ||
@@ -649,6 +658,16 @@ export async function POST(req: Request) {
         })
       : { enabled: false, tools: {} };
 
+    const temporaryKey =
+      typeof body.temporarySessionId === "string" && body.temporarySessionId.trim()
+        ? `tmp:${body.temporarySessionId.trim()}`
+        : "";
+
+    const bashTools =
+      resolved.capabilities.tools && temporaryKey
+        ? await createBashTools({ request: req, sessionKey: temporaryKey })
+        : { enabled: false, tools: {} };
+
     const system = buildSystemPrompt({
       isTemporary: true,
       chatInstructions: "",
@@ -658,6 +677,7 @@ export async function POST(req: Request) {
       memoryLines: [],
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
+      bashToolsEnabled: bashTools.enabled,
     });
 
     const modelMessages = await convertToModelMessages(
@@ -670,7 +690,7 @@ export async function POST(req: Request) {
       summaryModel: resolved.model,
       summarySupportsTemperature: resolved.capabilities.temperature,
     });
-    const maxSteps = webTools.enabled ? 12 : 5;
+    const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
       modelType: resolved.modelType,
       providerModelId: resolved.providerModelId,
@@ -695,6 +715,8 @@ export async function POST(req: Request) {
       "x-remcochat-chat-instructions-hash": hash8(""),
       "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
       "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
+      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
     };
 
     const messageMetadata = () => ({
@@ -712,19 +734,19 @@ export async function POST(req: Request) {
       ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
-            stopWhen: [
-              hasToolCall("displayWeather"),
-              hasToolCall("displayWeatherForecast"),
-              hasToolCall("displayTimezones"),
-              hasToolCall("displayUrlSummary"),
-              hasToolCall("displayNotes"),
-              hasToolCall("displayMemoryAnswer"),
-              hasToolCall("displayList"),
-              stepCountIs(maxSteps),
-            ],
-            tools: { ...chatTools, ...webTools.tools },
-          }
-        : { stopWhen: [stepCountIs(5)] }),
+          stopWhen: [
+            hasToolCall("displayWeather"),
+            hasToolCall("displayWeatherForecast"),
+            hasToolCall("displayTimezones"),
+            hasToolCall("displayUrlSummary"),
+            hasToolCall("displayNotes"),
+            hasToolCall("displayMemoryAnswer"),
+            hasToolCall("displayList"),
+            stepCountIs(maxSteps),
+          ],
+          tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
+        }
+      : { stopWhen: [stepCountIs(5)] }),
     });
 
     const shouldAutoContinuePerplexity =
@@ -787,7 +809,11 @@ export async function POST(req: Request) {
       },
     ]);
 
-    const tools = { ...chatTools, ...webTools.tools } as Record<string, any>;
+    const tools = {
+      ...chatTools,
+      ...webTools.tools,
+      ...bashTools.tools,
+    } as StreamTextToolSet;
     delete tools.perplexity_search;
 
     const continued = streamText({
@@ -1143,6 +1169,13 @@ export async function POST(req: Request) {
       })
     : { enabled: false, tools: {} };
 
+  const bashTools = resolved.capabilities.tools
+    ? await createBashTools({
+        request: req,
+        sessionKey: `chat:${effectiveChat.id}`,
+      })
+    : { enabled: false, tools: {} };
+
   const systemParts: string[] = [
     buildSystemPrompt({
       isTemporary: false,
@@ -1153,6 +1186,7 @@ export async function POST(req: Request) {
       memoryLines,
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
+      bashToolsEnabled: bashTools.enabled,
     }),
   ];
 
@@ -1222,7 +1256,7 @@ export async function POST(req: Request) {
     summaryModel: resolved.model,
     summarySupportsTemperature: resolved.capabilities.temperature,
   });
-  const maxSteps = webTools.enabled ? 12 : 5;
+  const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
   const providerOptions = createProviderOptionsForWebTools({
     modelType: resolved.modelType,
     providerModelId: resolved.providerModelId,
@@ -1255,7 +1289,7 @@ export async function POST(req: Request) {
             hasToolCall("displayList"),
             stepCountIs(maxSteps),
           ],
-          tools: { ...chatTools, ...webTools.tools },
+          tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
         }
       : { stopWhen: [stepCountIs(5)] }),
   });
@@ -1287,6 +1321,8 @@ export async function POST(req: Request) {
       ),
       "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
       "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
+      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
     };
 
   const messageMetadata = () => ({
@@ -1356,7 +1392,11 @@ export async function POST(req: Request) {
     },
   ]);
 
-  const tools = { ...chatTools, ...webTools.tools } as Record<string, any>;
+  const tools = {
+    ...chatTools,
+    ...webTools.tools,
+    ...bashTools.tools,
+  } as StreamTextToolSet;
   delete tools.perplexity_search;
 
   const continued = streamText({

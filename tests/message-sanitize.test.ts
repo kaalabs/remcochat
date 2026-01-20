@@ -43,7 +43,7 @@ test("strips web tool parts from messages", () => {
         { type: "text", text: "https://example.com" },
       ],
     },
-  ] as any;
+  ] as unknown as Parameters<typeof stripWebToolPartsFromMessages>[0];
 
   const out = stripWebToolPartsFromMessages(input);
   assert.equal(out.length, 2);

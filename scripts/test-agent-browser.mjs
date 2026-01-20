@@ -11,6 +11,8 @@ const DB_PATH =
 const CONFIG_PATH =
   process.env.REMCOCHAT_AGENT_BROWSER_CONFIG_PATH ??
   "data/remcochat-agent-browser-config.toml";
+const ENABLE_VERCEL_SANDBOX_BASH =
+  process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
 
 function npmBin() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
@@ -56,6 +58,7 @@ async function main() {
     REMCOCHAT_DB_PATH: DB_PATH,
     REMCOCHAT_CONFIG_PATH: CONFIG_PATH,
     REMCOCHAT_ENABLE_ADMIN: "1",
+    ...(ENABLE_VERCEL_SANDBOX_BASH ? { REMCOCHAT_ENABLE_BASH_TOOL: "1" } : {}),
   };
 
   await execFileAsync("node", ["scripts/reset-e2e-db.mjs"], {
@@ -109,6 +112,31 @@ async function main() {
     ]);
     await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"]);
     await runAgentBrowser(["wait", "--text", "Agent renamed chat"]);
+
+    if (ENABLE_VERCEL_SANDBOX_BASH) {
+      await runAgentBrowser(["find", "first", "[data-testid='model:picker-trigger']", "click"]);
+      await runAgentBrowser([
+        "find",
+        "first",
+        "[data-testid='model-option:anthropic/claude-opus-4.5']",
+        "click",
+      ]);
+
+      await runAgentBrowser([
+        "find",
+        "first",
+        "[data-testid='composer:textarea']",
+        "fill",
+        "Run: `python -c \"print('REMCOCHAT_PY_E2E_OK')\"`",
+      ]);
+      await runAgentBrowser(["find", "first", "[data-testid='composer:submit']", "click"]);
+      await runAgentBrowser([
+        "wait",
+        "--fn",
+        "document.querySelector(\"[data-testid='tool:bash']\") != null",
+      ]);
+      await runAgentBrowser(["wait", "--text", "REMCOCHAT_PY_E2E_OK"]);
+    }
   } finally {
     await closeAgentBrowser();
 

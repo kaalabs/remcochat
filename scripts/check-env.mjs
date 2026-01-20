@@ -4,6 +4,90 @@ import { execFileSync } from "node:child_process";
 import TOML from "@iarna/toml";
 import Database from "better-sqlite3";
 
+function parseDotenvValue(raw) {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return "";
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    const inner = trimmed.slice(1, -1);
+    if (first === "'") return inner;
+    return inner
+      .replaceAll("\\n", "\n")
+      .replaceAll("\\r", "\r")
+      .replaceAll("\\t", "\t")
+      .replaceAll('\\"', '"')
+      .replaceAll("\\\\", "\\");
+  }
+
+  // Strip trailing inline comments: KEY=value # comment
+  let out = "";
+  let sawWhitespace = false;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+    if (ch === "#") {
+      if (sawWhitespace) break;
+    }
+    if (ch === " " || ch === "\t") {
+      sawWhitespace = true;
+      out += ch;
+    } else {
+      sawWhitespace = false;
+      out += ch;
+    }
+  }
+  return out.trim();
+}
+
+function loadDotenvFile(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return;
+  }
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const normalized = trimmed.startsWith("export ")
+      ? trimmed.slice("export ".length).trim()
+      : trimmed;
+
+    const idx = normalized.indexOf("=");
+    if (idx <= 0) continue;
+
+    const key = normalized.slice(0, idx).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (Object.prototype.hasOwnProperty.call(process.env, key)) continue;
+
+    const rawValue = normalized.slice(idx + 1);
+    process.env[key] = parseDotenvValue(rawValue);
+  }
+}
+
+function loadDotenvFromCwd() {
+  const nodeEnv = String(process.env.NODE_ENV ?? "").trim() || "development";
+  const cwd = process.cwd();
+  const candidates = [
+    `.env.${nodeEnv}.local`,
+    ".env.local",
+    `.env.${nodeEnv}`,
+    ".env",
+  ];
+  for (const name of candidates) {
+    const filePath = path.join(cwd, name);
+    if (!fs.existsSync(filePath)) continue;
+    loadDotenvFile(filePath);
+  }
+}
+
+// Ensure `npm run dev` / `npm run start` works with `vercel env pull` (writes `.env.local`)
+// even though this script runs before Next.js loads env files.
+loadDotenvFromCwd();
+
 const configPath = process.env.REMCOCHAT_CONFIG_PATH?.trim()
   ? path.resolve(process.env.REMCOCHAT_CONFIG_PATH.trim())
   : path.join(process.cwd(), "config.toml");
@@ -59,6 +143,11 @@ function tomlToPlainObject(value) {
     return out;
   }
   return value;
+}
+
+function isTruthyEnv(value) {
+  const v = String(value ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
 function getDbPath() {
@@ -193,6 +282,102 @@ if (routerEnabled) {
       `Invalid config.toml: app.router.provider_id "${routerProviderId}" is not present in providers`
     );
     process.exit(1);
+  }
+}
+
+const bashTools = parsedConfig?.app?.bash_tools;
+const bashToolsEnabled = bashTools?.enabled === true;
+
+if (bashToolsEnabled) {
+  if (!isTruthyEnv(process.env.REMCOCHAT_ENABLE_BASH_TOOL)) {
+    console.error(
+      [
+        "Bash tools are enabled in config.toml (app.bash_tools.enabled=true), but the runtime kill-switch is not set.",
+        "",
+        "Set one of the following in your shell:",
+        "  export REMCOCHAT_ENABLE_BASH_TOOL=1",
+        "",
+        "Or disable bash tools in config.toml.",
+      ].join("\n")
+    );
+    process.exit(1);
+  }
+
+  const access =
+    typeof bashTools?.access === "string" && bashTools.access.trim()
+      ? bashTools.access.trim()
+      : "localhost";
+
+  if (access === "lan") {
+    if (!String(process.env.REMCOCHAT_ADMIN_TOKEN ?? "").trim()) {
+      console.error(
+        [
+          "Bash tools are configured for LAN access (app.bash_tools.access=\"lan\"), but REMCOCHAT_ADMIN_TOKEN is missing.",
+          "",
+          "Set:",
+          "  export REMCOCHAT_ADMIN_TOKEN='...'",
+        ].join("\n")
+      );
+      process.exit(1);
+    }
+  }
+
+  const hasOidc = Boolean(String(process.env.VERCEL_OIDC_TOKEN ?? "").trim());
+  const teamOrOrgId = String(
+    process.env.VERCEL_TEAM_ID ?? process.env.VERCEL_ORG_ID ?? ""
+  ).trim();
+  const hasAccessToken = Boolean(
+    String(process.env.VERCEL_TOKEN ?? "").trim() &&
+      teamOrOrgId &&
+      String(process.env.VERCEL_PROJECT_ID ?? "").trim()
+  );
+
+  if (!hasOidc && !hasAccessToken) {
+    console.error(
+      [
+        "Bash tools require Vercel Sandbox credentials, but none were found.",
+        "",
+        "Preferred (local dev):",
+        "  export VERCEL_OIDC_TOKEN='...'",
+        "",
+        "Alternative:",
+        "  export VERCEL_TOKEN='...'",
+        "  export VERCEL_ORG_ID='...'  # (aka VERCEL_TEAM_ID)",
+        "  export VERCEL_PROJECT_ID='...'",
+        "",
+        "See: https://vercel.com/docs/vercel-sandbox",
+      ].join("\n")
+    );
+    process.exit(1);
+  }
+
+  const seed = bashTools?.seed && typeof bashTools.seed === "object" ? bashTools.seed : {};
+  const seedMode =
+    typeof seed?.mode === "string" && seed.mode.trim() ? seed.mode.trim() : "git";
+
+  if (seedMode === "git") {
+    const gitUrl = typeof seed?.git_url === "string" ? seed.git_url.trim() : "";
+    if (!gitUrl) {
+      console.error(
+        "Invalid config.toml: app.bash_tools.seed.git_url is required when seed.mode = \"git\""
+      );
+      process.exit(1);
+    }
+  } else if (seedMode === "upload") {
+    const projectRoot =
+      typeof bashTools?.project_root === "string" ? bashTools.project_root.trim() : "";
+    if (!projectRoot) {
+      console.error(
+        "Invalid config.toml: app.bash_tools.project_root is required when seed.mode = \"upload\""
+      );
+      process.exit(1);
+    }
+    if (!path.isAbsolute(projectRoot)) {
+      console.error(
+        "Invalid config.toml: app.bash_tools.project_root must be an absolute path"
+      );
+      process.exit(1);
+    }
   }
 }
 

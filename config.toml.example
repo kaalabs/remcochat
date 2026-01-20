@@ -17,6 +17,34 @@ recency = "week"
 allowed_domains = []
 blocked_domains = []
 
+# Bash tools (Vercel Sandbox) are disabled by default.
+# Enabling them requires BOTH:
+# - config: app.bash_tools.enabled = true
+# - env: REMCOCHAT_ENABLE_BASH_TOOL=1
+# If access="lan", also set REMCOCHAT_ADMIN_TOKEN and send it on every /api/chat request
+# via x-remcochat-admin-token or Authorization: Bearer.
+[app.bash_tools]
+enabled = false
+access = "localhost" # "localhost" | "lan"
+project_root = ""    # required if seed.mode="upload"
+max_stdout_chars = 12000
+max_stderr_chars = 12000
+timeout_ms = 30000
+max_concurrent_sandboxes = 2
+idle_ttl_ms = 900000 # 15 minutes
+
+[app.bash_tools.sandbox]
+runtime = "node22" # "node22" (node+npm; python3 available) | "python3.13" (python; no node/npm)
+ports = [3000] # Exposed as public URLs via Vercel Sandbox (max 4). Use [] to disable.
+vcpus = 2
+timeout_ms = 900000
+
+[app.bash_tools.seed]
+mode = "git"         # "git" | "upload"
+git_url = ""         # required if mode="git"
+git_revision = ""    # optional
+upload_include = "**/*" # used only for mode="upload"
+
 # Providers configure only:
 # - how to connect (base_url + api_key_env)
 # - which models are allowed (allowed_model_ids + default_model_id)
