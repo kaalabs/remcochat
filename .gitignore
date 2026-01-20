@@ -44,6 +44,8 @@ config.toml
 
 # local tracking lists (kept local)
 FEATURES.toml
+ISSUES.toml
+PROGRESS.toml
 
 # vercel
 .vercel
