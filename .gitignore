@@ -42,6 +42,9 @@ yarn-error.log*
 # runtime config (commit only templates/examples)
 config.toml
 
+# local tracking lists (kept local)
+FEATURES.toml
+
 # vercel
 .vercel
 
