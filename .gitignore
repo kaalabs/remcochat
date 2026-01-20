@@ -54,3 +54,7 @@ PROGRESS.toml
 *.tsbuildinfo
 next-env.d.ts
 2026-01-13-RemcoChat.code-workspace
+
+# bun
+bun.lock
+bun.lockb

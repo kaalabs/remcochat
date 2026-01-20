@@ -41,12 +41,45 @@ const WebToolsSchema = z
   })
   .optional();
 
+const BashToolsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    access: z.enum(["localhost", "lan"]).optional(),
+    project_root: z.string().optional(),
+    max_stdout_chars: z.number().int().min(200).max(200_000).optional(),
+    max_stderr_chars: z.number().int().min(200).max(200_000).optional(),
+    timeout_ms: z.number().int().min(1_000).max(5 * 60_000).optional(),
+    max_concurrent_sandboxes: z.number().int().min(1).max(10).optional(),
+    idle_ttl_ms: z.number().int().min(10_000).max(6 * 60 * 60_000).optional(),
+    sandbox: z
+      .object({
+        runtime: z.string().min(1).optional(),
+        ports: z
+          .array(z.number().int().min(1).max(65535))
+          .max(4)
+          .optional(),
+        vcpus: z.number().int().min(1).max(8).optional(),
+        timeout_ms: z.number().int().min(30_000).max(5 * 60 * 60_000).optional(),
+      })
+      .optional(),
+    seed: z
+      .object({
+        mode: z.enum(["upload", "git"]).optional(),
+        git_url: z.string().optional(),
+        git_revision: z.string().optional(),
+        upload_include: z.string().optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 const RawConfigSchema = z.object({
   version: z.literal(2),
   app: z.object({
     default_provider_id: z.string().min(1),
     router: IntentRouterSchema,
     web_tools: WebToolsSchema,
+    bash_tools: BashToolsSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
 });
@@ -78,6 +111,28 @@ export type RemcoChatConfig = {
     recency: "day" | "week" | "month" | "year" | null;
     allowedDomains: string[];
     blockedDomains: string[];
+  } | null;
+  bashTools: {
+    enabled: boolean;
+    access: "localhost" | "lan";
+    projectRoot: string | null;
+    maxStdoutChars: number;
+    maxStderrChars: number;
+    timeoutMs: number;
+    maxConcurrentSandboxes: number;
+    idleTtlMs: number;
+    sandbox: {
+      runtime: string;
+      ports: number[];
+      vcpus: number;
+      timeoutMs: number;
+    };
+    seed: {
+      mode: "upload" | "git";
+      gitUrl: string | null;
+      gitRevision: string | null;
+      uploadInclude: string;
+    };
   } | null;
 };
 
@@ -195,12 +250,118 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     };
   }
 
+  let bashTools: RemcoChatConfig["bashTools"] = null;
+  const rawBashTools = raw.app.bash_tools ?? {};
+  const bashEnabled = Boolean(rawBashTools.enabled ?? false);
+  if (bashEnabled) {
+    const access = rawBashTools.access ?? "localhost";
+    const projectRootRaw = String(rawBashTools.project_root ?? "").trim();
+    const projectRoot = projectRootRaw ? projectRootRaw : null;
+    if (projectRoot && !path.isAbsolute(projectRoot)) {
+      throw new Error(
+        "config.toml: app.bash_tools.project_root must be an absolute path"
+      );
+    }
+
+    const maxStdoutChars = Math.min(
+      200_000,
+      Math.max(200, Math.floor(Number(rawBashTools.max_stdout_chars ?? 12_000)))
+    );
+    const maxStderrChars = Math.min(
+      200_000,
+      Math.max(200, Math.floor(Number(rawBashTools.max_stderr_chars ?? 12_000)))
+    );
+    const timeoutMs = Math.min(
+      5 * 60_000,
+      Math.max(1_000, Math.floor(Number(rawBashTools.timeout_ms ?? 30_000)))
+    );
+    const maxConcurrentSandboxes = Math.min(
+      10,
+      Math.max(
+        1,
+        Math.floor(Number(rawBashTools.max_concurrent_sandboxes ?? 2))
+      )
+    );
+    const idleTtlMs = Math.min(
+      6 * 60 * 60_000,
+      Math.max(10_000, Math.floor(Number(rawBashTools.idle_ttl_ms ?? 900_000)))
+    );
+
+    const sandboxRuntime = String(rawBashTools.sandbox?.runtime ?? "node22").trim();
+    const sandboxPortsRaw = rawBashTools.sandbox?.ports;
+    const sandboxPorts = Array.isArray(sandboxPortsRaw)
+      ? Array.from(
+          new Set(
+            sandboxPortsRaw
+              .map((p) => Math.floor(Number(p)))
+              .filter((p) => Number.isFinite(p) && p >= 1 && p <= 65535)
+          )
+        ).slice(0, 4)
+      : [3000];
+    const sandboxVcpus = Math.min(
+      8,
+      Math.max(1, Math.floor(Number(rawBashTools.sandbox?.vcpus ?? 2)))
+    );
+    const sandboxTimeoutMs = Math.min(
+      5 * 60 * 60_000,
+      Math.max(
+        30_000,
+        Math.floor(Number(rawBashTools.sandbox?.timeout_ms ?? 900_000))
+      )
+    );
+
+    const seedMode = rawBashTools.seed?.mode ?? "git";
+    const gitUrlRaw = String(rawBashTools.seed?.git_url ?? "").trim();
+    const gitUrl = gitUrlRaw ? gitUrlRaw : null;
+    const gitRevisionRaw = String(rawBashTools.seed?.git_revision ?? "").trim();
+    const gitRevision = gitRevisionRaw ? gitRevisionRaw : null;
+    const uploadInclude = String(rawBashTools.seed?.upload_include ?? "**/*").trim() || "**/*";
+
+    if (seedMode === "git") {
+      if (!gitUrl) {
+        throw new Error(
+          "config.toml: app.bash_tools.seed.git_url is required when seed.mode = \"git\""
+        );
+      }
+    } else if (seedMode === "upload") {
+      if (!projectRoot) {
+        throw new Error(
+          "config.toml: app.bash_tools.project_root is required when seed.mode = \"upload\""
+        );
+      }
+    }
+
+    bashTools = {
+      enabled: true,
+      access,
+      projectRoot,
+      maxStdoutChars,
+      maxStderrChars,
+      timeoutMs,
+      maxConcurrentSandboxes,
+      idleTtlMs,
+      sandbox: {
+        runtime: sandboxRuntime,
+        ports: sandboxPorts,
+        vcpus: sandboxVcpus,
+        timeoutMs: sandboxTimeoutMs,
+      },
+      seed: {
+        mode: seedMode,
+        gitUrl,
+        gitRevision,
+        uploadInclude,
+      },
+    };
+  }
+
   return {
     version: 2,
     defaultProviderId,
     providers,
     intentRouter,
     webTools,
+    bashTools,
   };
 }
 

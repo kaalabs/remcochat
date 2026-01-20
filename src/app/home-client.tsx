@@ -66,6 +66,7 @@ import { MemoryPromptCard } from "@/components/memory-prompt-card";
 import { TimezonesCard } from "@/components/timezones-card";
 import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
+import { BashToolCard } from "@/components/bash-tool-card";
 import type { WeatherToolOutput } from "@/ai/weather";
 import type { WeatherForecastToolOutput } from "@/ai/weather";
 import type { TimezonesToolOutput } from "@/ai/timezones";
@@ -525,6 +526,7 @@ export function HomeClient({
         profileId: activeProfile.id,
         modelId: effectiveModelId,
         temporary: true,
+        temporarySessionId,
       };
     }
     if (!activeChat) return null;
@@ -1973,7 +1975,7 @@ export function HomeClient({
             resize="smooth"
           >
             <StickToBottom.Content className="w-full py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:py-6 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:py-8 md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
-              <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
                 {messages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground">
                     Start a chat.
@@ -2303,6 +2305,179 @@ export function HomeClient({
                               }
                             }
 
+                            if (part.type === "tool-bash") {
+                              const input = part.input as { command?: unknown } | undefined;
+                              const command =
+                                typeof input?.command === "string" ? input.command : "";
+
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        command={command}
+                                        kind="bash"
+                                        result={{ stdout: "", stderr: "", exitCode: -1 }}
+                                        state="running"
+                                      />
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | {
+                                        stdout?: unknown;
+                                        stderr?: unknown;
+                                        exitCode?: unknown;
+                                        stdoutTruncatedChars?: unknown;
+                                        stderrTruncatedChars?: unknown;
+                                      }
+                                    | undefined;
+                                  const exitCodeRaw = output?.exitCode;
+                                  const exitCode =
+                                    typeof exitCodeRaw === "number"
+                                      ? exitCodeRaw
+                                      : Number(exitCodeRaw ?? -1);
+                                  const running = exitCode === -1;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        command={command}
+                                        kind="bash"
+                                        result={{
+                                          stdout:
+                                            typeof output?.stdout === "string"
+                                              ? output.stdout
+                                              : "",
+                                          stderr:
+                                            typeof output?.stderr === "string"
+                                              ? output.stderr
+                                              : "",
+                                          exitCode,
+                                        }}
+                                        state={running ? "running" : "ok"}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        command={command}
+                                        errorText={part.errorText}
+                                        kind="bash"
+                                        state="error"
+                                      />
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-readFile") {
+                              const input = part.input as { path?: unknown } | undefined;
+                              const filePath = typeof input?.path === "string" ? input.path : "";
+
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        kind="readFile"
+                                        path={filePath}
+                                        state="running"
+                                      />
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | { content?: unknown }
+                                    | undefined;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        content={
+                                          typeof output?.content === "string"
+                                            ? output.content
+                                            : ""
+                                        }
+                                        kind="readFile"
+                                        path={filePath}
+                                        state="ok"
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        errorText={part.errorText}
+                                        kind="readFile"
+                                        path={filePath}
+                                        state="error"
+                                      />
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-writeFile") {
+                              const input = part.input as
+                                | { path?: unknown; content?: unknown }
+                                | undefined;
+                              const filePath = typeof input?.path === "string" ? input.path : "";
+                              const content =
+                                typeof input?.content === "string" ? input.content : "";
+
+                              switch (part.state) {
+                                case "input-available":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        contentLength={content.length}
+                                        kind="writeFile"
+                                        path={filePath}
+                                        state="running"
+                                      />
+                                    </div>
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | { success?: unknown }
+                                    | undefined;
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        contentLength={content.length}
+                                        kind="writeFile"
+                                        path={filePath}
+                                        state="ok"
+                                        success={output?.success === true}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div key={`${id}-${index}`}>
+                                      <BashToolCard
+                                        contentLength={content.length}
+                                        errorText={part.errorText}
+                                        kind="writeFile"
+                                        path={filePath}
+                                        state="error"
+                                      />
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
                             if (part.type === "tool-displayWeather") {
                               switch (part.state) {
                                 case "input-available":
@@ -2488,7 +2663,7 @@ export function HomeClient({
           </StickToBottom>
 
 			          <div className="shrink-0 border-t bg-sidebar pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-4">
-			            <div className="mx-auto w-full max-w-3xl">
+			            <div className="mx-auto w-full max-w-5xl">
 			              <PromptInput
 			                className={
 			                  "bg-sidebar " +

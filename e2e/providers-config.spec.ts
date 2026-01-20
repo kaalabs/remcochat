@@ -16,6 +16,13 @@ test("Providers config endpoint", async ({ request }) => {
         type: string;
         label: string;
         description?: string;
+        capabilities: {
+          tools: boolean;
+          reasoning: boolean;
+          temperature: boolean;
+          attachments: boolean;
+          structuredOutput: boolean;
+        };
       }>;
     }>;
   };
@@ -38,7 +45,7 @@ test("Providers config endpoint", async ({ request }) => {
     expect(provider.models.every((m) => Boolean(m.type))).toBeTruthy();
     expect(
       provider.models.every(
-        (m: any) =>
+        (m) =>
           m.capabilities &&
           typeof m.capabilities.tools === "boolean" &&
           typeof m.capabilities.reasoning === "boolean" &&

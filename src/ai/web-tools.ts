@@ -11,7 +11,7 @@ import {
 
 export type WebToolsResult = {
   enabled: boolean;
-  tools: Record<string, any>;
+  tools: Record<string, unknown>;
 };
 
 export function createWebTools(input: {
@@ -51,7 +51,7 @@ export function createWebTools(input: {
       const blockedDomains =
         web.blockedDomains.length > 0 ? web.blockedDomains : undefined;
 
-      const tools: Record<string, any> = {
+      const tools: Record<string, unknown> = {
         perplexity_search: gateway.tools.perplexitySearch({
           maxResults: web.maxResults,
           ...(web.recency ? { searchRecencyFilter: web.recency } : {}),
