@@ -12,20 +12,6 @@ description = "Enable reasoning in the agentic loop (only for reasoning models)"
 roadmap = "strategic"
 planed-for = "2026-01-31"
 
-[[features]]
-id = 5
-description = "enable renaming of historic chat entries titles"
-"approved for implementation" = true
-roadmap = "enhancement"
-planed-for = "2026-01-31"
-
-[[features]]
-id = 6
-description = "Implement bash-agent tooling"
-"approved for implementation" = true
-roadmap = "feature"
-planed-for = "2026-01-31"
-
 [__reqman]
 schema_version = 1
 schema_json = """

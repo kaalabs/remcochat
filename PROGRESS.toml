@@ -1695,3 +1695,35 @@ summary = "Rename chat titles from the sidebar"
 details = "Added a Rename action to each chat’s sidebar menu (active + archived) that opens a small dialog and persists the new title via PATCH `/api/chats/:chatId`. The endpoint now requires `profileId` and enforces profile ownership and title validation (non-empty, <= 200 chars)."
 tests = ["npm run test:unit (pass)", "npm run test:e2e (1 failed: e2e/model-capabilities.spec.ts aborted stream due to upstream socket close)", "npm run test:agent-browser (pass)"]
 files = ["feat-5-rename-chat-titles.md", "src/lib/chat-title.ts", "src/server/chats.ts", "src/app/api/chats/[chatId]/route.ts", "src/app/home-client.tsx", "tests/chat-title.test.ts", "e2e/chat-title-rename.spec.ts", "scripts/test-agent-browser.mjs", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-20T01:54:57Z"
+type = "feat"
+summary = "Add bash agent tooling via Vercel Sandbox"
+details = "Implemented Feature #6 using `bash-tool` backed by `@vercel/sandbox`, with hard enablement gates (config + REMCOCHAT_ENABLE_BASH_TOOL + localhost/LAN policy). /api/chat now conditionally exposes `bash`, `readFile`, and `writeFile` tools and renders tool cards in the transcript. Added config parsing, env validation, and e2e/units coverage (sandbox e2e is opt-in)."
+tests = ["npm run test:unit (pass)", "npm run build (pass)", "npm run test:e2e (pass; sandbox test skipped)", "npm run test:agent-browser (pass)", "npm run lint (pass; warnings remain)"]
+files = [".env.example", "FEATURES.toml", "config.toml.example", "feat-6-bash-agent-tooling.md", "package.json", "package-lock.json", "playwright.config.ts", "scripts/check-env.mjs", "scripts/reset-e2e-db.mjs", "src/ai/bash-tools.ts", "src/ai/system-prompt.ts", "src/ai/web-tools.ts", "src/app/api/chat/route.ts", "src/app/home-client.tsx", "src/components/bash-tool-card.tsx", "tests/bash-tools-gating.test.ts", "tests/config-bash-tools.test.ts", "tests/message-sanitize.test.ts", "tests/system-prompt.test.ts", "e2e/bash-tools.spec.ts", "e2e/providers-config.spec.ts", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-20T02:06:37Z"
+type = "fix"
+summary = "Make Vercel Sandbox auth + agent-browser bash smoke work locally"
+details = "Passed access-token credentials (VERCEL_TOKEN + VERCEL_TEAM_ID + VERCEL_PROJECT_ID) into `Sandbox.create()` so local runs don't depend on `vercel link`/OIDC context. Also fixed the E2E config generator to avoid duplicating `[app.bash_tools]` and extended the agent-browser smoke to assert a real `tool:bash` card appears (not just text)."
+tests = ["REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX=1 VERCEL_TEAM_ID=$VERCEL_TEAM_ID VERCEL_PROJECT_ID=$VERCEL_PROJECT_ID npm run test:agent-browser (pass)", "npm run test:unit (pass)"]
+files = ["src/ai/bash-tools.ts", "scripts/reset-e2e-db.mjs", "scripts/test-agent-browser.mjs", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-20T03:47:12Z"
+type = "fix"
+summary = "Widen terminal tool card"
+details = "Made assistant messages full-width (no shrink-wrapping) and removed the max-width cap on BashToolCard so terminal output uses the full chat column. Also widened the Full output dialog."
+tests = ["npm run test:unit (pass)", "REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX=1 VERCEL_TEAM_ID=$VERCEL_TEAM_ID VERCEL_PROJECT_ID=$VERCEL_PROJECT_ID npm run test:agent-browser (pass)"]
+files = ["src/components/ai-elements/message.tsx", "src/components/bash-tool-card.tsx", "PROGRESS.toml"]
+
+[[events]]
+ts = "2026-01-20T10:11:58Z"
+type = "fix"
+summary = "Load `.env.local` for preflight env checks"
+details = "Updated `scripts/check-env.mjs` to parse `.env.local`/dotenv files so `npm run dev`/`npm run start` works after `vercel env pull` (this script runs before Next.js loads env files). Also accepted `VERCEL_ORG_ID` as an alias for `VERCEL_TEAM_ID` and `VERCEL_API_KEY` as an alias for `VERCEL_TOKEN` for sandbox auth."
+tests = ["npm run test:unit (pass)"]
+files = ["scripts/check-env.mjs", "src/ai/bash-tools.ts", ".env.example", "PROGRESS.toml"]
