@@ -43,7 +43,7 @@ export async function DELETE(
   }
 
   try {
-    deleteChat(body.profileId, chatId);
+    await deleteChat(body.profileId, chatId);
     return Response.json({ ok: true });
   } catch (err) {
     return Response.json(

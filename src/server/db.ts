@@ -53,6 +53,33 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_chats_profile_updated_at
       ON chats(profile_id, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      chat_id TEXT REFERENCES chats(id) ON DELETE CASCADE,
+      temporary_session_id TEXT,
+      message_id TEXT,
+      original_filename TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT,
+      expires_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_profile_created_at
+      ON attachments(profile_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_chat_created_at
+      ON attachments(chat_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_temporary_session_created_at
+      ON attachments(temporary_session_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
+      ON attachments(expires_at);
+
     CREATE TABLE IF NOT EXISTS pending_memory (
       chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

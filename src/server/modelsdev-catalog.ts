@@ -177,10 +177,20 @@ function descriptionFromModelId(modelId: string, npm: string): string | undefine
 }
 
 function normalizeCapabilities(model: ModelsDevModel): ModelCapabilities {
+  const modelId = String(model.id ?? "").trim();
+  const isOpenAIModel = modelId.toLowerCase().startsWith("openai/");
+  const reasoning = Boolean(model.reasoning ?? false);
+  const temperatureFlag = Boolean(model.temperature ?? false);
+
+  // The AI SDK does not support `temperature` for OpenAI reasoning models (they use other controls).
+  // models.dev currently marks some OpenAI reasoning models as temperature-capable, so we normalize
+  // to prevent passing unsupported parameters (and avoid runtime warnings).
+  const temperature = isOpenAIModel && reasoning ? false : temperatureFlag;
+
   return {
     tools: Boolean(model.tool_call ?? false),
-    reasoning: Boolean(model.reasoning ?? false),
-    temperature: Boolean(model.temperature ?? false),
+    reasoning,
+    temperature,
     attachments: Boolean(model.attachment ?? false),
     structuredOutput: Boolean(model.structured_output ?? false),
   };

@@ -2,6 +2,7 @@ import type { Profile } from "@/lib/types";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getActiveProviderConfig } from "@/server/model-registry";
+import { deleteAttachmentsForProfile } from "@/server/attachments";
 
 type ProfileRow = {
   id: string;
@@ -148,9 +149,10 @@ export function updateProfile(
   return getProfile(id);
 }
 
-export function deleteProfile(id: string) {
+export async function deleteProfile(id: string) {
   const db = getDb();
   // Ensure we surface a consistent "not found" error.
   getProfile(id);
+  await deleteAttachmentsForProfile(id);
   db.prepare(`DELETE FROM profiles WHERE id = ?`).run(id);
 }

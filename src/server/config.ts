@@ -73,6 +73,32 @@ const BashToolsSchema = z
   })
   .optional();
 
+const AttachmentsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowed_media_types: z.array(z.string().min(1)).optional(),
+    max_files_per_message: z.number().int().min(1).max(20).optional(),
+    max_file_size_bytes: z.number().int().min(1).max(50_000_000).optional(),
+    max_total_size_bytes: z.number().int().min(1).max(200_000_000).optional(),
+    max_extracted_text_chars: z.number().int().min(200).max(2_000_000).optional(),
+    temporary_ttl_ms: z.number().int().min(10_000).max(30 * 24 * 60 * 60_000).optional(),
+    sandbox: z
+      .object({
+        runtime: z.string().min(1).optional(),
+        vcpus: z.number().int().min(1).max(8).optional(),
+        timeout_ms: z.number().int().min(30_000).max(5 * 60 * 60_000).optional(),
+      })
+      .optional(),
+    processing: z
+      .object({
+        timeout_ms: z.number().int().min(1_000).max(10 * 60_000).optional(),
+        max_stdout_chars: z.number().int().min(200).max(200_000).optional(),
+        max_stderr_chars: z.number().int().min(200).max(200_000).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 const RawConfigSchema = z.object({
   version: z.literal(2),
   app: z.object({
@@ -80,6 +106,7 @@ const RawConfigSchema = z.object({
     router: IntentRouterSchema,
     web_tools: WebToolsSchema,
     bash_tools: BashToolsSchema,
+    attachments: AttachmentsSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
 });
@@ -134,6 +161,25 @@ export type RemcoChatConfig = {
       uploadInclude: string;
     };
   } | null;
+  attachments: {
+    enabled: boolean;
+    allowedMediaTypes: string[];
+    maxFilesPerMessage: number;
+    maxFileSizeBytes: number;
+    maxTotalSizeBytes: number;
+    maxExtractedTextChars: number;
+    temporaryTtlMs: number;
+    sandbox: {
+      runtime: string;
+      vcpus: number;
+      timeoutMs: number;
+    };
+    processing: {
+      timeoutMs: number;
+      maxStdoutChars: number;
+      maxStderrChars: number;
+    };
+  };
 };
 
 let cachedConfig: RemcoChatConfig | null = null;
@@ -355,6 +401,78 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     };
   }
 
+  const defaultAllowedMediaTypes = [
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "application/pdf",
+  ];
+
+  const rawAttachments = raw.app.attachments ?? {};
+  const attachmentsEnabled = Boolean(rawAttachments.enabled ?? true);
+  const allowedMediaTypes = Array.from(
+    new Set(
+      (Array.isArray(rawAttachments.allowed_media_types)
+        ? rawAttachments.allowed_media_types
+        : defaultAllowedMediaTypes
+      )
+        .map((t) => String(t).trim())
+        .filter(Boolean)
+    )
+  );
+  const maxFilesPerMessage = Math.min(
+    20,
+    Math.max(1, Math.floor(Number(rawAttachments.max_files_per_message ?? 3)))
+  );
+  const maxFileSizeBytes = Math.min(
+    50_000_000,
+    Math.max(1, Math.floor(Number(rawAttachments.max_file_size_bytes ?? 2_000_000)))
+  );
+  const maxTotalSizeBytes = Math.min(
+    200_000_000,
+    Math.max(
+      maxFileSizeBytes,
+      Math.floor(Number(rawAttachments.max_total_size_bytes ?? 5_000_000))
+    )
+  );
+  const maxExtractedTextChars = Math.min(
+    2_000_000,
+    Math.max(
+      200,
+      Math.floor(Number(rawAttachments.max_extracted_text_chars ?? 120_000))
+    )
+  );
+  const temporaryTtlMs = Math.min(
+    30 * 24 * 60 * 60_000,
+    Math.max(10_000, Math.floor(Number(rawAttachments.temporary_ttl_ms ?? 6 * 60 * 60_000)))
+  );
+
+  const attachmentsSandbox = rawAttachments.sandbox ?? {};
+  const attachmentsSandboxRuntime = String(attachmentsSandbox.runtime ?? "node22").trim() || "node22";
+  const attachmentsSandboxVcpus = Math.min(
+    8,
+    Math.max(1, Math.floor(Number(attachmentsSandbox.vcpus ?? 2)))
+  );
+  const attachmentsSandboxTimeoutMs = Math.min(
+    5 * 60 * 60_000,
+    Math.max(30_000, Math.floor(Number(attachmentsSandbox.timeout_ms ?? 900_000)))
+  );
+
+  const attachmentsProcessing = rawAttachments.processing ?? {};
+  const attachmentsProcessingTimeoutMs = Math.min(
+    10 * 60_000,
+    Math.max(1_000, Math.floor(Number(attachmentsProcessing.timeout_ms ?? 30_000)))
+  );
+  const attachmentsProcessingMaxStdoutChars = Math.min(
+    200_000,
+    Math.max(200, Math.floor(Number(attachmentsProcessing.max_stdout_chars ?? 200_000)))
+  );
+  const attachmentsProcessingMaxStderrChars = Math.min(
+    200_000,
+    Math.max(200, Math.floor(Number(attachmentsProcessing.max_stderr_chars ?? 20_000)))
+  );
+
   return {
     version: 2,
     defaultProviderId,
@@ -362,6 +480,25 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     intentRouter,
     webTools,
     bashTools,
+    attachments: {
+      enabled: attachmentsEnabled,
+      allowedMediaTypes,
+      maxFilesPerMessage,
+      maxFileSizeBytes,
+      maxTotalSizeBytes,
+      maxExtractedTextChars,
+      temporaryTtlMs,
+      sandbox: {
+        runtime: attachmentsSandboxRuntime,
+        vcpus: attachmentsSandboxVcpus,
+        timeoutMs: attachmentsSandboxTimeoutMs,
+      },
+      processing: {
+        timeoutMs: attachmentsProcessingTimeoutMs,
+        maxStdoutChars: attachmentsProcessingMaxStdoutChars,
+        maxStderrChars: attachmentsProcessingMaxStderrChars,
+      },
+    },
   };
 }
 

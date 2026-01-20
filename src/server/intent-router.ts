@@ -58,7 +58,9 @@ export async function routeIntent(input: {
     model: resolved.model,
     schema: IntentSchema,
     prompt: `${ROUTER_PROMPT}\n\nUser message:\n"""${clipped}"""`,
-    ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+    ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+      ? { temperature: 0 }
+      : {}),
   });
 
   const confidence = Math.max(0, Math.min(1, Number(object.confidence ?? 0)));

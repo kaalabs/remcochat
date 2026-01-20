@@ -6,6 +6,7 @@ import { getDb } from "./db";
 import { getProfile } from "./profiles";
 import { getActiveProviderConfig } from "@/server/model-registry";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
+import { deleteAttachmentsForChat } from "@/server/attachments";
 
 type ChatRow = {
   id: string;
@@ -316,9 +317,11 @@ export function unarchiveChat(profileId: string, chatId: string): Chat {
   return getChat(chatId);
 }
 
-export function deleteChat(profileId: string, chatId: string): void {
+export async function deleteChat(profileId: string, chatId: string): Promise<void> {
   const db = getDb();
   assertChatWritable(profileId, chatId);
+
+  await deleteAttachmentsForChat({ profileId, chatId });
 
   const now = new Date().toISOString();
   db.prepare(

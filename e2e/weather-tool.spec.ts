@@ -80,6 +80,10 @@ test("Weather tool renders a card (WebKit)", async ({ page }) => {
   );
   await page.getByTestId("composer:submit").click();
 
+  await expect(page.getByText(/Calling tool: "displayWeather"/)).toBeVisible({
+    timeout: 120_000,
+  });
+
   const card = page.getByTestId("tool:displayWeather");
   await expect(card).toBeVisible({ timeout: 120_000 });
   await expect(card).toContainText("San Francisco");
@@ -108,6 +112,12 @@ test("Forecast tool renders a card (WebKit)", async ({ page }) => {
     "Show me the 7-day weather forecast for San Francisco. Use the displayWeatherForecast tool."
   );
   await page.getByTestId("composer:submit").click();
+
+  await expect(
+    page.getByText(/Calling tool: "displayWeatherForecast"/)
+  ).toBeVisible({
+    timeout: 120_000,
+  });
 
   const card = page.getByTestId("tool:displayWeatherForecast");
   await expect(card).toBeVisible({ timeout: 120_000 });

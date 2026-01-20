@@ -17,6 +17,34 @@ recency = "week"
 allowed_domains = []
 blocked_domains = []
 
+# Attachments (documents only) are enabled by default.
+# Document extraction runs in Vercel Sandbox. If sandbox credentials are missing,
+# attachment uploads still work but extraction will fail at send-time.
+[app.attachments]
+enabled = true
+allowed_media_types = [
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+  "application/pdf",
+]
+max_files_per_message = 3
+max_file_size_bytes = 2000000
+max_total_size_bytes = 5000000
+max_extracted_text_chars = 120000
+temporary_ttl_ms = 21600000 # 6 hours
+
+[app.attachments.sandbox]
+runtime = "node22"
+vcpus = 2
+timeout_ms = 900000
+
+[app.attachments.processing]
+timeout_ms = 30000
+max_stdout_chars = 200000
+max_stderr_chars = 20000
+
 # Bash tools (Vercel Sandbox) are disabled by default.
 # Enabling them requires BOTH:
 # - config: app.bash_tools.enabled = true

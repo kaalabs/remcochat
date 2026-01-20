@@ -75,8 +75,10 @@ import {
 // Provider Context & Types
 // ============================================================================
 
+export type LocalFileUploadPart = FileUIPart & { id: string; file?: File };
+
 export type AttachmentsContext = {
-  files: (FileUIPart & { id: string })[];
+  files: LocalFileUploadPart[];
   add: (files: File[] | FileList) => void;
   remove: (id: string) => void;
   clear: () => void;
@@ -152,7 +154,7 @@ export function PromptInputProvider({
 
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
-    (FileUIPart & { id: string })[]
+    LocalFileUploadPart[]
   >([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const openRef = useRef<() => void>(() => {});
@@ -171,6 +173,7 @@ export function PromptInputProvider({
           url: URL.createObjectURL(file),
           mediaType: file.type,
           filename: file.name,
+          file,
         }))
       )
     );
@@ -393,7 +396,8 @@ export function PromptInputAttachments({
 
   return (
     <div
-      className={cn("flex flex-wrap items-center gap-2 p-3 w-full", className)}
+      className={cn("flex w-full flex-wrap items-center gap-2 p-3", className)}
+      data-align="block-start"
       {...props}
     >
       {attachments.files.map((file) => (
@@ -446,6 +450,9 @@ export type PromptInputProps = Omit<
   // Minimal constraints
   maxFiles?: number;
   maxFileSize?: number; // bytes
+  // When true (default), convert blob: URLs to data: URLs before calling onSubmit.
+  // Disable this when you want to upload raw File objects yourself.
+  convertBlobUrlsToDataUrls?: boolean;
   onError?: (err: {
     code: "max_files" | "max_file_size" | "accept";
     message: string;
@@ -464,6 +471,7 @@ export const PromptInput = ({
   syncHiddenInput,
   maxFiles,
   maxFileSize,
+  convertBlobUrlsToDataUrls = true,
   onError,
   onSubmit,
   children,
@@ -478,7 +486,7 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
+  const [items, setItems] = useState<LocalFileUploadPart[]>([]);
   const files = usingProvider ? controller.attachments.files : items;
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
@@ -546,7 +554,7 @@ export const PromptInput = ({
             message: "Too many files. Some were not added.",
           });
         }
-        const next: (FileUIPart & { id: string })[] = [];
+        const next: LocalFileUploadPart[] = [];
         for (const file of capped) {
           next.push({
             id: nanoid(),
@@ -554,6 +562,7 @@ export const PromptInput = ({
             url: URL.createObjectURL(file),
             mediaType: file.type,
             filename: file.name,
+            file,
           });
         }
         return prev.concat(next);
@@ -728,7 +737,11 @@ export const PromptInput = ({
     // Convert blob URLs to data URLs asynchronously
     Promise.all(
       files.map(async ({ id, ...item }) => {
-        if (item.url && item.url.startsWith("blob:")) {
+        if (
+          convertBlobUrlsToDataUrls &&
+          item.url &&
+          item.url.startsWith("blob:")
+        ) {
           const dataUrl = await convertBlobUrlToDataUrl(item.url);
           // If conversion failed, keep the original blob URL
           return {

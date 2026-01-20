@@ -30,7 +30,9 @@ import {
   getWeatherForecastForLocation,
 } from "@/ai/weather";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
+import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
 import { routeIntent } from "@/server/intent-router";
+import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { isListIntent } from "@/server/list-intent";
@@ -678,17 +680,33 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
+      attachmentsEnabled: getConfig().attachments.enabled,
     });
 
-    const modelMessages = await convertToModelMessages(
-      stripWebToolPartsFromMessages(body.messages),
-      { ignoreIncompleteToolCalls: true }
-    );
+    let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
+    try {
+      const withAttachments = await replaceAttachmentPartsWithExtractedText({
+        profileId: profile.id,
+        messages: stripWebToolPartsFromMessages(body.messages),
+      });
+      modelMessages = await convertToModelMessages(withAttachments, {
+        ignoreIncompleteToolCalls: true,
+      });
+    } catch (err) {
+      return uiTextResponse({
+        headers: { "x-remcochat-api-version": REMCOCHAT_API_VERSION },
+        text:
+          err instanceof Error
+            ? `Attachment processing error: ${err.message}`
+            : "Attachment processing error.",
+      });
+    }
 
     const chatTools = createTools({
       profileId: profile.id,
       summaryModel: resolved.model,
-      summarySupportsTemperature: resolved.capabilities.temperature,
+      summarySupportsTemperature:
+        resolved.capabilities.temperature && !resolved.capabilities.reasoning,
     });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
@@ -730,7 +748,9 @@ export async function POST(req: Request) {
       model: resolved.model,
       system,
       messages: modelMessages,
-      ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+      ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+        ? { temperature: 0 }
+        : {}),
       ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
@@ -820,7 +840,9 @@ export async function POST(req: Request) {
       model: resolved.model,
       system,
       messages: continuationMessages,
-      ...(resolved.capabilities.temperature ? { temperature: 0 } : {}),
+      ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+        ? { temperature: 0 }
+        : {}),
       ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
@@ -1187,6 +1209,7 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
+      attachmentsEnabled: getConfig().attachments.enabled,
     }),
   ];
 
@@ -1246,15 +1269,36 @@ export async function POST(req: Request) {
     return true;
   });
 
-  const modelMessages = await convertToModelMessages(
-    stripWebToolPartsFromMessages(filteredMessages),
-    { ignoreIncompleteToolCalls: true }
-  );
+  let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
+  try {
+    const withAttachments = await replaceAttachmentPartsWithExtractedText({
+      profileId: profile.id,
+      messages: stripWebToolPartsFromMessages(filteredMessages),
+    });
+    modelMessages = await convertToModelMessages(withAttachments, {
+      ignoreIncompleteToolCalls: true,
+    });
+  } catch (err) {
+    return uiTextResponse({
+      headers: { "x-remcochat-api-version": REMCOCHAT_API_VERSION },
+      text:
+        err instanceof Error
+          ? `Attachment processing error: ${err.message}`
+          : "Attachment processing error.",
+      messageMetadata: {
+        createdAt: now,
+        turnUserMessageId: lastUserMessageId || undefined,
+        profileInstructionsRevision: currentProfileRevision,
+        chatInstructionsRevision: currentChatRevision,
+      },
+    });
+  }
 
   const chatTools = createTools({
     profileId: profile.id,
     summaryModel: resolved.model,
-    summarySupportsTemperature: resolved.capabilities.temperature,
+    summarySupportsTemperature:
+      resolved.capabilities.temperature && !resolved.capabilities.reasoning,
   });
   const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
   const providerOptions = createProviderOptionsForWebTools({
@@ -1270,7 +1314,7 @@ export async function POST(req: Request) {
     model: resolved.model,
     system,
     messages: modelMessages,
-    ...(resolved.capabilities.temperature
+    ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
       ? { temperature: isRegenerate ? 0.9 : 0 }
       : {}),
     ...(providerOptions ? { providerOptions } : {}),
@@ -1403,7 +1447,7 @@ export async function POST(req: Request) {
     model: resolved.model,
     system,
     messages: continuationMessages,
-    ...(resolved.capabilities.temperature
+    ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
       ? { temperature: isRegenerate ? 0.9 : 0 }
       : {}),
     ...(providerOptions ? { providerOptions } : {}),

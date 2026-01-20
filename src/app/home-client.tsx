@@ -2,13 +2,21 @@
 
 import {
   Message,
+  MessageAttachment,
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
 import {
   PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputAttachment,
+  PromptInputAttachments,
   PromptInputSubmit,
   PromptInputTextarea,
+  usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import { ModelPicker } from "@/components/model-picker";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -45,6 +53,13 @@ import {
   navigatePromptHistory,
 } from "@/lib/composer-history";
 import { Loader } from "@/components/ai-elements/loader";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useChat } from "@ai-sdk/react";
@@ -93,6 +108,7 @@ import {
 	} from "lucide-react";
 import { nanoid } from "nanoid";
 import Link from "next/link";
+import { parseAttachmentUrl } from "@/lib/attachment-url";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -111,6 +127,25 @@ function textLengthForMessage(message: UIMessage<RemcoChatMessageMetadata>) {
     if (part.type === "text") return acc + part.text.length;
     return acc;
   }, 0);
+}
+
+function toolNameFromPartType(type: string) {
+  return type.startsWith("tool-") ? type.slice("tool-".length) : type;
+}
+
+function ToolCallLine(props: { type: string; state?: string }) {
+  const toolName = toolNameFromPartType(props.type);
+  const showSpinner =
+    props.state === "input-streaming" ||
+    props.state === "input-available" ||
+    props.state === "approval-requested";
+
+  return (
+    <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+      {showSpinner ? <Loader size={14} /> : null}
+      Calling tool: "{toolName}"
+    </div>
+  );
 }
 
 function signatureForChatState(
@@ -151,6 +186,16 @@ function requestFocusComposer(opts?: { toEnd?: boolean }) {
       el.setSelectionRange(len, len);
     }
   });
+}
+
+function ComposerAttachmentsCountBridge(props: {
+  onCountChange: (count: number) => void;
+}) {
+  const attachments = usePromptInputAttachments();
+  useEffect(() => {
+    props.onCountChange(attachments.files.length);
+  }, [attachments.files.length, props.onCountChange]);
+  return null;
 }
 
 export type HomeClientProps = {
@@ -344,7 +389,16 @@ export function HomeClient({
   }, [messages]);
 
   const [input, setInput] = useState("");
-  const canSend = status === "ready" && input.trim().length > 0;
+  const [composerAttachmentCount, setComposerAttachmentCount] = useState(0);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentUploadError, setAttachmentUploadError] = useState<string | null>(
+    null
+  );
+
+  const canSend =
+    status === "ready" &&
+    !attachmentUploading &&
+    (input.trim().length > 0 || composerAttachmentCount > 0);
 
   const [promptHistoryCursor, setPromptHistoryCursor] = useState<number>(
     Number.MAX_SAFE_INTEGER
@@ -368,6 +422,17 @@ export function HomeClient({
     setPromptHistoryCursor(Number.MAX_SAFE_INTEGER);
     setPromptHistoryDraft("");
   }, [chatSessionKey]);
+
+  useEffect(() => {
+    setAttachmentUploadError(null);
+    setAttachmentUploading(false);
+  }, [chatSessionKey]);
+
+  useEffect(() => {
+    if (composerAttachmentCount === 0) {
+      setAttachmentUploadError(null);
+    }
+  }, [composerAttachmentCount]);
 
   const handleComposerKeyDown: KeyboardEventHandler<HTMLTextAreaElement> =
     useCallback(
@@ -2060,6 +2125,39 @@ export function HomeClient({
                       >
                         <MessageContent>
                           {parts.map((part, index) => {
+                            if (part.type === "file") {
+                              const attachmentId = parseAttachmentUrl(part.url);
+                              const downloadUrl =
+                                attachmentId && activeProfile
+                                  ? `/api/attachments/${attachmentId}?profileId=${encodeURIComponent(activeProfile.id)}`
+                                  : "";
+                              const filename =
+                                typeof part.filename === "string" ? part.filename : "";
+
+                              return (
+                                <div
+                                  className="flex items-center gap-2"
+                                  key={`${id}-${index}`}
+                                >
+                                  <MessageAttachment data={part} />
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm">
+                                      {filename || "Attachment"}
+                                    </div>
+                                    {downloadUrl ? (
+                                      <a
+                                        className="text-xs underline underline-offset-4 opacity-80 hover:opacity-100"
+                                        data-testid={`attachment:download:${attachmentId}`}
+                                        href={downloadUrl}
+                                      >
+                                        Download
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             if (part.type === "text") {
                               if (hasMemoryAnswerCard) return null;
                               return (
@@ -2074,36 +2172,36 @@ export function HomeClient({
 
                             if (part.type === "tool-displayMemoryAnswer") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Retrieving from memory…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <MemoryCard
                                         answer={
                                           typeof (part.output as { answer?: unknown })
                                             ?.answer === "string"
-                                            ? (part.output as { answer: string }).answer
-                                            : ""
+                                          ? (part.output as { answer: string }).answer
+                                          : ""
                                         }
                                       />
                                     </div>
                                   );
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Memory error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Memory error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2123,10 +2221,19 @@ export function HomeClient({
                                   : "";
 
                               switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
                                 case "input-available":
                                 case "output-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <MemoryPromptCard
                                         content={content}
                                         disabled={
@@ -2141,11 +2248,11 @@ export function HomeClient({
                                   );
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Memory error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Memory error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2155,21 +2262,21 @@ export function HomeClient({
 
                             if (part.type === "tool-displayList") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Updating list…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available": {
                                   const output = part.output as TaskList | undefined;
                                   if (!output || typeof output !== "object") return null;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <ListCard
                                         list={output}
                                         profileId={activeProfile?.id ?? ""}
@@ -2179,11 +2286,11 @@ export function HomeClient({
                                 }
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      List error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        List error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2193,15 +2300,14 @@ export function HomeClient({
 
                             if (part.type === "tool-displayTimezones") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Calculating times…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available": {
                                   const output = part.output as
@@ -2209,18 +2315,19 @@ export function HomeClient({
                                     | undefined;
                                   if (!output || typeof output !== "object") return null;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <TimezonesCard {...output} />
                                     </div>
                                   );
                                 }
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Timezones error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Timezones error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2230,15 +2337,14 @@ export function HomeClient({
 
                             if (part.type === "tool-displayUrlSummary") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Summarizing link…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available": {
                                   const output = part.output as
@@ -2246,18 +2352,19 @@ export function HomeClient({
                                     | undefined;
                                   if (!output || typeof output !== "object") return null;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <UrlSummaryCard {...output} />
                                     </div>
                                   );
                                 }
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Summary error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Summary error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2267,15 +2374,14 @@ export function HomeClient({
 
                             if (part.type === "tool-displayNotes") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Updating notes…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available": {
                                   const output = part.output as
@@ -2283,7 +2389,8 @@ export function HomeClient({
                                     | undefined;
                                   if (!output || typeof output !== "object") return null;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <NotesCard
                                         {...output}
                                         profileId={activeProfile?.id ?? ""}
@@ -2293,11 +2400,11 @@ export function HomeClient({
                                 }
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Notes error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Notes error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2311,9 +2418,18 @@ export function HomeClient({
                                 typeof input?.command === "string" ? input.command : "";
 
                               switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
                                 case "input-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         command={command}
                                         kind="bash"
@@ -2339,7 +2455,8 @@ export function HomeClient({
                                       : Number(exitCodeRaw ?? -1);
                                   const running = exitCode === -1;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         command={command}
                                         kind="bash"
@@ -2361,7 +2478,8 @@ export function HomeClient({
                                 }
                                 case "output-error":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         command={command}
                                         errorText={part.errorText}
@@ -2380,9 +2498,18 @@ export function HomeClient({
                               const filePath = typeof input?.path === "string" ? input.path : "";
 
                               switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
                                 case "input-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         kind="readFile"
                                         path={filePath}
@@ -2395,7 +2522,8 @@ export function HomeClient({
                                     | { content?: unknown }
                                     | undefined;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         content={
                                           typeof output?.content === "string"
@@ -2411,7 +2539,8 @@ export function HomeClient({
                                 }
                                 case "output-error":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         errorText={part.errorText}
                                         kind="readFile"
@@ -2434,9 +2563,18 @@ export function HomeClient({
                                 typeof input?.content === "string" ? input.content : "";
 
                               switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
                                 case "input-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         contentLength={content.length}
                                         kind="writeFile"
@@ -2450,7 +2588,8 @@ export function HomeClient({
                                     | { success?: unknown }
                                     | undefined;
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         contentLength={content.length}
                                         kind="writeFile"
@@ -2463,7 +2602,8 @@ export function HomeClient({
                                 }
                                 case "output-error":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <BashToolCard
                                         contentLength={content.length}
                                         errorText={part.errorText}
@@ -2480,29 +2620,29 @@ export function HomeClient({
 
                             if (part.type === "tool-displayWeather") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Fetching weather…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <Weather {...(part.output as WeatherToolOutput)} />
                                     </div>
                                   );
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Weather error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Weather error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
@@ -2512,19 +2652,19 @@ export function HomeClient({
 
                             if (part.type === "tool-displayWeatherForecast") {
                               switch (part.state) {
+                                case "input-streaming":
                                 case "input-available":
                                   return (
-                                    <div
-                                      className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+                                    <ToolCallLine
                                       key={`${id}-${index}`}
-                                    >
-                                      <Loader size={14} />
-                                      Fetching forecast…
-                                    </div>
+                                      state={part.state}
+                                      type={part.type}
+                                    />
                                   );
                                 case "output-available":
                                   return (
-                                    <div key={`${id}-${index}`}>
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
                                       <WeatherForecast
                                         {...(part.output as WeatherForecastToolOutput)}
                                       />
@@ -2532,16 +2672,48 @@ export function HomeClient({
                                   );
                                 case "output-error":
                                   return (
-                                    <div
-                                      className="text-sm text-destructive"
-                                      key={`${id}-${index}`}
-                                    >
-                                      Forecast error: {part.errorText}
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Forecast error: {part.errorText}
+                                      </div>
                                     </div>
                                   );
                                 default:
                                   return null;
                               }
+                            }
+
+                            if (
+                              typeof part.type === "string" &&
+                              part.type.startsWith("tool-") &&
+                              typeof (part as { state?: unknown }).state === "string"
+                            ) {
+                              const toolPart = part as {
+                                type: string;
+                                state: string;
+                                input?: unknown;
+                                output?: unknown;
+                                errorText?: string;
+                              };
+                              const toolName = toolNameFromPartType(toolPart.type);
+
+                              return (
+                                <Tool data-testid={`tool:${toolName}`} key={`${id}-${index}`}>
+                                  <ToolHeader
+                                    title={`Calling tool: "${toolName}"`}
+                                    type={toolPart.type as never}
+                                    state={toolPart.state as never}
+                                  />
+                                  <ToolContent>
+                                    <ToolInput input={toolPart.input} />
+                                    <ToolOutput
+                                      errorText={toolPart.errorText ?? ""}
+                                      output={toolPart.output}
+                                    />
+                                  </ToolContent>
+                                </Tool>
+                              );
                             }
 
                             return null;
@@ -2665,29 +2837,121 @@ export function HomeClient({
 			          <div className="shrink-0 border-t bg-sidebar pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-4">
 			            <div className="mx-auto w-full max-w-5xl">
 			              <PromptInput
+			                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
 			                className={
 			                  "bg-sidebar " +
 		                  (isTemporaryChat
 		                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
 		                    : "")
 		                }
-	                onSubmit={({ text }) => {
+                  convertBlobUrlsToDataUrls={false}
+                  maxFileSize={2_000_000}
+                  maxFiles={3}
+                  multiple
+                  onError={(err) => setAttachmentUploadError(err.message)}
+	                onSubmit={async ({ text, files }) => {
 	                  if (!activeProfile) return;
 	                  if (status !== "ready") return;
-	                  if (!text.trim()) return;
                   if (!chatRequestBody) return;
 
-                  sendMessage(
-                    { text, metadata: { createdAt: new Date().toISOString() } },
-                    {
-                      body: chatRequestBody,
+                  setAttachmentUploadError(null);
+
+                  const rawFiles = (files as Array<{ file?: unknown }> | undefined)
+                    ?.map((f) => (f?.file instanceof File ? f.file : null))
+                    .filter((f): f is File => f != null) ?? [];
+
+                  let uploadedParts: Array<{
+                    type: "file";
+                    url: string;
+                    filename?: string;
+                    mediaType: string;
+                  }> = [];
+
+                  try {
+                    if (rawFiles.length > 0) {
+                      setAttachmentUploading(true);
+                      const form = new FormData();
+                      form.set("profileId", activeProfile.id);
+                      if (isTemporaryChat) {
+                        form.set("temporarySessionId", temporarySessionId);
+                      } else if (activeChat) {
+                        form.set("chatId", activeChat.id);
+                      } else {
+                        throw new Error("Missing chatId.");
+                      }
+
+                      for (const file of rawFiles) {
+                        form.append("files", file, file.name);
+                      }
+
+                      const res = await fetch("/api/attachments", {
+                        method: "POST",
+                        body: form,
+                      });
+                      const data = (await res.json().catch(() => null)) as
+                        | {
+                            attachments?: Array<{
+                              id?: unknown;
+                              filename?: unknown;
+                              mediaType?: unknown;
+                              attachmentUrl?: unknown;
+                            }>;
+                            error?: string;
+                          }
+                        | null;
+
+                      if (!res.ok || !Array.isArray(data?.attachments)) {
+                        throw new Error(data?.error || "Failed to upload attachments.");
+                      }
+
+                      uploadedParts = data.attachments
+                        .map((a) => ({
+                          type: "file" as const,
+                          url:
+                            typeof a.attachmentUrl === "string" ? a.attachmentUrl : "",
+                          mediaType:
+                            typeof a.mediaType === "string" ? a.mediaType : "",
+                          filename:
+                            typeof a.filename === "string" ? a.filename : undefined,
+                        }))
+                        .filter((p) => p.url && p.mediaType);
                     }
-                  );
+
+                    sendMessage(
+                      {
+                        text: String(text ?? ""),
+                        ...(uploadedParts.length > 0 ? { files: uploadedParts } : {}),
+                        metadata: { createdAt: new Date().toISOString() },
+                      },
+                      {
+                        body: chatRequestBody,
+                      }
+                    ).catch(() => {});
+                  } catch (err) {
+                    setAttachmentUploadError(
+                      err instanceof Error ? err.message : "Failed to upload attachments."
+                    );
+                    throw err;
+                  } finally {
+                    setAttachmentUploading(false);
+                  }
+
                   setInput("");
                   setPromptHistoryCursor(Number.MAX_SAFE_INTEGER);
                   setPromptHistoryDraft("");
                 }}
               >
+                <ComposerAttachmentsCountBridge
+                  onCountChange={setComposerAttachmentCount}
+                />
+                <PromptInputAttachments>
+                  {(attachment) => <PromptInputAttachment data={attachment} />}
+                </PromptInputAttachments>
+                {attachmentUploadError ? (
+                  <div className="px-3 pb-2 text-sm text-destructive">
+                    {attachmentUploadError}
+                  </div>
+                ) : null}
                 <PromptInputTextarea
                   className="max-h-[30vh] overflow-y-auto"
                   data-testid="composer:textarea"
@@ -2696,49 +2960,64 @@ export function HomeClient({
                   onKeyDown={handleComposerKeyDown}
                   value={input}
                 />
-                <div className="flex items-center justify-end gap-2 pr-2">
-                  {status === "ready" && messages.some((m) => m.role === "user") ? (
-                    <button
-                      aria-label="Regenerate"
-                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
-                      data-testid="composer:regenerate"
-                      onClick={() => regenerateLatest()}
-                      title="Regenerate"
-                      type="button"
-                    >
-                      <RotateCcwIcon className="size-4" />
-                    </button>
-                  ) : null}
-                  {!isTemporaryChat && activeChat ? (
-                    <button
-                      aria-label="Chat settings"
-                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-                      data-testid="chat:settings-open"
-                      disabled={status !== "ready"}
-                      onClick={() => openChatSettings()}
-                      title="Chat settings"
-                      type="button"
-                    >
-                      <SlidersHorizontalIcon className="size-4" />
-                    </button>
-                  ) : null}
-                  {(status === "submitted" || status === "streaming") && (
-                    <button
-                      className="rounded-md border px-3 py-2 text-sm hover:bg-accent"
-                      onClick={() => stop()}
-                      type="button"
-                    >
-                      Stop
-                    </button>
-                  )}
+                <div className="flex items-center justify-between gap-2 pr-2">
+                  <div className="flex items-center gap-2">
+                    <PromptInputActionMenu>
+                      <PromptInputActionMenuTrigger
+                        aria-label="Add attachments"
+                        disabled={status !== "ready"}
+                        title="Add files"
+                      />
+                      <PromptInputActionMenuContent>
+                        <PromptInputActionAddAttachments />
+                      </PromptInputActionMenuContent>
+                    </PromptInputActionMenu>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {status === "ready" && messages.some((m) => m.role === "user") ? (
+                      <button
+                        aria-label="Regenerate"
+                        className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
+                        data-testid="composer:regenerate"
+                        onClick={() => regenerateLatest()}
+                        title="Regenerate"
+                        type="button"
+                      >
+                        <RotateCcwIcon className="size-4" />
+                      </button>
+                    ) : null}
+                    {!isTemporaryChat && activeChat ? (
+                      <button
+                        aria-label="Chat settings"
+                        className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                        data-testid="chat:settings-open"
+                        disabled={status !== "ready"}
+                        onClick={() => openChatSettings()}
+                        title="Chat settings"
+                        type="button"
+                      >
+                        <SlidersHorizontalIcon className="size-4" />
+                      </button>
+                    ) : null}
+                    {(status === "submitted" || status === "streaming") && (
+                      <button
+                        className="rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                        onClick={() => stop()}
+                        type="button"
+                      >
+                        Stop
+                      </button>
+                    )}
 	                  <PromptInputSubmit
 	                    className="h-10 w-16"
 	                    data-testid="composer:submit"
-	                    disabled={!canSend}
+	                    disabled={!canSend || !chatRequestBody}
 	                    status={status}
 	                    variant={isTemporaryChat ? "destructive" : "default"}
 	                  />
-	                </div>
+                  </div>
+                </div>
 	              </PromptInput>
 	            </div>
 		          </div>

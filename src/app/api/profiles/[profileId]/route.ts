@@ -54,7 +54,7 @@ export async function DELETE(
       );
     }
 
-    deleteProfile(profileId);
+    await deleteProfile(profileId);
     return Response.json({ ok: true, profiles: listProfiles() });
   } catch (err) {
     return Response.json(

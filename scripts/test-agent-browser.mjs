@@ -1,4 +1,7 @@
 import { execFile, spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -13,6 +16,15 @@ const CONFIG_PATH =
   "data/remcochat-agent-browser-config.toml";
 const ENABLE_VERCEL_SANDBOX_BASH =
   process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
+
+function writeTempUploadFile(contents) {
+  const filePath = path.join(
+    os.tmpdir(),
+    `remcochat-agent-browser-upload-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`
+  );
+  fs.writeFileSync(filePath, contents, "utf8");
+  return filePath;
+}
 
 function npmBin() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
@@ -112,6 +124,50 @@ async function main() {
     ]);
     await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"]);
     await runAgentBrowser(["wait", "--text", "Agent renamed chat"]);
+
+    const token = `REMCOCHAT_AGENT_BROWSER_ATTACHMENT_OK_${Date.now()}`;
+    const fileContents = `TOKEN=${token}\n`;
+    const uploadPath = writeTempUploadFile(fileContents);
+
+    await runAgentBrowser([
+      "upload",
+      "input[type='file'][aria-label='Upload files']",
+      uploadPath,
+    ]);
+    await runAgentBrowser([
+      "find",
+      "first",
+      "[data-testid='composer:textarea']",
+      "fill",
+      "Read the attached document. Reply with the token value after TOKEN= exactly, and nothing else.",
+    ]);
+    await runAgentBrowser(["find", "first", "[data-testid='composer:submit']", "click"]);
+
+    await runAgentBrowser([
+      "wait",
+      "--fn",
+      "document.querySelector(\"[data-testid^='attachment:download:']\") != null",
+    ]);
+
+    const href = await runAgentBrowser([
+      "get",
+      "attr",
+      "[data-testid^='attachment:download:']",
+      "href",
+    ]);
+    if (!href) {
+      throw new Error("Missing attachment download link.");
+    }
+    const downloadUrl = href.startsWith("http") ? href : `${BASE_URL}${href}`;
+
+    const downloadRes = await fetch(downloadUrl, { method: "GET" });
+    if (!downloadRes.ok) {
+      throw new Error(`Attachment download failed: ${downloadRes.status}`);
+    }
+    const downloaded = await downloadRes.text();
+    if (downloaded !== fileContents) {
+      throw new Error("Downloaded attachment did not match uploaded contents.");
+    }
 
     if (ENABLE_VERCEL_SANDBOX_BASH) {
       await runAgentBrowser(["find", "first", "[data-testid='model:picker-trigger']", "click"]);
