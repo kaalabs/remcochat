@@ -34,6 +34,29 @@ Use `scripts/update-remcochat.sh` to pull the latest `main` and restart the comp
 
 - SQLite database defaults to `data/remcochat.sqlite` (override with `REMCOCHAT_DB_PATH`).
 
+## Bash tools (sandbox)
+
+Bash tools are disabled by default and require both:
+- `app.bash_tools.enabled = true` in `config.toml`
+- `export REMCOCHAT_ENABLE_BASH_TOOL=1` at runtime
+
+Two sandbox backends are supported:
+- **Vercel Sandbox** (default): `app.bash_tools.provider = "vercel"` (requires Vercel Sandbox creds)
+- **Docker sandboxd**: `app.bash_tools.provider = "docker"` (requires local Docker Engine + sandboxd)
+
+### Docker sandboxd quickstart
+
+1. Build the sandbox image: `docker build -t remcochat-sandbox:node24 -f sandbox-images/node24/Dockerfile .`
+2. Build and run the orchestrator (mount Docker socket):
+   - `docker build -t remcochat-sandboxd -f sandboxd/Dockerfile .`
+   - `docker run --rm -p 8080:8080 -v /var/run/docker.sock:/var/run/docker.sock remcochat-sandboxd`
+3. In `config.toml` set:
+   - `app.bash_tools.provider = "docker"`
+   - `app.bash_tools.docker.orchestrator_url = "http://127.0.0.1:8080"`
+4. To access a web server running in the sandbox, set `app.bash_tools.sandbox.ports = [3000]` and use the `sandboxUrl` tool (it returns a host URL mapped to that sandbox port).
+   - Works even if the app binds to `127.0.0.1` inside the sandbox (sandboxd runs an internal loopback proxy).
+   - LAN access: run sandboxd with `SANDBOXD_BIND_HOST=0.0.0.0` and `SANDBOXD_PUBLISH_HOST_IP=0.0.0.0`, set `SANDBOXD_ADMIN_TOKEN`, and point `orchestrator_url` at your server LAN IP (not `127.0.0.1`).
+
 ## Admin (optional)
 
 Admin actions are disabled by default (no auth, local LAN app). To enable them:

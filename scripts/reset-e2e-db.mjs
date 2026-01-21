@@ -11,6 +11,10 @@ const configPath = process.env.REMCOCHAT_CONFIG_PATH
 
 const exampleConfigPath = path.join(process.cwd(), "config.toml.example");
 const enableVercelSandboxBash = process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
+const enableDockerSandboxdBash = process.env.REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD === "1";
+const dockerSandboxdUrl = String(
+  process.env.REMCOCHAT_E2E_DOCKER_SANDBOXD_URL ?? "http://127.0.0.1:8080"
+).trim();
 
 function tomlString(value) {
   return `"${String(value ?? "")
@@ -56,7 +60,7 @@ try {
   ].join("\n");
   let configText = example.trimEnd();
 
-  if (enableVercelSandboxBash) {
+  if (enableVercelSandboxBash || enableDockerSandboxdBash) {
     const root = tomlString(process.cwd());
 
     configText = configText.replace(
@@ -64,11 +68,44 @@ try {
       (block) => {
         let out = block;
         out = out.replace(/\benabled\s*=\s*false\b/, "enabled = true");
+        if (enableDockerSandboxdBash) {
+          if (/\bprovider\s*=/.test(out)) {
+            out = out.replace(/\bprovider\s*=\s*\"[^\"]+\"/, 'provider = "docker"');
+          } else {
+            out = out.replace(/\[app\.bash_tools\]\n/, '[app.bash_tools]\nprovider = "docker"\n');
+          }
+        }
         out = out.replace(/\baccess\s*=\s*\"[^\"]+\"/, 'access = "localhost"');
         out = out.replace(/\bproject_root\s*=\s*\"[^\"]*\"/, `project_root = ${root}`);
         return out;
       }
     );
+
+    if (enableDockerSandboxdBash) {
+      configText = configText.replace(
+        /\[app\.bash_tools\.docker\][\s\S]*?(?=\n\[|$)/,
+        (block) => {
+          let out = block;
+          out = out.replace(
+            /\borchestrator_url\s*=\s*\"[^\"]*\"/,
+            `orchestrator_url = ${tomlString(dockerSandboxdUrl)}`
+          );
+          out = out.replace(/\bnetwork_mode\s*=\s*\"[^\"]+\"/, 'network_mode = "default"');
+          out = out.replace(/\bmemory_mb\s*=\s*[0-9]+/, "memory_mb = 2048");
+          return out;
+        }
+      );
+
+      configText = configText.replace(
+        /\[app\.bash_tools\.sandbox\][\s\S]*?(?=\n\[|$)/,
+        (block) => {
+          let out = block;
+          out = out.replace(/\bruntime\s*=\s*\"[^\"]+\"/, 'runtime = "node24"');
+          out = out.replace(/\bports\s*=\s*\[[^\]]*\]/, "ports = []");
+          return out;
+        }
+      );
+    }
 
     configText = configText.replace(
       /\[app\.bash_tools\.seed\][\s\S]*?(?=\n\[|$)/,

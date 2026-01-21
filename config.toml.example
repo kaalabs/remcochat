@@ -53,6 +53,7 @@ max_stderr_chars = 20000
 # via x-remcochat-admin-token or Authorization: Bearer.
 [app.bash_tools]
 enabled = false
+provider = "vercel"  # "vercel" | "docker"
 access = "localhost" # "localhost" | "lan"
 project_root = ""    # required if seed.mode="upload"
 max_stdout_chars = 12000
@@ -62,10 +63,16 @@ max_concurrent_sandboxes = 2
 idle_ttl_ms = 900000 # 15 minutes
 
 [app.bash_tools.sandbox]
-runtime = "node22" # "node22" (node+npm; python3 available) | "python3.13" (python; no node/npm)
-ports = [3000] # Exposed as public URLs via Vercel Sandbox (max 4). Use [] to disable.
+runtime = "node22" # vercel: "node22" | "python3.13"; docker: "node24" | "python3.13"
+ports = [3000] # Vercel: exposed as public URLs; Docker: published via sandboxd (max 4). Use [] to disable.
 vcpus = 2
 timeout_ms = 900000
+
+[app.bash_tools.docker]
+orchestrator_url = "" # required when provider="docker" (e.g. "http://127.0.0.1:8080")
+admin_token_env = "REMCOCHAT_ADMIN_TOKEN" # env var to use for sandboxd auth
+network_mode = "default" # "default" (egress allowed) | "none"
+memory_mb = 2048
 
 [app.bash_tools.seed]
 mode = "git"         # "git" | "upload"

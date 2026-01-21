@@ -322,6 +322,30 @@ if (bashToolsEnabled) {
     }
   }
 
+  const provider =
+    typeof bashTools?.provider === "string" && bashTools.provider.trim()
+      ? bashTools.provider.trim()
+      : "vercel";
+
+  if (provider === "docker") {
+    const orchestratorUrl =
+      typeof bashTools?.docker?.orchestrator_url === "string"
+        ? bashTools.docker.orchestrator_url.trim()
+        : "";
+
+    if (!orchestratorUrl) {
+      console.error(
+        [
+          "Bash tools are configured for the Docker sandbox orchestrator (app.bash_tools.provider=\"docker\"), but app.bash_tools.docker.orchestrator_url is missing.",
+          "",
+          "Set in config.toml:",
+          "  [app.bash_tools.docker]",
+          "  orchestrator_url = \"http://127.0.0.1:8080\"",
+        ].join("\n")
+      );
+      process.exit(1);
+    }
+  } else if (provider === "vercel") {
   const hasOidc = Boolean(String(process.env.VERCEL_OIDC_TOKEN ?? "").trim());
   const teamOrOrgId = String(
     process.env.VERCEL_TEAM_ID ?? process.env.VERCEL_ORG_ID ?? ""
@@ -347,6 +371,12 @@ if (bashToolsEnabled) {
         "",
         "See: https://vercel.com/docs/vercel-sandbox",
       ].join("\n")
+    );
+      process.exit(1);
+    }
+  } else {
+    console.error(
+      `Invalid config.toml: app.bash_tools.provider must be \"vercel\" or \"docker\"`
     );
     process.exit(1);
   }

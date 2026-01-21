@@ -44,6 +44,7 @@ const WebToolsSchema = z
 const BashToolsSchema = z
   .object({
     enabled: z.boolean().optional(),
+    provider: z.enum(["vercel", "docker"]).optional(),
     access: z.enum(["localhost", "lan"]).optional(),
     project_root: z.string().optional(),
     max_stdout_chars: z.number().int().min(200).max(200_000).optional(),
@@ -51,6 +52,14 @@ const BashToolsSchema = z
     timeout_ms: z.number().int().min(1_000).max(5 * 60_000).optional(),
     max_concurrent_sandboxes: z.number().int().min(1).max(10).optional(),
     idle_ttl_ms: z.number().int().min(10_000).max(6 * 60 * 60_000).optional(),
+    docker: z
+      .object({
+        orchestrator_url: z.string().optional(),
+        admin_token_env: z.string().optional(),
+        network_mode: z.enum(["default", "none"]).optional(),
+        memory_mb: z.number().int().min(256).max(16_384).optional(),
+      })
+      .optional(),
     sandbox: z
       .object({
         runtime: z.string().min(1).optional(),
@@ -141,6 +150,7 @@ export type RemcoChatConfig = {
   } | null;
   bashTools: {
     enabled: boolean;
+    provider: "vercel" | "docker";
     access: "localhost" | "lan";
     projectRoot: string | null;
     maxStdoutChars: number;
@@ -148,6 +158,12 @@ export type RemcoChatConfig = {
     timeoutMs: number;
     maxConcurrentSandboxes: number;
     idleTtlMs: number;
+    docker: {
+      orchestratorUrl: string;
+      adminTokenEnv: string;
+      networkMode: "default" | "none";
+      memoryMb: number;
+    } | null;
     sandbox: {
       runtime: string;
       ports: number[];
@@ -300,6 +316,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
   const rawBashTools = raw.app.bash_tools ?? {};
   const bashEnabled = Boolean(rawBashTools.enabled ?? false);
   if (bashEnabled) {
+    const provider = rawBashTools.provider ?? "vercel";
     const access = rawBashTools.access ?? "localhost";
     const projectRootRaw = String(rawBashTools.project_root ?? "").trim();
     const projectRoot = projectRootRaw ? projectRootRaw : null;
@@ -333,7 +350,54 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       Math.max(10_000, Math.floor(Number(rawBashTools.idle_ttl_ms ?? 900_000)))
     );
 
-    const sandboxRuntime = String(rawBashTools.sandbox?.runtime ?? "node22").trim();
+    let docker: NonNullable<RemcoChatConfig["bashTools"]>["docker"] = null;
+    if (provider === "docker") {
+      const rawDocker = rawBashTools.docker ?? {};
+      const orchestratorUrl = String(rawDocker.orchestrator_url ?? "").trim();
+      if (!orchestratorUrl) {
+        throw new Error(
+          "config.toml: app.bash_tools.docker.orchestrator_url is required when provider = \"docker\""
+        );
+      }
+      let url: URL;
+      try {
+        url = new URL(orchestratorUrl);
+      } catch (err) {
+        throw new Error(
+          `config.toml: app.bash_tools.docker.orchestrator_url is invalid (${err instanceof Error ? err.message : "unknown error"})`
+        );
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(
+          "config.toml: app.bash_tools.docker.orchestrator_url must be http(s)"
+        );
+      }
+
+      const adminTokenEnv =
+        String(rawDocker.admin_token_env ?? "REMCOCHAT_ADMIN_TOKEN").trim() ||
+        "REMCOCHAT_ADMIN_TOKEN";
+      const networkMode = rawDocker.network_mode ?? "default";
+      const memoryMb = Math.min(
+        16_384,
+        Math.max(256, Math.floor(Number(rawDocker.memory_mb ?? 2048)))
+      );
+
+      docker = {
+        orchestratorUrl: url.toString().replace(/\/+$/, ""),
+        adminTokenEnv,
+        networkMode,
+        memoryMb,
+      };
+    } else if (provider !== "vercel") {
+      throw new Error(
+        "config.toml: app.bash_tools.provider must be \"vercel\" or \"docker\""
+      );
+    }
+
+    const sandboxRuntimeDefault = provider === "docker" ? "node24" : "node22";
+    const sandboxRuntime = String(
+      rawBashTools.sandbox?.runtime ?? sandboxRuntimeDefault
+    ).trim();
     const sandboxPortsRaw = rawBashTools.sandbox?.ports;
     const sandboxPorts = Array.isArray(sandboxPortsRaw)
       ? Array.from(
@@ -355,6 +419,14 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
         Math.floor(Number(rawBashTools.sandbox?.timeout_ms ?? 900_000))
       )
     );
+
+    if (provider === "docker") {
+      if (sandboxRuntime !== "node24" && sandboxRuntime !== "python3.13") {
+        throw new Error(
+          "config.toml: app.bash_tools.sandbox.runtime must be \"node24\" or \"python3.13\" when provider = \"docker\""
+        );
+      }
+    }
 
     const seedMode = rawBashTools.seed?.mode ?? "git";
     const gitUrlRaw = String(rawBashTools.seed?.git_url ?? "").trim();
@@ -379,6 +451,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
 
     bashTools = {
       enabled: true,
+      provider,
       access,
       projectRoot,
       maxStdoutChars,
@@ -386,6 +459,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       timeoutMs,
       maxConcurrentSandboxes,
       idleTtlMs,
+      docker,
       sandbox: {
         runtime: sandboxRuntime,
         ports: sandboxPorts,

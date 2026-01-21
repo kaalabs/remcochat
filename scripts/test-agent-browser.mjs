@@ -14,6 +14,8 @@ const DB_PATH =
 const CONFIG_PATH =
   process.env.REMCOCHAT_AGENT_BROWSER_CONFIG_PATH ??
   "data/remcochat-agent-browser-config.toml";
+const ARTIFACT_DIR =
+  process.env.REMCOCHAT_AGENT_BROWSER_ARTIFACT_DIR ?? "test-results/agent-browser";
 const ENABLE_VERCEL_SANDBOX_BASH =
   process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
 
@@ -65,6 +67,10 @@ async function closeAgentBrowser() {
 }
 
 async function main() {
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  const startedAt = Date.now();
+  console.log(`[agent-browser] Starting smoke test against ${BASE_URL}`);
+
   const serverEnv = {
     ...process.env,
     REMCOCHAT_DB_PATH: DB_PATH,
@@ -111,6 +117,10 @@ async function main() {
 
     await runAgentBrowser(["open", `${BASE_URL}/`]);
     await runAgentBrowser(["wait", "--text", "RemcoChat"]);
+    await runAgentBrowser([
+      "screenshot",
+      path.join(ARTIFACT_DIR, "01-home.png"),
+    ]);
     await runAgentBrowser(["find", "first", "[data-testid='sidebar:new-chat']", "click"]);
     await runAgentBrowser(["find", "first", "[data-testid^='sidebar:chat-menu:']", "click"]);
     await runAgentBrowser(["find", "text", "Rename", "click"]);
@@ -124,6 +134,10 @@ async function main() {
     ]);
     await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"]);
     await runAgentBrowser(["wait", "--text", "Agent renamed chat"]);
+    await runAgentBrowser([
+      "screenshot",
+      path.join(ARTIFACT_DIR, "02-renamed.png"),
+    ]);
 
     const token = `REMCOCHAT_AGENT_BROWSER_ATTACHMENT_OK_${Date.now()}`;
     const fileContents = `TOKEN=${token}\n`;
@@ -193,6 +207,14 @@ async function main() {
       ]);
       await runAgentBrowser(["wait", "--text", "REMCOCHAT_PY_E2E_OK"]);
     }
+
+    await runAgentBrowser([
+      "screenshot",
+      path.join(ARTIFACT_DIR, "03-after-attachment.png"),
+    ]);
+    console.log(
+      `[agent-browser] PASS in ${((Date.now() - startedAt) / 1000).toFixed(1)}s; artifacts in ${ARTIFACT_DIR}`
+    );
   } finally {
     await closeAgentBrowser();
 

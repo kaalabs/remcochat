@@ -34,6 +34,7 @@ default_provider_id = "vercel"
 
 [app.bash_tools]
 enabled = true
+provider = "vercel"
 access = "localhost"
 max_stdout_chars = 9000
 max_stderr_chars = 9100
@@ -66,6 +67,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
 
   assert.ok(config.bashTools);
   assert.equal(config.bashTools.enabled, true);
+  assert.equal(config.bashTools.provider, "vercel");
   assert.equal(config.bashTools.access, "localhost");
   assert.equal(config.bashTools.projectRoot, null);
   assert.equal(config.bashTools.maxStdoutChars, 9000);
@@ -73,6 +75,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(config.bashTools.timeoutMs, 25000);
   assert.equal(config.bashTools.maxConcurrentSandboxes, 2);
   assert.equal(config.bashTools.idleTtlMs, 600000);
+  assert.equal(config.bashTools.docker, null);
   assert.equal(config.bashTools.sandbox.runtime, "node22");
   assert.deepEqual(config.bashTools.sandbox.ports, [3000]);
   assert.equal(config.bashTools.sandbox.vcpus, 2);
@@ -81,6 +84,56 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(config.bashTools.seed.gitUrl, "https://example.com/repo.git");
   assert.equal(config.bashTools.seed.gitRevision, null);
   assert.equal(config.bashTools.seed.uploadInclude, "**/*");
+});
+
+test("parses app.bash_tools (docker provider)", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.bash_tools]
+enabled = true
+provider = "docker"
+access = "localhost"
+
+[app.bash_tools.docker]
+orchestrator_url = "http://127.0.0.1:8080"
+network_mode = "default"
+memory_mb = 2048
+admin_token_env = "REMCOCHAT_ADMIN_TOKEN"
+
+[app.bash_tools.sandbox]
+runtime = "node24"
+ports = [3000]
+vcpus = 2
+timeout_ms = 900000
+
+[app.bash_tools.seed]
+mode = "git"
+git_url = "https://example.com/repo.git"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const config = getConfig();
+
+  assert.ok(config.bashTools);
+  assert.equal(config.bashTools.provider, "docker");
+  assert.ok(config.bashTools.docker);
+  assert.equal(config.bashTools.docker.orchestratorUrl, "http://127.0.0.1:8080");
+  assert.equal(config.bashTools.docker.networkMode, "default");
+  assert.equal(config.bashTools.docker.memoryMb, 2048);
+  assert.equal(config.bashTools.docker.adminTokenEnv, "REMCOCHAT_ADMIN_TOKEN");
+  assert.equal(config.bashTools.sandbox.runtime, "node24");
+  assert.deepEqual(config.bashTools.sandbox.ports, [3000]);
 });
 
 test("rejects non-absolute app.bash_tools.project_root", () => {
