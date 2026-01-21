@@ -71,7 +71,7 @@ import {
   useState,
   type KeyboardEventHandler,
 } from "react";
-import { StickToBottom } from "use-stick-to-bottom";
+import { StickToBottom, type StickToBottomContext } from "use-stick-to-bottom";
 import { MessageActions, MessageAction } from "@/components/ai-elements/message";
 import { Weather } from "@/components/weather";
 import { WeatherForecast } from "@/components/weather-forecast";
@@ -82,6 +82,7 @@ import { TimezonesCard } from "@/components/timezones-card";
 import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
+import { ConversationScrollButton } from "@/components/ai-elements/conversation";
 import type { WeatherToolOutput } from "@/ai/weather";
 import type { WeatherForecastToolOutput } from "@/ai/weather";
 import type { TimezonesToolOutput } from "@/ai/timezones";
@@ -211,6 +212,24 @@ export function HomeClient({
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
+  const stickToBottomContextRef = useRef<StickToBottomContext | null>(null);
+  const scrollTranscriptToBottom = useCallback(
+    (animation: "instant" | "smooth" = "instant") => {
+      const ctx = stickToBottomContextRef.current;
+      if (!ctx) return;
+      void ctx.scrollToBottom(animation);
+    },
+    []
+  );
+  const queueScrollTranscriptToBottom = useCallback(
+    (animation: "instant" | "smooth" = "instant") => {
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => scrollTranscriptToBottom(animation))
+      );
+    },
+    [scrollTranscriptToBottom]
+  );
+
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles);
   const [activeProfileId, setActiveProfileId] = useState<string>(
     initialProfiles[0]?.id ?? ""
@@ -1006,12 +1025,20 @@ export function HomeClient({
         signature: signatureForChatState(loaded, loadedVariants),
       };
       loadedChatIdRef.current = activeChatId;
+      queueScrollTranscriptToBottom("instant");
     })().catch(() => {});
 
     return () => {
       aborted = true;
     };
-  }, [activeChatId, activeProfile, isTemporaryChat, setMessages, stop]);
+  }, [
+    activeChatId,
+    activeProfile,
+    isTemporaryChat,
+    queueScrollTranscriptToBottom,
+    setMessages,
+    stop,
+  ]);
 
   useEffect(() => {
     if (activeChatId) return;
@@ -1195,6 +1222,7 @@ export function HomeClient({
     if (lastMessage?.role === "user") {
       // After a fork, the latest user message often has no assistant response yet.
       // `regenerate()` without a messageId will generate the assistant response for the last message.
+      scrollTranscriptToBottom("smooth");
       regenerate({ body: chatRequestBody }).catch(() => {});
       return;
     }
@@ -1235,6 +1263,7 @@ export function HomeClient({
       return { ...prev, [lastUserId]: [...existing, snapshot] };
     });
 
+    scrollTranscriptToBottom("smooth");
     regenerate({
       messageId: assistant.id,
       body: {
@@ -1243,7 +1272,14 @@ export function HomeClient({
         regenerateMessageId: assistant.id,
       },
     }).catch(() => {});
-  }, [chatRequestBody, messages, regenerate, setVariantsByUserMessageId, status]);
+  }, [
+    chatRequestBody,
+    messages,
+    regenerate,
+    scrollTranscriptToBottom,
+    setVariantsByUserMessageId,
+    status,
+  ]);
 
   const startEditUserMessage = useCallback(
     (message: UIMessage<RemcoChatMessageMetadata>) => {
@@ -2035,7 +2071,9 @@ export function HomeClient({
 	          </header>
 
           <StickToBottom
-            className="min-h-0 flex-1 overflow-hidden"
+            className="relative min-h-0 flex-1 overflow-hidden"
+            contextRef={stickToBottomContextRef}
+            data-testid="chat:transcript"
             initial="instant"
             resize="smooth"
           >
@@ -2822,6 +2860,7 @@ export function HomeClient({
                       className="mt-2 underline underline-offset-4"
                       onClick={() => {
                         if (!chatRequestBody) return;
+                        scrollTranscriptToBottom("smooth");
                         regenerate({ body: chatRequestBody }).catch(() => {});
                       }}
                       type="button"
@@ -2832,6 +2871,7 @@ export function HomeClient({
                 ) : null}
               </div>
             </StickToBottom.Content>
+            <ConversationScrollButton />
           </StickToBottom>
 
 			          <div className="shrink-0 border-t bg-sidebar pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-4">
@@ -2927,6 +2967,7 @@ export function HomeClient({
                         body: chatRequestBody,
                       }
                     ).catch(() => {});
+                    queueScrollTranscriptToBottom("smooth");
                   } catch (err) {
                     setAttachmentUploadError(
                       err instanceof Error ? err.message : "Failed to upload attachments."
