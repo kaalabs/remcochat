@@ -34,20 +34,22 @@ try {
   const extra = [
     "",
     "[providers.e2e_alt]",
-    'name = "E2E Alt Provider"',
+    'name = "E2E OpenCode (default)"',
     'base_url = "https://opencode.ai/zen/v1"',
     'api_key_env = "OPENCODE_API_KEY"',
     'modelsdev_provider_id = "opencode"',
-    'default_model_id = "gpt-5-nano"',
+    'default_model_id = "gpt-5.2-codex"',
     "allowed_model_ids = [",
     '  "gpt-5-nano",',
+    '  "gpt-5.2",',
+    '  "gpt-5.2-codex",',
     '  "claude-opus-4-5",',
     '  "glm-4.7-free",',
     '  "gemini-3-pro",',
     "]",
     "",
     "[providers.e2e_vercel]",
-    'name = "E2E Vercel Catalog"',
+    'name = "E2E Vercel Catalog (opt-in)"',
     'base_url = "https://ai-gateway.vercel.sh/v3/ai"',
     'api_key_env = "VERCEL_AI_GATEWAY_API_KEY"',
     'modelsdev_provider_id = "vercel"',
@@ -59,6 +61,20 @@ try {
     "",
   ].join("\n");
   let configText = example.trimEnd();
+
+  // Default to OpenCode in E2E environments to avoid relying on Vercel credits.
+  configText = configText.replace(/\[app\][\s\S]*?(?=\n\[|$)/, (block) => {
+    return block.replace(
+      /\bdefault_provider_id\s*=\s*\"[^\"]+\"/,
+      'default_provider_id = "e2e_alt"'
+    );
+  });
+  configText = configText.replace(/\[app\.router\][\s\S]*?(?=\n\[|$)/, (block) => {
+    let out = block;
+    out = out.replace(/\bprovider_id\s*=\s*\"[^\"]+\"/, 'provider_id = "e2e_alt"');
+    out = out.replace(/\bmodel_id\s*=\s*\"[^\"]+\"/, 'model_id = "gpt-5-nano"');
+    return out;
+  });
 
   if (enableVercelSandboxBash || enableDockerSandboxdBash) {
     const root = tomlString(process.cwd());

@@ -28,7 +28,7 @@ test("Bash tools run a command in Vercel Sandbox", async ({ request }) => {
   const chatRes = await request.post("/api/chat", {
     data: {
       profileId,
-      modelId: "openai/gpt-5.2-codex",
+      modelId: "gpt-5.2-codex",
       temporary: true,
       temporarySessionId,
       messages: [
@@ -176,7 +176,7 @@ test("Bash tools run a command in Docker sandboxd", async ({ request }) => {
     const chatRes = await request.post("/api/chat", {
       data: {
         profileId,
-        modelId: "openai/gpt-5.2-codex",
+        modelId: "gpt-5.2-codex",
         temporary: true,
         temporarySessionId,
         messages: [

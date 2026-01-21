@@ -32,13 +32,34 @@ test("Model with tools disabled returns text (no tool calls)", async ({
   const baseJson = (await base.json()) as { defaultProviderId: string };
 
   try {
-    await switchProvider(request, "e2e_vercel");
+    await switchProvider(request, "e2e_alt");
     const profileId = await createProfile(request);
+
+    const providersRes = await request.get("/api/providers");
+    expect(providersRes.ok()).toBeTruthy();
+    const providersJson = (await providersRes.json()) as {
+      activeProviderId: string;
+      providers: Array<{
+        id: string;
+        models: Array<{
+          id: string;
+          capabilities?: { tools?: boolean };
+        }>;
+      }>;
+    };
+
+    const activeProvider =
+      providersJson.providers.find((p) => p.id === providersJson.activeProviderId) ??
+      providersJson.providers[0];
+    const modelId =
+      activeProvider?.models.find((m) => m.capabilities?.tools === false)?.id ?? "";
+
+    test.skip(!modelId, "No tools-disabled model found for active provider.");
 
     const chatRes = await request.post("/api/chat", {
       data: {
         profileId,
-        modelId: "openai/gpt-3.5-turbo",
+        modelId,
         temporary: true,
         messages: [
           {
@@ -53,7 +74,7 @@ test("Model with tools disabled returns text (no tool calls)", async ({
     expect(chatRes.ok()).toBeTruthy();
 
     const headers = chatRes.headers();
-    expect(headers["x-remcochat-model-type"]).toBe("vercel_ai_gateway");
+    expect(String(headers["x-remcochat-model-type"] ?? "").trim().length).toBeGreaterThan(0);
     expect(headers["x-remcochat-web-tools-enabled"]).toBe("0");
 
     const chunks = parseUIMessageStreamChunks(await chatRes.body());

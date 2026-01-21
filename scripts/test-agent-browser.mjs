@@ -51,11 +51,28 @@ async function waitForHttpOk(url, timeoutMs) {
 }
 
 async function runAgentBrowser(args) {
-  const res = await execFileAsync("agent-browser", args, {
-    timeout: 120_000,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return String(res.stdout ?? "").trim();
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await execFileAsync("agent-browser", args, {
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return String(res.stdout ?? "").trim();
+    } catch (err) {
+      lastErr = err;
+      const stderr = String(err?.stderr ?? "");
+      const message = String(err?.message ?? "");
+      const combined = `${message}\n${stderr}`;
+      const isTransient = /Resource temporarily unavailable|EAGAIN/i.test(combined);
+      if (isTransient && attempt < 3) {
+        await sleep(250 * attempt);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 async function closeAgentBrowser() {
@@ -109,11 +126,7 @@ async function main() {
 
     await runAgentBrowser(["open", `${BASE_URL}/admin`]);
     await runAgentBrowser(["wait", "--text", "Models catalog"]);
-    await runAgentBrowser(["wait", "--text", "e2e_vercel"]);
-
-    await runAgentBrowser(["find", "text", "E2E Vercel Catalog", "click"]);
-    await runAgentBrowser(["wait", "--text", "openai/gpt-3.5-turbo"]);
-    await runAgentBrowser(["wait", "--text", "anthropic/claude-opus-4.5"]);
+    await runAgentBrowser(["wait", "--text", "e2e_alt"]);
 
     await runAgentBrowser(["open", `${BASE_URL}/`]);
     await runAgentBrowser(["wait", "--text", "RemcoChat"]);
