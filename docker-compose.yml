@@ -16,6 +16,7 @@ services:
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
+      - ${MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
 
 volumes:
   remcochat_data:
