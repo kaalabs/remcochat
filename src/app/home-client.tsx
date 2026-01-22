@@ -94,6 +94,7 @@ import {
 		  ChevronDownIcon,
 		  ShieldIcon,
 		  DownloadIcon,
+      KeyIcon,
       MenuIcon,
 		  MoreVerticalIcon,
 		  PlusIcon,
@@ -123,6 +124,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
+const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
+
 function textLengthForMessage(message: UIMessage<RemcoChatMessageMetadata>) {
   return message.parts.reduce((acc, part) => {
     if (part.type === "text") return acc + part.text.length;
@@ -144,7 +148,7 @@ function ToolCallLine(props: { type: string; state?: string }) {
   return (
     <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
       {showSpinner ? <Loader size={14} /> : null}
-      Calling tool: "{toolName}"
+      Calling tool: &quot;{toolName}&quot;
     </div>
   );
 }
@@ -202,6 +206,7 @@ function ComposerAttachmentsCountBridge(props: {
 export type HomeClientProps = {
   adminEnabled: boolean;
   appVersion: string;
+  bashToolsLanAccessEnabled: boolean;
   initialProfiles: Profile[];
   initialChats: Chat[];
 };
@@ -209,9 +214,47 @@ export type HomeClientProps = {
 export function HomeClient({
   adminEnabled,
   appVersion,
+  bashToolsLanAccessEnabled,
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
+  const readLanAdminToken = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+    const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+    if (session && session.trim()) return session.trim();
+    const local = window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+    if (local && local.trim()) return local.trim();
+    return "";
+  }, []);
+
+  const writeLanAdminToken = useCallback(
+    (token: string, remember: boolean) => {
+      if (typeof window === "undefined") return;
+      const trimmed = String(token ?? "").trim();
+
+      if (!trimmed) {
+        window.sessionStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+        window.localStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+        return;
+      }
+
+      if (remember) {
+        window.localStorage.setItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY, trimmed);
+        window.sessionStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+      } else {
+        window.sessionStorage.setItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY, trimmed);
+        window.localStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+      }
+    },
+    []
+  );
+
+  const clearLanAdminToken = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+    window.localStorage.removeItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+  }, []);
+
   const stickToBottomContextRef = useRef<StickToBottomContext | null>(null);
   const scrollTranscriptToBottom = useCallback(
     (animation: "instant" | "smooth" = "instant") => {
@@ -247,6 +290,53 @@ export function HomeClient({
   const [temporaryModelId, setTemporaryModelId] = useState<string>(
     () => initialProfiles[0]?.defaultModelId ?? ""
   );
+
+  const [lanAdminTokenOpen, setLanAdminTokenOpen] = useState(false);
+  const [lanAdminTokenDraft, setLanAdminTokenDraft] = useState("");
+  const [lanAdminTokenRemember, setLanAdminTokenRemember] = useState(false);
+  const [lanAdminTokenVisible, setLanAdminTokenVisible] = useState(false);
+  const [hasLanAdminToken, setHasLanAdminToken] = useState(false);
+  const [bashToolsEnabledHeader, setBashToolsEnabledHeader] = useState<
+    "0" | "1" | null
+  >(null);
+
+  useEffect(() => {
+    if (!bashToolsLanAccessEnabled) return;
+    const token = readLanAdminToken();
+    setHasLanAdminToken(Boolean(token));
+    setLanAdminTokenDraft(token);
+    if (typeof window !== "undefined") {
+      const remember = Boolean(
+        !window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY) &&
+          window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY)
+      );
+      setLanAdminTokenRemember(remember);
+    }
+  }, [bashToolsLanAccessEnabled, readLanAdminToken]);
+
+  const instrumentedChatFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await globalThis.fetch(input, init);
+      const header = response.headers.get("x-remcochat-bash-tools-enabled");
+      if (header === "0" || header === "1") setBashToolsEnabledHeader(header);
+      return response;
+    },
+    []
+  );
+
+  const chatTransport = useMemo(() => {
+    return new DefaultChatTransport({
+      api: "/api/chat",
+      fetch: instrumentedChatFetch,
+      headers: () => {
+        const headers: Record<string, string> = {};
+        if (!bashToolsLanAccessEnabled) return headers;
+        const token = readLanAdminToken();
+        if (token) headers["x-remcochat-admin-token"] = token;
+        return headers;
+      },
+    });
+  }, [bashToolsLanAccessEnabled, instrumentedChatFetch, readLanAdminToken]);
 
   type ProvidersResponse = {
     defaultProviderId: string;
@@ -383,7 +473,7 @@ export function HomeClient({
     regenerate,
   } = useChat<UIMessage<RemcoChatMessageMetadata>>({
     id: chatSessionKey,
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: chatTransport,
   });
 
   const showThinking =
@@ -1993,7 +2083,7 @@ export function HomeClient({
 	          {renderSidebar("desktop")}
 	        </aside>
 
-	        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
 	          <header className="border-b">
 	            <div className="flex flex-wrap items-center gap-3 pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
 	              <div className="flex min-w-0 items-center gap-2 md:hidden">
@@ -2038,6 +2128,22 @@ export function HomeClient({
 	                <div className="md:hidden">
 	                  <ThemeToggle />
 	                </div>
+                  {bashToolsLanAccessEnabled ? (
+                    <Button
+                      className="h-9 w-9 justify-start gap-2 px-0 md:w-auto md:px-3"
+                      onClick={() => setLanAdminTokenOpen(true)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <KeyIcon className="size-4" />
+                      <span className="hidden md:inline">Bash tools</span>
+                      <span className="hidden text-xs text-muted-foreground md:inline">
+                        LAN ·{" "}
+                        {hasLanAdminToken ? "token set" : "token required"}
+                        {bashToolsEnabledHeader ? ` · hdr=${bashToolsEnabledHeader}` : ""}
+                      </span>
+                    </Button>
+                  ) : null}
 	                <div className="hidden text-sm text-muted-foreground md:block">
 	                  {isTemporaryChat
 	                    ? "Temporary chat"
@@ -3410,6 +3516,148 @@ export function HomeClient({
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        onOpenChange={(open) => {
+          setLanAdminTokenOpen(open);
+          if (!open) return;
+          const token = readLanAdminToken();
+          setLanAdminTokenDraft(token);
+          setHasLanAdminToken(Boolean(token));
+          if (typeof window !== "undefined") {
+            const remember = Boolean(
+              !window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY) &&
+                window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY)
+            );
+            setLanAdminTokenRemember(remember);
+          }
+        }}
+        open={lanAdminTokenOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bash tools (LAN admin token)</DialogTitle>
+          </DialogHeader>
+
+          {!bashToolsLanAccessEnabled ? (
+            <div className="text-sm text-muted-foreground">
+              Bash tools are not configured for LAN access.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Required when `config.toml` has `app.bash_tools.access = &quot;lan&quot;`. The
+                token is stored locally in this browser (session or localStorage) and
+                is sent as `x-remcochat-admin-token` on every `/api/chat` request.
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Admin token</div>
+                <Input
+                  autoFocus
+                  data-testid="bash-tools:lan-admin-token"
+                  onChange={(e) => setLanAdminTokenDraft(e.target.value)}
+                  placeholder="REMCOCHAT_ADMIN_TOKEN"
+                  type={lanAdminTokenVisible ? "text" : "password"}
+                  value={lanAdminTokenDraft}
+                />
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => setLanAdminTokenVisible((v) => !v)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {lanAdminTokenVisible ? "Hide" : "Show"}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      clearLanAdminToken();
+                      setLanAdminTokenDraft("");
+                      setHasLanAdminToken(false);
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-md border bg-card px-3 py-2">
+                <button
+                  aria-checked={lanAdminTokenRemember}
+                  aria-label="Remember token"
+                  className={
+                    "relative mt-0.5 inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors " +
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                    (lanAdminTokenRemember ? "bg-primary" : "bg-muted")
+                  }
+                  onClick={() => setLanAdminTokenRemember((v) => !v)}
+                  role="switch"
+                  title={
+                    lanAdminTokenRemember
+                      ? "Remember: On (localStorage)"
+                      : "Remember: Off (session only)"
+                  }
+                  type="button"
+                >
+                  <span
+                    className={
+                      "pointer-events-none inline-block size-5 rounded-full bg-white shadow-sm transition-transform " +
+                      (lanAdminTokenRemember ? "translate-x-5" : "translate-x-0.5")
+                    }
+                  />
+                </button>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Remember on this device</div>
+                  <div className="text-xs text-muted-foreground">
+                    Off stores in sessionStorage (cleared when the tab closes). On
+                    stores in localStorage (persists across restarts).
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-md border bg-card p-3">
+                <div className="text-sm font-medium">Verification</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Last `/api/chat` response header:
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                  <code className="rounded bg-muted px-2 py-1">
+                    x-remcochat-bash-tools-enabled=
+                    {bashToolsEnabledHeader ?? "?"}
+                  </code>
+                  <code className="rounded bg-muted px-2 py-1">
+                    token={hasLanAdminToken ? "present" : "absent"}
+                  </code>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => setLanAdminTokenOpen(false)}
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    writeLanAdminToken(lanAdminTokenDraft, lanAdminTokenRemember);
+                    const token = readLanAdminToken();
+                    setHasLanAdminToken(Boolean(token));
+                    setLanAdminTokenOpen(false);
+                  }}
+                  type="button"
+                >
+                  Save locally
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

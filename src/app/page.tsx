@@ -8,7 +8,10 @@ import packageJson from "../../package.json";
 export const dynamic = "force-dynamic";
 
 export default function Home() {
-  getConfig();
+  const config = getConfig();
+  const bashToolsLanAccessEnabled = Boolean(
+    config.bashTools?.enabled && config.bashTools.access === "lan"
+  );
 
   const profiles = listProfiles();
   const defaultProfileId = profiles[0]?.id ?? "";
@@ -24,6 +27,7 @@ export default function Home() {
     <HomeClient
       adminEnabled={isAdminEnabled()}
       appVersion={String(packageJson.version ?? "")}
+      bashToolsLanAccessEnabled={bashToolsLanAccessEnabled}
       initialChats={initialChats}
       initialProfiles={profiles}
     />
