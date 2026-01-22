@@ -81,7 +81,7 @@ test("Chat works for OpenAI-compatible (chat/completions) model type", async ({ 
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "glm-4.7-free",
+      modelId: "alpha-glm-4.7",
     });
 
     expect(headers["x-remcochat-model-type"]).toBe("openai_compatible");
@@ -90,12 +90,7 @@ test("Chat works for OpenAI-compatible (chat/completions) model type", async ({ 
   }
 });
 
-test("Chat works for Google Generative AI model type", async ({ request }) => {
-  test.skip(
-    process.env.REMCOCHAT_E2E_ENABLE_GOOGLE_GEMINI !== "1",
-    "Gemini models appear disabled for OPENCODE in this environment. Set REMCOCHAT_E2E_ENABLE_GOOGLE_GEMINI=1 after enabling Gemini access to run this test."
-  );
-
+test("Chat works for OpenAI Responses model type (gpt-5.2)", async ({ request }) => {
   const base = await request.get("/api/providers");
   expect(base.ok()).toBeTruthy();
   const baseJson = (await base.json()) as { defaultProviderId: string };
@@ -107,10 +102,10 @@ test("Chat works for Google Generative AI model type", async ({ request }) => {
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "gemini-3-pro",
+      modelId: "gpt-5.2",
     });
 
-    expect(headers["x-remcochat-model-type"]).toBe("google_generative_ai");
+    expect(headers["x-remcochat-model-type"]).toBe("openai_responses");
   } finally {
     await switchProvider(request, baseJson.defaultProviderId);
   }

@@ -81,13 +81,13 @@ test("Timezones tool renders a card (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
-    "anthropic/claude-sonnet-4.5",
-    "openai/gpt-4.1-mini",
-    "openai/gpt-5",
+    "gpt-5.2",
+    "gpt-5.2-codex",
+    "gpt-5-nano",
   ]);
 
   await page.getByTestId("composer:textarea").fill(
-    "Gebruik de displayTimezones tool met zones=[Almere, Tokyo, New York]."
+    "What is the current time in Almere, Tokyo, and New York? Use the displayTimezones tool with zones=[Almere, Tokyo, New York]."
   );
   await page.getByTestId("composer:submit").click();
 

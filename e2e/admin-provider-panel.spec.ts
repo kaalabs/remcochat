@@ -14,8 +14,11 @@ test("Admin panel switches provider", async ({ page, request }) => {
     const trigger = page.getByTestId("admin:provider-select");
     await expect(trigger).toBeVisible();
 
+    const targetProviderId =
+      baseJson.activeProviderId === "e2e_alt" ? "e2e_vercel" : "e2e_alt";
+
     await trigger.click();
-    await page.getByTestId("admin:provider-option:e2e_alt").click();
+    await page.getByTestId(`admin:provider-option:${targetProviderId}`).click();
 
     const save = page.getByTestId("admin:provider-save");
     await expect(save).toBeEnabled();
@@ -29,11 +32,10 @@ test("Admin panel switches provider", async ({ page, request }) => {
         const json = (await res.json()) as { activeProviderId?: string };
         return json.activeProviderId;
       })
-      .toBe("e2e_alt");
+      .toBe(targetProviderId);
   } finally {
     await request.put("/api/providers/active", {
       data: { providerId: baseJson.defaultProviderId },
     });
   }
 });
-
