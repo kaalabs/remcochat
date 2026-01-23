@@ -12,7 +12,7 @@ Usage:
 
 Options:
   --build   Force rebuild of compose images and sandbox runtime image.
-  --proxy   Also start the nginx reverse proxy (serves http://<host>/remcochat on port 80).
+  --proxy   Also start the nginx reverse proxy (serves http(s)://<host>/remcochat on ports 80/443).
 
 Prereqs:
   - docker engine running

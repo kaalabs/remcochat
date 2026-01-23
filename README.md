@@ -39,6 +39,26 @@ Safari note: if you can’t “proceed anyway”, install/trust the local CA on 
 - macOS: open in Keychain Access and set it to Always Trust.
 - iOS: install the profile, then enable full trust under Settings → General → About → Certificate Trust Settings.
 
+If Safari still says “This connection is not private” after trusting the CA, it may be caching an older TLS/HSTS decision for the same hostname. Workarounds:
+- Try a Private Browsing window first.
+- Clear Safari’s HSTS cache on macOS (last resort): `killall nsurlstoraged` then remove `~/Library/Cookies/HSTS.plist` (path may vary by macOS version), then restart Safari.
+
+### Auto-start on reboot (proxy + full stack)
+
+To bring up the full stack (RemcoChat + sandboxd + proxy) automatically after reboot:
+
+- Install a `crontab` `@reboot` entry: `scripts/install-startup-cron.sh`
+- Verify it’s present: `crontab -l | rg remcochat:startup`
+- Startup log: `/tmp/remcochat-startup.log`
+
+To remove it: edit `crontab -e` and delete the lines containing `remcochat:startup`.
+
+### Stop / restart
+
+- Stop stack (no proxy): `docker compose -f docker-compose.yml down`
+- Stop stack (with proxy): `docker compose -f docker-compose.yml -f docker-compose.proxy.yml down`
+- Start stack (with proxy): `scripts/start-remcochat.sh --proxy`
+
 ### Auto-update (cron)
 
 Use `scripts/update-remcochat.sh` to pull the latest `main` and restart the compose stack only when updates exist.
