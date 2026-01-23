@@ -20,12 +20,16 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
    - `cp config.toml.example config.toml`
 2. Ensure the container has `modelsdev` available on `PATH` (required): `modelsdev --version`
 3. Create a `.env` file based on `.env.example` and set your `VERCEL_AI_GATEWAY_API_KEY`.
-4. Start the full stack (RemcoChat + sandboxd): `scripts/start-remcochat.sh --build`
-5. Open `http://<server-lan-ip>:3100`
+4. Start the full stack (RemcoChat + sandboxd + proxy): `scripts/start-remcochat.sh --build --proxy`
+5. Open `https://<server-hostname>/remcochat/`
+
+Notes:
+- The RemcoChat container port (`3100`) is bound to `127.0.0.1` on the server and is not reachable from LAN clients.
+- LAN clients should use the HTTPS reverse proxy on port `443`.
 
 ### Reverse proxy (/remcochat)
 
-To serve RemcoChat at `http://klubnt01/remcochat` and `https://klubnt01/remcochat` (ports 80/443), generate a local CA + TLS cert and start the optional nginx proxy:
+To serve RemcoChat at `https://klubnt01/remcochat` (port 443), generate a local CA + TLS cert and start the optional nginx proxy:
 
 - `scripts/generate-proxy-cert.sh`
 - `scripts/start-remcochat.sh --proxy`
@@ -34,10 +38,13 @@ To serve RemcoChat at `http://klubnt01/remcochat` and `https://klubnt01/remcocha
 This uses `nginx/remcochat.conf` and proxies `/remcochat/` to the internal `remcochat:3000` service.
 
 Safari note: if you can’t “proceed anyway”, install/trust the local CA on your device:
-- iOS (recommended): `http://klubnt01/remcochat-ca.mobileconfig` (or `http://100.71.169.51/remcochat-ca.mobileconfig`)
-- macOS: `http://klubnt01/remcochat-ca.cer` (or `http://100.71.169.51/remcochat-ca.cer`)
+- iOS (recommended): `https://klubnt01/remcochat-ca.mobileconfig` (or `https://100.71.169.51/remcochat-ca.mobileconfig`)
+- macOS: `https://klubnt01/remcochat-ca.cer` (or `https://100.71.169.51/remcochat-ca.cer`)
 - macOS: open in Keychain Access and set it to Always Trust.
 - iOS: install the profile, then enable full trust under Settings → General → About → Certificate Trust Settings.
+
+If your device doesn’t trust the cert yet (and Safari blocks the download), fetch the CA from a terminal and install it manually:
+- `curl -k -o remcochat-ca.cer https://klubnt01/remcochat-ca.cer`
 
 If Safari still says “This connection is not private” after trusting the CA, it may be caching an older TLS/HSTS decision for the same hostname. Workarounds:
 - Try a Private Browsing window first.

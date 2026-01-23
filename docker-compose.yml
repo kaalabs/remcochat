@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "3100:3000"
+      - "127.0.0.1:3100:3000"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"

@@ -12,7 +12,7 @@ Usage:
 
 Options:
   --build   Force rebuild of compose images and sandbox runtime image.
-  --proxy   Also start the nginx reverse proxy (serves http(s)://<host>/remcochat on ports 80/443).
+  --proxy   Also start the nginx reverse proxy (serves https://<host>/remcochat on port 443).
 
 Prereqs:
   - docker engine running
@@ -176,8 +176,10 @@ log "Health checks"
 wait_http_ok "http://127.0.0.1:8080/v1/health" "sandboxd" 40 1 || die "sandboxd not healthy on http://127.0.0.1:8080"
 wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not serving on http://127.0.0.1:3100"
   if [[ "$ENABLE_PROXY" -eq 1 ]]; then
-    wait_http_ok "http://127.0.0.1/remcochat/" "proxy" 40 1 || die "proxy not serving on http://127.0.0.1/remcochat/"
     curl -fsSk --max-time 2 https://127.0.0.1/remcochat/ >/dev/null 2>&1 || die "proxy not serving on https://127.0.0.1/remcochat/"
   fi
 
-log "OK: remcochat on http://0.0.0.0:3100 (LAN); sandboxd on http://0.0.0.0:8080"
+log "OK: remcochat on http://127.0.0.1:3100 (local only); sandboxd on http://0.0.0.0:8080"
+if [[ "$ENABLE_PROXY" -eq 1 ]]; then
+  log "OK: proxy on https://<host>/remcochat/ (443)"
+fi
