@@ -23,6 +23,22 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 4. Start the full stack (RemcoChat + sandboxd): `scripts/start-remcochat.sh --build`
 5. Open `http://<server-lan-ip>:3100`
 
+### Reverse proxy (/remcochat)
+
+To serve RemcoChat at `http://klubnt01/remcochat` and `https://klubnt01/remcochat` (ports 80/443), generate a local CA + TLS cert and start the optional nginx proxy:
+
+- `scripts/generate-proxy-cert.sh`
+- `scripts/start-remcochat.sh --proxy`
+- Or: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`
+
+This uses `nginx/remcochat.conf` and proxies `/remcochat/` to the internal `remcochat:3000` service.
+
+Safari note: if you can’t “proceed anyway”, install/trust the local CA on your device:
+- iOS (recommended): `http://klubnt01/remcochat-ca.mobileconfig` (or `http://100.71.169.51/remcochat-ca.mobileconfig`)
+- macOS: `http://klubnt01/remcochat-ca.cer` (or `http://100.71.169.51/remcochat-ca.cer`)
+- macOS: open in Keychain Access and set it to Always Trust.
+- iOS: install the profile, then enable full trust under Settings → General → About → Certificate Trust Settings.
+
 ### Auto-update (cron)
 
 Use `scripts/update-remcochat.sh` to pull the latest `main` and restart the compose stack only when updates exist.

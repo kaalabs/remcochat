@@ -25,6 +25,11 @@
 # misc
 .DS_Store
 *.pem
+*.key
+
+# nginx proxy certs (local only; never commit)
+/nginx/certs/*
+!/nginx/certs/.gitkeep
 
 # debug
 npm-debug.log*

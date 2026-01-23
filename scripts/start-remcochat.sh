@@ -8,10 +8,11 @@ start-remcochat.sh
 Boot/start helper for the RemcoChat docker compose stack (remcochat + sandboxd).
 
 Usage:
-  scripts/start-remcochat.sh [--build]
+  scripts/start-remcochat.sh [--build] [--proxy]
 
 Options:
   --build   Force rebuild of compose images and sandbox runtime image.
+  --proxy   Also start the nginx reverse proxy (serves http://<host>/remcochat on port 80).
 
 Prereqs:
   - docker engine running
@@ -30,15 +31,28 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 FORCE_BUILD=0
-if [[ "${1:-}" == "--build" ]]; then
-  FORCE_BUILD=1
-  shift
-fi
-if [[ "${#}" -ne 0 ]]; then
-  echo "ERROR: unexpected arguments: $*" >&2
-  usage >&2
-  exit 2
-fi
+ENABLE_PROXY=0
+while [[ "${#}" -gt 0 ]]; do
+  case "${1}" in
+    --build)
+      FORCE_BUILD=1
+      shift
+      ;;
+    --proxy)
+      ENABLE_PROXY=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unexpected arguments: $*" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 log() { echo "$(ts) [remcochat-start] $*"; }
@@ -64,6 +78,12 @@ compose() {
 cd "$REPO_DIR"
 
 [[ -f docker-compose.yml ]] || die "missing docker-compose.yml in $REPO_DIR"
+  if [[ "$ENABLE_PROXY" -eq 1 ]]; then
+    [[ -f docker-compose.proxy.yml ]] || die "missing docker-compose.proxy.yml in $REPO_DIR"
+    [[ -f nginx/remcochat.conf ]] || die "missing nginx/remcochat.conf in $REPO_DIR"
+    [[ -f nginx/certs/tls.pem ]] || die "missing nginx/certs/tls.pem (run scripts/generate-proxy-cert.sh or provide your own cert)"
+    [[ -f nginx/certs/tls.key ]] || die "missing nginx/certs/tls.key (run scripts/generate-proxy-cert.sh or provide your own cert)"
+  fi
 [[ -f config.toml ]] || die "missing config.toml in $REPO_DIR"
 [[ -f .env ]] || die "missing .env in $REPO_DIR (copy from .env.example and set required values)"
 
@@ -123,15 +143,41 @@ if [[ "$FORCE_BUILD" -eq 1 ]] || ! docker image inspect remcochat-sandbox:node24
   docker build -t remcochat-sandbox:node24 -f sandbox-images/node24/Dockerfile .
 fi
 
-log "Starting compose stack"
-if [[ "$FORCE_BUILD" -eq 1 ]]; then
-  compose up -d --build
-else
-  compose up -d
+COMPOSE_FILES=(-f docker-compose.yml)
+if [[ "$ENABLE_PROXY" -eq 1 ]]; then
+  COMPOSE_FILES+=(-f docker-compose.proxy.yml)
 fi
 
+log "Starting compose stack"
+if [[ "$FORCE_BUILD" -eq 1 ]]; then
+  compose "${COMPOSE_FILES[@]}" up -d --build
+else
+  compose "${COMPOSE_FILES[@]}" up -d
+fi
+
+wait_http_ok() {
+  local url="$1"
+  local label="$2"
+  local attempts="${3:-30}"
+  local sleep_s="${4:-1}"
+
+  local i=1
+  while [[ "$i" -le "$attempts" ]]; do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_s"
+    i=$((i + 1))
+  done
+  return 1
+}
+
 log "Health checks"
-curl -fsS http://127.0.0.1:8080/v1/health >/dev/null || die "sandboxd not healthy on http://127.0.0.1:8080"
-curl -fsS http://127.0.0.1:3100/ >/dev/null || die "remcochat not serving on http://127.0.0.1:3100"
+wait_http_ok "http://127.0.0.1:8080/v1/health" "sandboxd" 40 1 || die "sandboxd not healthy on http://127.0.0.1:8080"
+wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not serving on http://127.0.0.1:3100"
+  if [[ "$ENABLE_PROXY" -eq 1 ]]; then
+    wait_http_ok "http://127.0.0.1/remcochat/" "proxy" 40 1 || die "proxy not serving on http://127.0.0.1/remcochat/"
+    curl -fsSk --max-time 2 https://127.0.0.1/remcochat/ >/dev/null 2>&1 || die "proxy not serving on https://127.0.0.1/remcochat/"
+  fi
 
 log "OK: remcochat on http://0.0.0.0:3100 (LAN); sandboxd on http://0.0.0.0:8080"
