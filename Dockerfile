@@ -15,7 +15,10 @@ RUN apt-get update \
 
 # modelsdev is required at runtime by `scripts/check-env.mjs`. In Docker deployments we
 # expect the host to provide it (mounted via docker-compose) at `/usr/local/lib/modelsdev`.
-RUN ln -sf /usr/local/lib/modelsdev/bin/modelsdev /usr/local/bin/modelsdev
+#
+# Link to the Node entrypoint directly (run.js) so we don't depend on any bundled
+# per-architecture Node binary the host install may include.
+RUN ln -sf /usr/local/lib/modelsdev/bin/run.js /usr/local/bin/modelsdev
 
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev

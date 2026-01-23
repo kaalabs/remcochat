@@ -12,11 +12,30 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       REMCOCHAT_DB_PATH: /app/data/remcochat.sqlite
       REMCOCHAT_ENABLE_ADMIN: ${REMCOCHAT_ENABLE_ADMIN:-0}
+      REMCOCHAT_ENABLE_BASH_TOOL: ${REMCOCHAT_ENABLE_BASH_TOOL:-0}
+      REMCOCHAT_ADMIN_TOKEN: ${REMCOCHAT_ADMIN_TOKEN:-}
       VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY:-}
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
-      - ${MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
+      # Host-side modelsdev installation directory (must contain `bin/modelsdev`).
+      # Use a RemcoChat-specific env var to avoid collisions with globally-exported vars.
+      - ${REMCOCHAT_MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
+
+  sandboxd:
+    build:
+      context: .
+      dockerfile: sandboxd/Dockerfile
+    container_name: remcochat-sandboxd
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SANDBOXD_BIND_HOST: "0.0.0.0"
+      SANDBOXD_PUBLISH_HOST_IP: "0.0.0.0"
+      SANDBOXD_ADMIN_TOKEN: ${REMCOCHAT_ADMIN_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   remcochat_data:

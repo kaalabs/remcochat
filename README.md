@@ -20,7 +20,7 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
    - `cp config.toml.example config.toml`
 2. Ensure the container has `modelsdev` available on `PATH` (required): `modelsdev --version`
 3. Create a `.env` file based on `.env.example` and set your `VERCEL_AI_GATEWAY_API_KEY`.
-4. Run: `docker compose up -d --build`
+4. Start the full stack (RemcoChat + sandboxd): `scripts/start-remcochat.sh --build`
 5. Open `http://<server-lan-ip>:3100`
 
 ### Auto-update (cron)
@@ -39,6 +39,14 @@ Use `scripts/update-remcochat.sh` to pull the latest `main` and restart the comp
 Bash tools are disabled by default and require both:
 - `app.bash_tools.enabled = true` in `config.toml`
 - `export REMCOCHAT_ENABLE_BASH_TOOL=1` at runtime
+
+### LAN access checklist
+
+When `app.bash_tools.access = "lan"`, bash tools are enabled **per request** only if the request includes the correct admin token header.
+
+- Server: set `REMCOCHAT_ADMIN_TOKEN` (and `REMCOCHAT_ENABLE_BASH_TOOL=1`) in the runtime environment / `.env` used by Docker.
+- Browser: enter the same token in the RemcoChat UI so `/api/chat` requests include `x-remcochat-admin-token`.
+- Quick verify: run any chat request and check the response header `x-remcochat-bash-tools-enabled: 1` (otherwise tools will not be advertised to the model).
 
 Two sandbox backends are supported:
 - **Vercel Sandbox** (default): `app.bash_tools.provider = "vercel"` (requires Vercel Sandbox creds)
