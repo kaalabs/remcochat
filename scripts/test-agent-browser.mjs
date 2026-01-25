@@ -8,6 +8,8 @@ const execFileAsync = promisify(execFile);
 
 const PORT = Number.parseInt(process.env.REMCOCHAT_AGENT_BROWSER_PORT ?? "3120", 10);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const SESSION =
+  process.env.REMCOCHAT_AGENT_BROWSER_SESSION ?? `remcochat-agent-browser-${PORT}`;
 const DB_PATH =
   process.env.REMCOCHAT_AGENT_BROWSER_DB_PATH ??
   "data/remcochat-agent-browser.sqlite";
@@ -52,9 +54,9 @@ async function waitForHttpOk(url, timeoutMs) {
 
 async function runAgentBrowser(args) {
   let lastErr;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 10; attempt++) {
     try {
-      const res = await execFileAsync("agent-browser", args, {
+      const res = await execFileAsync("agent-browser", ["--session", SESSION, ...args], {
         timeout: 120_000,
         maxBuffer: 10 * 1024 * 1024,
       });
@@ -65,8 +67,8 @@ async function runAgentBrowser(args) {
       const message = String(err?.message ?? "");
       const combined = `${message}\n${stderr}`;
       const isTransient = /Resource temporarily unavailable|EAGAIN/i.test(combined);
-      if (isTransient && attempt < 3) {
-        await sleep(250 * attempt);
+      if (isTransient && attempt < 10) {
+        await sleep(400 * attempt);
         continue;
       }
       throw err;
@@ -83,10 +85,40 @@ async function closeAgentBrowser() {
   }
 }
 
+async function stopSpawnedServer(proc) {
+  if (!proc) return;
+  if (proc.killed) return;
+
+  try {
+    process.kill(-proc.pid, "SIGTERM");
+  } catch {
+    proc.kill("SIGTERM");
+  }
+
+  await Promise.race([new Promise((r) => proc.on("exit", r)), sleep(10_000)]);
+
+  if (proc.exitCode == null) {
+    try {
+      process.kill(-proc.pid, "SIGKILL");
+    } catch {
+      proc.kill("SIGKILL");
+    }
+  }
+}
+
+function modelIdFromModelFeatureTestId(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw.startsWith("model-feature:")) return "";
+  if (!raw.endsWith(":reasoning")) return "";
+  return raw.slice("model-feature:".length, -":reasoning".length);
+}
+
 async function main() {
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
   const startedAt = Date.now();
   console.log(`[agent-browser] Starting smoke test against ${BASE_URL}`);
+
+  await closeAgentBrowser();
 
   const serverEnv = {
     ...process.env,
@@ -111,7 +143,7 @@ async function main() {
   const server = spawn(
     npmBin(),
     ["run", "start", "--", "-p", String(PORT), "-H", "127.0.0.1"],
-    { env: serverEnv, stdio: "inherit" }
+    { env: serverEnv, stdio: "inherit", detached: true }
   );
 
   let serverExited = false;
@@ -124,15 +156,109 @@ async function main() {
 
     await runAgentBrowser(["set", "viewport", "1280", "800"]);
 
-    await runAgentBrowser(["open", `${BASE_URL}/admin`]);
-    await runAgentBrowser(["wait", "--text", "Models catalog"]);
-    await runAgentBrowser(["wait", "--text", "e2e_alt"]);
-
     await runAgentBrowser(["open", `${BASE_URL}/`]);
     await runAgentBrowser(["wait", "--text", "RemcoChat"]);
     await runAgentBrowser([
       "screenshot",
       path.join(ARTIFACT_DIR, "01-home.png"),
+    ]);
+
+    // Reasoning segmented buttons:
+    // - must be hidden for non-reasoning models
+    // - must be visible for reasoning-capable models
+    await runAgentBrowser([
+      "find",
+      "first",
+      "[data-testid='model:picker-trigger']",
+      "click",
+    ]);
+    await runAgentBrowser([
+      "wait",
+      "--fn",
+      "document.querySelector(\"[data-testid^='model-option:']\") != null",
+    ]);
+
+    const nonReasoningFeatureTestId = await runAgentBrowser([
+      "get",
+      "attr",
+      "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='false']",
+      "data-testid",
+    ]).catch(() => "");
+    const nonReasoningModelId = modelIdFromModelFeatureTestId(
+      nonReasoningFeatureTestId
+    );
+    if (nonReasoningModelId) {
+      await runAgentBrowser([
+        "find",
+        "first",
+        `[data-testid='model-option:${nonReasoningModelId}']`,
+        "click",
+      ]);
+      await runAgentBrowser([
+        "wait",
+        "--fn",
+        "document.querySelector(\"[data-testid='reasoning-option:auto']\") == null",
+      ]);
+    } else {
+      // No non-reasoning models in the catalog; close the picker.
+      await runAgentBrowser(["find", "first", "body", "press", "Escape"]);
+    }
+
+    await runAgentBrowser([
+      "find",
+      "first",
+      "[data-testid='model:picker-trigger']",
+      "click",
+    ]);
+    await runAgentBrowser([
+      "wait",
+      "--fn",
+      "document.querySelector(\"[data-testid^='model-option:']\") != null",
+    ]);
+
+    const reasoningFeatureTestId = await runAgentBrowser([
+      "get",
+      "attr",
+      "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='true']",
+      "data-testid",
+    ]);
+    const reasoningModelId = modelIdFromModelFeatureTestId(reasoningFeatureTestId);
+    if (!reasoningModelId) {
+      throw new Error("No reasoning-capable model found in the model picker.");
+    }
+
+    await runAgentBrowser([
+      "find",
+      "first",
+      `[data-testid='model-option:${reasoningModelId}']`,
+      "click",
+    ]);
+    await runAgentBrowser([
+      "wait",
+      "--fn",
+      "document.querySelector(\"[data-testid='reasoning-option:auto']\") != null",
+    ]);
+    await runAgentBrowser([
+      "find",
+      "first",
+      "[data-testid='reasoning-option:high']",
+      "click",
+    ]);
+    const highSelected = await runAgentBrowser([
+      "get",
+      "attr",
+      "[data-testid='reasoning-option:high']",
+      "data-selected",
+    ]);
+    if (String(highSelected).trim() !== "true") {
+      throw new Error(
+        `Expected reasoning-option:high to be selected (data-selected=true), got: ${highSelected}`
+      );
+    }
+
+    await runAgentBrowser([
+      "screenshot",
+      path.join(ARTIFACT_DIR, "01-reasoning-buttons.png"),
     ]);
     await runAgentBrowser(["find", "first", "[data-testid='sidebar:new-chat']", "click"]);
     await runAgentBrowser(["find", "first", "[data-testid^='sidebar:chat-menu:']", "click"]);
@@ -232,11 +358,7 @@ async function main() {
     await closeAgentBrowser();
 
     if (!serverExited) {
-      server.kill("SIGTERM");
-      await Promise.race([new Promise((r) => server.on("exit", r)), sleep(10_000)]);
-    }
-    if (!serverExited) {
-      server.kill("SIGKILL");
+      await stopSpawnedServer(server);
     }
   }
 }

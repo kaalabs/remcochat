@@ -1,3 +1,5 @@
+import type { LanguageModelUsage } from "ai";
+
 export type Profile = {
   id: string;
   name: string;
@@ -28,6 +30,7 @@ export type RemcoChatMessageMetadata = {
   turnUserMessageId?: string;
   profileInstructionsRevision?: number;
   chatInstructionsRevision?: number;
+  usage?: LanguageModelUsage;
 };
 
 export type MemoryItem = {

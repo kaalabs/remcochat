@@ -54,6 +54,12 @@ import {
 } from "@/lib/composer-history";
 import { Loader } from "@/components/ai-elements/loader";
 import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning";
+import { ButtonGroup } from "@/components/ui/button-group";
+import {
   Tool,
   ToolContent,
   ToolHeader,
@@ -79,6 +85,11 @@ import { MemoryCard } from "@/components/memory-card";
 import { ListCard } from "@/components/list-card";
 import { MemoryPromptCard } from "@/components/memory-prompt-card";
 import { TimezonesCard } from "@/components/timezones-card";
+import {
+  allowedReasoningEfforts,
+  normalizeReasoningEffort,
+  type ReasoningEffortChoice,
+} from "@/lib/reasoning-effort";
 import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
@@ -341,6 +352,7 @@ export function HomeClient({
   type ProvidersResponse = {
     defaultProviderId: string;
     activeProviderId: string;
+    webToolsEnabled: boolean;
     providers: Array<{
       id: string;
       name: string;
@@ -452,6 +464,44 @@ export function HomeClient({
       ? temporaryModelId
       : profileDefaultModelId
     : chatModelId;
+
+  const selectedModel = useMemo(() => {
+    return modelOptions.find((m) => m.id === effectiveModelId) ?? null;
+  }, [effectiveModelId, modelOptions]);
+
+  const reasoningOptions = useMemo(() => {
+    if (!selectedModel?.capabilities?.reasoning) return [];
+    return allowedReasoningEfforts({
+      modelType: selectedModel.type,
+      providerModelId: selectedModel.id,
+      webToolsEnabled: Boolean(providersConfig?.webToolsEnabled),
+    });
+  }, [providersConfig?.webToolsEnabled, selectedModel]);
+
+  const reasoningKey = useMemo(() => {
+    if (!activeProfile) return "";
+    return `remcochat:reasoningEffort:${activeProfile.id}:${effectiveModelId}`;
+  }, [activeProfile, effectiveModelId]);
+
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortChoice>(
+    "auto"
+  );
+
+  useEffect(() => {
+    if (!reasoningKey) return;
+    if (!selectedModel?.capabilities?.reasoning) {
+      setReasoningEffort("auto");
+      return;
+    }
+    const stored = window.localStorage.getItem(reasoningKey) ?? "auto";
+    setReasoningEffort(normalizeReasoningEffort(stored, reasoningOptions));
+  }, [reasoningKey, reasoningOptions, selectedModel]);
+
+  useEffect(() => {
+    if (!reasoningKey) return;
+    if (!selectedModel?.capabilities?.reasoning) return;
+    window.localStorage.setItem(reasoningKey, reasoningEffort);
+  }, [reasoningEffort, reasoningKey, selectedModel]);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -695,12 +745,17 @@ export function HomeClient({
 
   const chatRequestBody = useMemo(() => {
     if (!activeProfile) return null;
+    const reasoningPayload =
+      selectedModel?.capabilities?.reasoning && reasoningOptions.length > 0
+        ? { reasoning: { effort: reasoningEffort } }
+        : {};
     if (isTemporaryChat) {
       return {
         profileId: activeProfile.id,
         modelId: effectiveModelId,
         temporary: true,
         temporarySessionId,
+        ...reasoningPayload,
       };
     }
     if (!activeChat) return null;
@@ -708,8 +763,18 @@ export function HomeClient({
       profileId: activeProfile.id,
       chatId: activeChat.id,
       modelId: effectiveModelId,
+      ...reasoningPayload,
     };
-  }, [activeChat, activeProfile, effectiveModelId, isTemporaryChat]);
+  }, [
+    activeChat,
+    activeProfile,
+    effectiveModelId,
+    isTemporaryChat,
+    reasoningEffort,
+    reasoningOptions.length,
+    selectedModel,
+    temporarySessionId,
+  ]);
 
   const refreshChats = useCallback(async (input: {
     profileId: string;
@@ -2314,6 +2379,23 @@ export function HomeClient({
                               );
                             }
 
+                            if (part.type === "reasoning") {
+                              if (hasMemoryAnswerCard) return null;
+                              const text = typeof part.text === "string" ? part.text : "";
+                              if (!text.trim()) return null;
+
+                              return (
+                                <Reasoning
+                                  defaultOpen={false}
+                                  isStreaming={part.state === "streaming"}
+                                  key={`${id}-${index}`}
+                                >
+                                  <ReasoningTrigger />
+                                  <ReasoningContent>{text}</ReasoningContent>
+                                </Reasoning>
+                              );
+                            }
+
                             if (part.type === "tool-displayMemoryAnswer") {
                               switch (part.state) {
                                 case "input-streaming":
@@ -2864,6 +2946,23 @@ export function HomeClient({
                           })}
                         </MessageContent>
 
+                        {role === "assistant" ? (() => {
+                          const usage = metadata?.usage;
+                          const reasoningTokens =
+                            typeof usage?.outputTokenDetails?.reasoningTokens ===
+                            "number"
+                              ? usage.outputTokenDetails.reasoningTokens
+                              : typeof usage?.reasoningTokens === "number"
+                                ? usage.reasoningTokens
+                                : 0;
+                          if (!reasoningTokens) return null;
+                          return (
+                            <div className="text-xs text-muted-foreground">
+                              Reasoning tokens: {reasoningTokens}
+                            </div>
+                          );
+                        })() : null}
+
 	                        {role === "user" ? (
 	                          <MessageActions className="justify-end opacity-60 transition-opacity hover:opacity-100 group-hover:opacity-100">
 	                            <MessageAction
@@ -3107,8 +3206,42 @@ export function HomeClient({
                   onKeyDown={handleComposerKeyDown}
                   value={input}
                 />
-                <div className="flex items-center justify-between gap-2 pr-2">
-                  <div className="flex items-center gap-2">
+
+                <div className="flex items-center justify-end gap-2 pr-2">
+                  {status === "ready" && messages.some((m) => m.role === "user") ? (
+                    <button
+                      aria-label="Regenerate"
+                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
+                      data-testid="composer:regenerate"
+                      onClick={() => regenerateLatest()}
+                      title="Regenerate"
+                      type="button"
+                    >
+                      <RotateCcwIcon className="size-4" />
+                    </button>
+                  ) : null}
+
+                  {(status === "submitted" || status === "streaming") && (
+                    <button
+                      className="rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                      onClick={() => stop()}
+                      type="button"
+                    >
+                      Stop
+                    </button>
+                  )}
+
+	                <PromptInputSubmit
+	                  className="h-10 w-16"
+	                  data-testid="composer:submit"
+	                  disabled={!canSend || !chatRequestBody}
+	                  status={status}
+	                  variant={isTemporaryChat ? "destructive" : "default"}
+	                />
+                </div>
+
+                <div className="mt-2 flex basis-full items-center justify-between gap-2 border-t px-2 pt-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <PromptInputActionMenu>
                       <PromptInputActionMenuTrigger
                         aria-label="Add attachments"
@@ -3119,51 +3252,68 @@ export function HomeClient({
                         <PromptInputActionAddAttachments />
                       </PromptInputActionMenuContent>
                     </PromptInputActionMenu>
+
+                    {selectedModel?.capabilities?.reasoning &&
+                    reasoningOptions.length > 0 ? (
+                      <div className="min-w-0 overflow-x-auto">
+                        <ButtonGroup aria-label="Reasoning level">
+                          {(
+                            [
+                              "auto" as const,
+                              ...reasoningOptions,
+                            ] satisfies ReasoningEffortChoice[]
+                          ).map((option) => {
+                            const label =
+                              option === "auto"
+                                ? "Auto"
+                                : option === "minimal"
+                                  ? "Min"
+                                  : option === "medium"
+                                    ? "Med"
+                                    : option === "high"
+                                      ? "High"
+                                      : "Low";
+
+                            const selected = reasoningEffort === option;
+                            return (
+                              <Button
+                                aria-pressed={selected}
+                                className={
+                                  "h-8 px-2 text-[11px] " +
+                                  (selected
+                                    ? "relative z-10 font-semibold shadow-sm"
+                                    : "")
+                                }
+                                data-testid={`reasoning-option:${option}`}
+                                data-selected={selected ? "true" : "false"}
+                                disabled={status !== "ready"}
+                                key={option}
+                                onClick={() => setReasoningEffort(option)}
+                                type="button"
+                                variant={selected ? "default" : "outline"}
+                              >
+                                {label}
+                              </Button>
+                            );
+                          })}
+                        </ButtonGroup>
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    {status === "ready" && messages.some((m) => m.role === "user") ? (
-                      <button
-                        aria-label="Regenerate"
-                        className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
-                        data-testid="composer:regenerate"
-                        onClick={() => regenerateLatest()}
-                        title="Regenerate"
-                        type="button"
-                      >
-                        <RotateCcwIcon className="size-4" />
-                      </button>
-                    ) : null}
-                    {!isTemporaryChat && activeChat ? (
-                      <button
-                        aria-label="Chat settings"
-                        className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-                        data-testid="chat:settings-open"
-                        disabled={status !== "ready"}
-                        onClick={() => openChatSettings()}
-                        title="Chat settings"
-                        type="button"
-                      >
-                        <SlidersHorizontalIcon className="size-4" />
-                      </button>
-                    ) : null}
-                    {(status === "submitted" || status === "streaming") && (
-                      <button
-                        className="rounded-md border px-3 py-2 text-sm hover:bg-accent"
-                        onClick={() => stop()}
-                        type="button"
-                      >
-                        Stop
-                      </button>
-                    )}
-	                  <PromptInputSubmit
-	                    className="h-10 w-16"
-	                    data-testid="composer:submit"
-	                    disabled={!canSend || !chatRequestBody}
-	                    status={status}
-	                    variant={isTemporaryChat ? "destructive" : "default"}
-	                  />
-                  </div>
+                  {!isTemporaryChat && activeChat ? (
+                    <button
+                      aria-label="Chat settings"
+                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                      data-testid="chat:settings-open"
+                      disabled={status !== "ready"}
+                      onClick={() => openChatSettings()}
+                      title="Chat settings"
+                      type="button"
+                    >
+                      <SlidersHorizontalIcon className="size-4" />
+                    </button>
+                  ) : null}
                 </div>
 	              </PromptInput>
 	            </div>

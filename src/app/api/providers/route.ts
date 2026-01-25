@@ -29,6 +29,7 @@ export async function GET() {
   return Response.json({
     defaultProviderId: config.defaultProviderId,
     activeProviderId,
+    webToolsEnabled: Boolean(config.webTools?.enabled),
     providers: config.providers.map((p) => {
       const providerCatalog = catalog.providers[p.id];
       if (!providerCatalog) {

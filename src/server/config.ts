@@ -41,6 +41,17 @@ const WebToolsSchema = z
   })
   .optional();
 
+const ReasoningSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
+    expose_to_client: z.boolean().optional(),
+    openai_summary: z.string().optional(),
+    anthropic_budget_tokens: z.number().int().min(0).max(200_000).optional(),
+    google_thinking_budget: z.number().int().min(0).max(200_000).optional(),
+  })
+  .optional();
+
 const BashToolsSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -114,6 +125,7 @@ const RawConfigSchema = z.object({
     default_provider_id: z.string().min(1),
     router: IntentRouterSchema,
     web_tools: WebToolsSchema,
+    reasoning: ReasoningSchema,
     bash_tools: BashToolsSchema,
     attachments: AttachmentsSchema,
   }),
@@ -148,6 +160,14 @@ export type RemcoChatConfig = {
     allowedDomains: string[];
     blockedDomains: string[];
   } | null;
+  reasoning: {
+    enabled: boolean;
+    effort: "minimal" | "low" | "medium" | "high";
+    exposeToClient: boolean;
+    openaiSummary: string | null;
+    anthropicBudgetTokens: number | null;
+    googleThinkingBudget: number | null;
+  };
   bashTools: {
     enabled: boolean;
     provider: "vercel" | "docker";
@@ -311,6 +331,23 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       blockedDomains,
     };
   }
+
+  const rawReasoning = raw.app.reasoning ?? {};
+  const reasoningEnabled = Boolean(rawReasoning.enabled ?? true);
+  const effort = rawReasoning.effort ?? "medium";
+  const exposeToClient = Boolean(rawReasoning.expose_to_client ?? false);
+  const openaiSummaryRaw = String(rawReasoning.openai_summary ?? "").trim();
+  const openaiSummary = openaiSummaryRaw ? openaiSummaryRaw : null;
+  const anthropicBudgetRaw = rawReasoning.anthropic_budget_tokens;
+  const anthropicBudgetTokens =
+    typeof anthropicBudgetRaw === "number" && Number.isFinite(anthropicBudgetRaw)
+      ? Math.max(0, Math.floor(anthropicBudgetRaw)) || null
+      : null;
+  const googleBudgetRaw = rawReasoning.google_thinking_budget;
+  const googleThinkingBudget =
+    typeof googleBudgetRaw === "number" && Number.isFinite(googleBudgetRaw)
+      ? Math.max(0, Math.floor(googleBudgetRaw)) || null
+      : null;
 
   let bashTools: RemcoChatConfig["bashTools"] = null;
   const rawBashTools = raw.app.bash_tools ?? {};
@@ -553,6 +590,14 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     providers,
     intentRouter,
     webTools,
+    reasoning: {
+      enabled: reasoningEnabled,
+      effort,
+      exposeToClient,
+      openaiSummary,
+      anthropicBudgetTokens,
+      googleThinkingBudget,
+    },
     bashTools,
     attachments: {
       enabled: attachmentsEnabled,

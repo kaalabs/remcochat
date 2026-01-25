@@ -8,6 +8,7 @@ import {
   hasToolCall,
   stepCountIs,
   streamText,
+  type TextStreamPart,
   type UIMessage,
 } from "ai";
 import { nanoid } from "nanoid";
@@ -25,6 +26,11 @@ import { createBashTools } from "@/ai/bash-tools";
 import { buildSystemPrompt } from "@/ai/system-prompt";
 import { createProviderOptionsForWebTools } from "@/ai/provider-options";
 import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
+import {
+  allowedReasoningEfforts,
+  normalizeReasoningEffort,
+  type ReasoningEffort,
+} from "@/lib/reasoning-effort";
 import {
   getWeatherForLocation,
   getWeatherForecastForLocation,
@@ -51,6 +57,9 @@ type ChatRequestBody = {
   temporarySessionId?: string;
   regenerate?: boolean;
   regenerateMessageId?: string;
+  reasoning?: {
+    effort?: string;
+  };
 };
 
 function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
@@ -159,6 +168,71 @@ function parseMemorizeDecision(text: string) {
   if (normalized.startsWith("confirm ")) return "confirm";
   if (normalized.startsWith("cancel ")) return "cancel";
   return null;
+}
+
+function getEffectiveReasoning(input: {
+  config: {
+    enabled: boolean;
+    effort: string;
+    exposeToClient: boolean;
+    openaiSummary: string | null;
+    anthropicBudgetTokens: number | null;
+    googleThinkingBudget: number | null;
+  };
+  resolved: {
+    modelType: string;
+    providerModelId: string;
+    capabilities: { reasoning: boolean };
+  };
+  requestedEffort?: string;
+}) {
+  const webToolsEnabled = Boolean(getConfig().webTools?.enabled);
+  const webSearchIsEnabled =
+    webToolsEnabled &&
+    (input.resolved.modelType === "openai_responses" ||
+      (input.resolved.modelType === "vercel_ai_gateway" &&
+        input.resolved.providerModelId.startsWith("openai/")));
+
+  const allowed = allowedReasoningEfforts({
+    modelType: input.resolved.modelType,
+    providerModelId: input.resolved.providerModelId,
+    webToolsEnabled,
+  });
+  const normalized = normalizeReasoningEffort(input.requestedEffort, allowed);
+  const requested = String(input.requestedEffort ?? "").trim().toLowerCase();
+
+  // If the user explicitly asked for minimal but web_search is enabled, degrade to low
+  // (minimal is not compatible with web_search).
+  if (webSearchIsEnabled && requested === "minimal") {
+    const coercedEffort = "low" as ReasoningEffort;
+    return {
+      requestedEffort: input.requestedEffort ?? "",
+      normalizedEffort: normalized,
+      effectiveEffort: coercedEffort,
+      effectiveReasoning: {
+        ...input.config,
+        effort: coercedEffort,
+      },
+    };
+  }
+
+  const effectiveEffort =
+    input.config.enabled && input.resolved.capabilities.reasoning
+      ? normalized === "auto"
+        ? input.config.effort
+        : normalized
+      : input.config.effort;
+  const coercedEffort = effectiveEffort as ReasoningEffort;
+
+  return {
+    requestedEffort: input.requestedEffort ?? "",
+    normalizedEffort: normalized,
+    effectiveEffort,
+    effectiveReasoning: {
+      ...input.config,
+      effort: coercedEffort,
+    },
+  };
 }
 
 function needsMemoryContext(content: string) {
@@ -489,7 +563,10 @@ async function collectUIMessageChunks<T>(stream: ReadableStream<T>) {
       continue;
     }
 
-    if (chunk?.type === "text-delta" && typeof chunk.delta === "string") {
+    if (
+      (chunk?.type === "text-delta" || chunk?.type === "reasoning-delta") &&
+      typeof chunk.delta === "string"
+    ) {
       if (chunk.delta.length > 0) hasUserVisibleOutput = true;
       continue;
     }
@@ -511,6 +588,7 @@ async function collectUIMessageChunks<T>(stream: ReadableStream<T>) {
 export async function POST(req: Request) {
   const body = (await req.json()) as ChatRequestBody;
   const isRegenerate = Boolean(body.regenerate);
+  const config = getConfig();
 
   if (!body.profileId) {
     return Response.json({ error: "Missing profileId." }, { status: 400 });
@@ -652,6 +730,12 @@ export async function POST(req: Request) {
 
     const profileInstructions = (profile.customInstructions ?? "").trim();
 
+    const reasoningSelection = getEffectiveReasoning({
+      config: config.reasoning,
+      resolved,
+      requestedEffort: body.reasoning?.effort,
+    });
+
     const webTools = resolved.capabilities.tools
       ? createWebTools({
           providerId: resolved.providerId,
@@ -680,7 +764,7 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
-      attachmentsEnabled: getConfig().attachments.enabled,
+      attachmentsEnabled: config.attachments.enabled,
     });
 
     let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -713,6 +797,8 @@ export async function POST(req: Request) {
       modelType: resolved.modelType,
       providerModelId: resolved.providerModelId,
       webToolsEnabled: webTools.enabled,
+      capabilities: resolved.capabilities,
+      reasoning: reasoningSelection.effectiveReasoning,
     });
 
     const headers = {
@@ -723,6 +809,19 @@ export async function POST(req: Request) {
       "x-remcochat-model-type": resolved.modelType,
       "x-remcochat-provider-model-id": resolved.providerModelId,
       "x-remcochat-model-id": resolved.modelId,
+      "x-remcochat-reasoning-enabled":
+        config.reasoning.enabled && resolved.capabilities.reasoning ? "1" : "0",
+      "x-remcochat-reasoning-effort":
+        config.reasoning.enabled && resolved.capabilities.reasoning
+          ? reasoningSelection.effectiveEffort
+          : "",
+      "x-remcochat-reasoning-effort-requested":
+        reasoningSelection.requestedEffort,
+      "x-remcochat-reasoning-effort-effective":
+        config.reasoning.enabled && resolved.capabilities.reasoning
+          ? reasoningSelection.effectiveEffort
+          : "",
+      "x-remcochat-reasoning-exposed": config.reasoning.exposeToClient ? "1" : "0",
       "x-remcochat-profile-instructions-rev": String(
         profile.customInstructionsRevision
       ),
@@ -737,12 +836,27 @@ export async function POST(req: Request) {
       "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
     };
 
-    const messageMetadata = () => ({
+    const baseMessageMetadata = {
       createdAt: now,
       turnUserMessageId: lastUserMessageId || undefined,
       profileInstructionsRevision: profile.customInstructionsRevision,
       chatInstructionsRevision: 0,
-    });
+    };
+
+    const messageMetadata = ({
+      part,
+    }: {
+      part: TextStreamPart<StreamTextToolSet>;
+    }) => {
+      if (part.type === "start") return baseMessageMetadata;
+      if (part.type === "finish") {
+        return {
+          ...baseMessageMetadata,
+          usage: part.totalUsage,
+        };
+      }
+      return undefined;
+    };
 
     const result = streamText({
       model: resolved.model,
@@ -778,6 +892,7 @@ export async function POST(req: Request) {
         headers,
         generateMessageId: nanoid,
         messageMetadata,
+        sendReasoning: config.reasoning.exposeToClient,
       });
     }
 
@@ -785,6 +900,7 @@ export async function POST(req: Request) {
       result.toUIMessageStream({
         generateMessageId: nanoid,
         messageMetadata,
+        sendReasoning: config.reasoning.exposeToClient,
       })
     );
 
@@ -810,7 +926,7 @@ export async function POST(req: Request) {
       return uiTextResponse({
         headers,
         text: `Web search error: ${formatted.errorText}`,
-        messageMetadata: messageMetadata(),
+        messageMetadata: baseMessageMetadata,
       });
     }
 
@@ -865,6 +981,7 @@ export async function POST(req: Request) {
       headers,
       generateMessageId: nanoid,
       messageMetadata,
+      sendReasoning: config.reasoning.exposeToClient,
     });
   }
 
@@ -1183,6 +1300,12 @@ export async function POST(req: Request) {
     );
   }
 
+  const reasoningSelection = getEffectiveReasoning({
+    config: config.reasoning,
+    resolved,
+    requestedEffort: body.reasoning?.effort,
+  });
+
   const webTools = resolved.capabilities.tools
     ? createWebTools({
         providerId: resolved.providerId,
@@ -1209,7 +1332,7 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
-      attachmentsEnabled: getConfig().attachments.enabled,
+      attachmentsEnabled: config.attachments.enabled,
     }),
   ];
 
@@ -1305,6 +1428,8 @@ export async function POST(req: Request) {
     modelType: resolved.modelType,
     providerModelId: resolved.providerModelId,
     webToolsEnabled: webTools.enabled,
+    capabilities: resolved.capabilities,
+    reasoning: reasoningSelection.effectiveReasoning,
   });
   const forceMemoryAnswerTool = shouldForceMemoryAnswerTool(
     lastUserText,
@@ -1347,6 +1472,18 @@ export async function POST(req: Request) {
       "x-remcochat-model-type": resolved.modelType,
       "x-remcochat-provider-model-id": resolved.providerModelId,
       "x-remcochat-model-id": resolved.modelId,
+      "x-remcochat-reasoning-enabled":
+        config.reasoning.enabled && resolved.capabilities.reasoning ? "1" : "0",
+    "x-remcochat-reasoning-effort":
+      config.reasoning.enabled && resolved.capabilities.reasoning
+        ? reasoningSelection.effectiveEffort
+        : "",
+    "x-remcochat-reasoning-effort-requested": reasoningSelection.requestedEffort,
+    "x-remcochat-reasoning-effort-effective":
+      config.reasoning.enabled && resolved.capabilities.reasoning
+        ? reasoningSelection.effectiveEffort
+        : "",
+    "x-remcochat-reasoning-exposed": config.reasoning.exposeToClient ? "1" : "0",
       "x-remcochat-profile-instructions-rev": String(
         profile.customInstructionsRevision
       ),
@@ -1369,12 +1506,27 @@ export async function POST(req: Request) {
       "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
     };
 
-  const messageMetadata = () => ({
+  const baseMessageMetadata = {
     createdAt: now,
     turnUserMessageId: lastUserMessageId || undefined,
     profileInstructionsRevision: currentProfileRevision,
     chatInstructionsRevision: currentChatRevision,
-  });
+  };
+
+  const messageMetadata = ({
+    part,
+  }: {
+    part: TextStreamPart<StreamTextToolSet>;
+  }) => {
+    if (part.type === "start") return baseMessageMetadata;
+    if (part.type === "finish") {
+      return {
+        ...baseMessageMetadata,
+        usage: part.totalUsage,
+      };
+    }
+    return undefined;
+  };
 
   const shouldAutoContinuePerplexity =
     webTools.enabled &&
@@ -1385,6 +1537,7 @@ export async function POST(req: Request) {
       headers,
       generateMessageId: nanoid,
       messageMetadata,
+      sendReasoning: config.reasoning.exposeToClient,
     });
   }
 
@@ -1392,6 +1545,7 @@ export async function POST(req: Request) {
     result.toUIMessageStream({
       generateMessageId: nanoid,
       messageMetadata,
+      sendReasoning: config.reasoning.exposeToClient,
     })
   );
 
@@ -1417,7 +1571,7 @@ export async function POST(req: Request) {
     return uiTextResponse({
       headers,
       text: `Web search error: ${formatted.errorText}`,
-      messageMetadata: messageMetadata(),
+      messageMetadata: baseMessageMetadata,
     });
   }
 
@@ -1472,5 +1626,6 @@ export async function POST(req: Request) {
     headers,
     generateMessageId: nanoid,
     messageMetadata,
+    sendReasoning: config.reasoning.exposeToClient,
   });
 }

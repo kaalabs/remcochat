@@ -131,3 +131,5 @@ Install agent-browser once:
   `agent-browser install`
 Run agent-browser integrated user tests:
   `npm run test:agent-browser`
+
+Docs: https://agent-browser.dev/
