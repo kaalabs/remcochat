@@ -1,0 +1,74 @@
+<svg
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0%" stop-color="#F7F7F4" />
+      <stop offset="100%" stop-color="#ECECE6" />
+    </linearGradient>
+    <linearGradient id="bubble" x1="220" y1="240" x2="840" y2="820">
+      <stop offset="0%" stop-color="#AAB38C" />
+      <stop offset="100%" stop-color="#8E9768" />
+    </linearGradient>
+    <filter
+      id="shadow"
+      x="-10%"
+      y="-10%"
+      width="120%"
+      height="120%"
+      color-interpolation-filters="sRGB"
+    >
+      <feDropShadow dx="0" dy="28" stdDeviation="26" flood-color="#111111" flood-opacity="0.18" />
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#111111" flood-opacity="0.10" />
+    </filter>
+  </defs>
+
+  <!-- Background + soft highlight for a slightly tactile "app icon" feel -->
+  <rect width="1024" height="1024" rx="240" fill="url(#bg)" />
+  <circle cx="280" cy="240" r="520" fill="#FFFFFF" opacity="0.32" />
+  <circle cx="820" cy="860" r="560" fill="#FFFFFF" opacity="0.18" />
+
+  <!-- Chat bubble + tail -->
+  <g filter="url(#shadow)">
+    <path
+      d="M388 740C310 812 258 846 186 880C254 822 272 760 266 700C318 728 354 737 388 740Z"
+      fill="url(#bubble)"
+    />
+    <rect
+      x="220"
+      y="240"
+      width="620"
+      height="560"
+      rx="164"
+      fill="url(#bubble)"
+      stroke="#4A4F36"
+      stroke-opacity="0.22"
+      stroke-width="10"
+    />
+    <rect
+      x="252"
+      y="272"
+      width="556"
+      height="496"
+      rx="140"
+      stroke="#FFFFFF"
+      stroke-opacity="0.22"
+      stroke-width="10"
+    />
+  </g>
+
+  <!-- Prompt mark: ">" + cursor dot -->
+  <path
+    d="M410 420L540 512L410 604"
+    stroke="#F7F7F4"
+    stroke-width="92"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="628" cy="634" r="42" fill="#F7F7F4" />
+</svg>
+
