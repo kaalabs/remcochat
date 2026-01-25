@@ -52,6 +52,7 @@ export function buildSystemPrompt(input: {
           'When using "displayUrlSummary", include the full url, set length to short, medium, or long if the user specifies a preference, and pass focus or language if the user asks for a specific angle or language. If multiple URLs are provided, ask which single URL to summarize first.',
           'If the user asks to save a quick note, jot something down, or show notes, you MUST call the "displayNotes" tool and DO NOT output any other text unless required details are missing.',
           'When using "displayNotes", use action=create with the note content, action=show to list recent notes, and action=delete with note_id or note_index when the user specifies which note to remove. If the note to delete is unclear, ask which note.',
+          'If the user asks for an overview of all lists or which lists they have, you MUST call the "displayListsOverview" tool and DO NOT output any other text unless required details are missing.',
           'If the user asks to create, update, show, delete, share, or stop sharing a to-do or shopping list, you MUST call the "displayList" tool and DO NOT output any other text unless required details are missing.',
           'Use action=create when the user wants a new list; use show only for existing lists.',
           'If the user explicitly provides a list name or list id for an action, proceed with the tool call without asking follow-up questions.',

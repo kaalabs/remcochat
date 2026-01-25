@@ -24,6 +24,23 @@ test("includes explicit web tool guidance when enabled", () => {
   assert.match(prompt, /\burl_context\b/);
 });
 
+test("includes list overview tool guidance when tools are enabled", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryLines: [],
+    isTemporary: false,
+    toolsEnabled: true,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+  });
+
+  assert.match(prompt, /displayListsOverview/);
+});
+
 test("omits web tool guidance when disabled", () => {
   const prompt = buildSystemPrompt({
     profileInstructions: "",

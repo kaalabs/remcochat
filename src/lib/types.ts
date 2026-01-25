@@ -70,6 +70,25 @@ export type TaskList = {
   };
 };
 
+export type TaskListOverview = {
+  id: string;
+  name: string;
+  kind: TaskListKind;
+  ownerProfileId: string;
+  ownerProfileName: string;
+  updatedAt: string;
+  scope: "owned" | "shared";
+};
+
+export type ListsOverviewToolOutput = {
+  lists: TaskListOverview[];
+  counts: {
+    owned: number;
+    shared: number;
+    total: number;
+  };
+};
+
 export type QuickNote = {
   id: string;
   profileId: string;

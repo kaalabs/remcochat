@@ -41,10 +41,12 @@ import type { ModelOption } from "@/lib/models";
 import { validateChatTitle } from "@/lib/chat-title";
 import type {
   Chat,
+  ListsOverviewToolOutput,
   MemoryItem,
   Profile,
   RemcoChatMessageMetadata,
   TaskList,
+  TaskListOverview,
 } from "@/lib/types";
 import {
   extractPromptHistory,
@@ -83,6 +85,7 @@ import { Weather } from "@/components/weather";
 import { WeatherForecast } from "@/components/weather-forecast";
 import { MemoryCard } from "@/components/memory-card";
 import { ListCard } from "@/components/list-card";
+import { ListsOverviewCard } from "@/components/lists-overview-card";
 import { MemoryPromptCard } from "@/components/memory-prompt-card";
 import { TimezonesCard } from "@/components/timezones-card";
 import {
@@ -1772,6 +1775,25 @@ export function HomeClient({
     [activeProfile, chatRequestBody, sendMessage, status]
   );
 
+  const sendOpenList = useCallback(
+    (list: TaskListOverview) => {
+      if (!chatRequestBody) return;
+      if (status !== "ready") return;
+      const ownerSuffix =
+        list.scope === "shared" && list.ownerProfileName
+          ? ` from ${list.ownerProfileName}`
+          : "";
+      sendMessage(
+        {
+          text: `Open list "${list.name}"${ownerSuffix}.`,
+          metadata: { createdAt: new Date().toISOString() },
+        },
+        { body: chatRequestBody }
+      );
+    },
+    [chatRequestBody, sendMessage, status]
+  );
+
   const closeSidebarDrawer = useCallback(() => {
     setSidebarOpen(false);
     window.setTimeout(() => focusComposer({ toEnd: true }), 0);
@@ -2516,6 +2538,46 @@ export function HomeClient({
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
                                         List error: {part.errorText}
+                                      </div>
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayListsOverview") {
+                              switch (part.state) {
+                                case "input-streaming":
+                                case "input-available":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | ListsOverviewToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <ListsOverviewCard
+                                        {...output}
+                                        onOpenList={sendOpenList}
+                                      />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Lists overview error: {part.errorText}
                                       </div>
                                     </div>
                                   );

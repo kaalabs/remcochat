@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getWeatherForLocation, getWeatherForecastForLocation } from "@/ai/weather";
 import { getTimezones } from "@/ai/timezones";
 import { getUrlSummary } from "@/ai/url-summary";
-import { runListAction } from "@/server/lists";
+import { listProfileListOverviews, runListAction } from "@/server/lists";
 import { runNoteAction } from "@/server/notes";
 
 export const displayWeather = createTool({
@@ -208,6 +208,24 @@ export function createTools(input: {
       });
     },
   });
+  const displayListsOverview = createTool({
+    description:
+      "Display an overview of all accessible to-do or shopping lists for the active profile.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const lists = listProfileListOverviews(input.profileId);
+      const counts = lists.reduce(
+        (acc, list) => {
+          if (list.scope === "owned") acc.owned += 1;
+          if (list.scope === "shared") acc.shared += 1;
+          acc.total += 1;
+          return acc;
+        },
+        { owned: 0, shared: 0, total: 0 }
+      );
+      return { lists, counts };
+    },
+  });
 
   return {
     displayWeather,
@@ -217,5 +235,6 @@ export function createTools(input: {
     displayUrlSummary,
     displayNotes,
     displayList,
+    displayListsOverview,
   };
 }

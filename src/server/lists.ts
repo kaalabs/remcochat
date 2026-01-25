@@ -1,6 +1,11 @@
 import { nanoid } from "nanoid";
 import { getDb } from "@/server/db";
-import type { TaskList, TaskListItem, TaskListKind } from "@/lib/types";
+import type {
+  TaskList,
+  TaskListItem,
+  TaskListKind,
+  TaskListOverview,
+} from "@/lib/types";
 
 const MAX_LIST_NAME_LENGTH = 80;
 const MAX_ITEM_LENGTH = 200;
@@ -28,6 +33,15 @@ type ItemRow = {
 type ProfileLookupRow = {
   id: string;
   name: string;
+};
+
+type ListOverviewRow = {
+  id: string;
+  profile_id: string;
+  name: string;
+  kind: TaskListKind;
+  updated_at: string;
+  owner_name: string;
 };
 
 function normalizeSpaces(value: string) {
@@ -625,4 +639,43 @@ export function listProfileLists(profileId: string): TaskList[] {
     )
     .all(profileId, profileId, profileId) as ListRow[];
   return rows.map(listToTaskList);
+}
+
+export function listProfileListOverviews(profileId: string): TaskListOverview[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          lists.id as id,
+          lists.profile_id as profile_id,
+          lists.name as name,
+          lists.kind as kind,
+          lists.updated_at as updated_at,
+          profiles.name as owner_name
+        FROM lists
+        LEFT JOIN list_members
+          ON list_members.list_id = lists.id
+         AND list_members.profile_id = ?
+        JOIN profiles
+          ON profiles.id = lists.profile_id
+        WHERE lists.profile_id = ?
+           OR list_members.profile_id = ?
+        ORDER BY lists.updated_at DESC
+      `
+    )
+    .all(profileId, profileId, profileId) as ListOverviewRow[];
+
+  return rows.map((row) => {
+    const scope = row.profile_id === profileId ? "owned" : "shared";
+    return {
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      ownerProfileId: row.profile_id,
+      ownerProfileName: row.owner_name,
+      updatedAt: row.updated_at,
+      scope,
+    };
+  });
 }
