@@ -1,6 +1,6 @@
 {
   "name": "remcochat",
-  "version": "0.15.3",
+  "version": "0.16.0",
   "private": true,
   "scripts": {
     "dev": "node scripts/check-env.mjs && next dev",
