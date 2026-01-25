@@ -1,6 +1,25 @@
+export function isListsOverviewIntent(text: string): boolean {
+  const trimmed = String(text ?? "").trim().toLowerCase();
+  if (!trimmed) return false;
+
+  const patterns = [
+    /\b(my|mijn)\s+lists\b/,
+    /\b(all|alle)\s+lists\b/,
+    /\b(what|which)\s+lists\b/,
+    /\b(show|toon|laat)\b.*\b(lists|lijsten)\b/,
+    /\boverview\b.*\b(lists|lijsten)\b/,
+    /\b(lists|lijsten)\b.*\boverview\b/,
+    /\b(welke|wat)\s+lijsten\b/,
+    /\b(mijn|alle)\s+lijsten\b/,
+  ];
+
+  return patterns.some((pattern) => pattern.test(trimmed));
+}
+
 export function isListIntent(text: string): boolean {
   const trimmed = String(text ?? "").trim().toLowerCase();
   if (!trimmed) return false;
+  if (isListsOverviewIntent(trimmed)) return true;
 
   const patterns = [
     /\bissues?\s+list\b/,
@@ -19,4 +38,3 @@ export function isListIntent(text: string): boolean {
 
   return patterns.some((pattern) => pattern.test(trimmed));
 }
-
