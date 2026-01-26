@@ -41,6 +41,23 @@ test("includes list overview tool guidance when tools are enabled", () => {
   assert.match(prompt, /displayListsOverview/);
 });
 
+test("includes agenda tool guidance when tools are enabled", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryLines: [],
+    isTemporary: false,
+    toolsEnabled: true,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+  });
+
+  assert.match(prompt, /displayAgenda/);
+});
+
 test("omits web tool guidance when disabled", () => {
   const prompt = buildSystemPrompt({
     profileInstructions: "",

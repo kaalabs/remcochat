@@ -5,6 +5,7 @@ import { getTimezones } from "@/ai/timezones";
 import { getUrlSummary } from "@/ai/url-summary";
 import { listProfileListOverviews, runListAction } from "@/server/lists";
 import { runNoteAction } from "@/server/notes";
+import { runAgendaAction } from "@/server/agenda";
 
 export const displayWeather = createTool({
   description:
@@ -226,6 +227,152 @@ export function createTools(input: {
       return { lists, counts };
     },
   });
+  const displayAgenda = createTool({
+    description:
+      "Create, update, delete, share, or list agenda items for the active profile.",
+    inputSchema: z.object({
+      action: z.enum([
+        "create",
+        "update",
+        "delete",
+        "share",
+        "unshare",
+        "list",
+      ]),
+      description: z
+        .string()
+        .describe("Item description for create actions.")
+        .default(""),
+      date: z
+        .string()
+        .describe("YYYY-MM-DD date for create/update actions.")
+        .default(""),
+      time: z
+        .string()
+        .describe("HH:MM 24h time for create/update actions.")
+        .default(""),
+      duration_minutes: z
+        .number()
+        .int()
+        .describe("Duration in minutes for create/update actions.")
+        .optional(),
+      timezone: z
+        .string()
+        .describe("Optional IANA timezone for create/update actions.")
+        .optional(),
+      item_id: z
+        .string()
+        .describe("Optional agenda item id for update/delete/share actions.")
+        .default(""),
+      match: z
+        .object({
+          description: z.string().optional(),
+          date: z.string().optional(),
+          time: z.string().optional(),
+        })
+        .describe("Best-effort match fields when item_id is unknown.")
+        .optional(),
+      patch: z
+        .object({
+          description: z.string().optional(),
+          date: z.string().optional(),
+          time: z.string().optional(),
+          duration_minutes: z.number().int().optional(),
+          timezone: z.string().optional(),
+        })
+        .describe("Fields to update for update actions.")
+        .optional(),
+      target_profile: z
+        .string()
+        .describe("Profile name or id to share or unshare with.")
+        .default(""),
+      range: z
+        .object({
+          kind: z.enum([
+            "today",
+            "tomorrow",
+            "this_week",
+            "this_month",
+            "next_n_days",
+          ]),
+          days: z.number().int().optional(),
+          timezone: z.string().optional(),
+          week_start: z.enum(["monday", "sunday"]).optional(),
+        })
+        .describe("List range definition for list actions.")
+        .optional(),
+      include_overlaps: z
+        .boolean()
+        .describe("Include items that overlap the range window.")
+        .optional(),
+    }),
+    execute: async (inputData) => {
+      const action = inputData.action;
+      if (action === "create") {
+        return runAgendaAction(input.profileId, {
+          action,
+          description: inputData.description,
+          date: inputData.date,
+          time: inputData.time,
+          durationMinutes: Number(inputData.duration_minutes ?? 0),
+          timezone: inputData.timezone,
+        });
+      }
+      if (action === "update") {
+        return runAgendaAction(input.profileId, {
+          action,
+          itemId: inputData.item_id || undefined,
+          match: inputData.match,
+          patch: {
+            description: inputData.patch?.description,
+            date: inputData.patch?.date,
+            time: inputData.patch?.time,
+            durationMinutes: inputData.patch?.duration_minutes,
+            timezone: inputData.patch?.timezone,
+          },
+        });
+      }
+      if (action === "delete") {
+        return runAgendaAction(input.profileId, {
+          action,
+          itemId: inputData.item_id || undefined,
+          match: inputData.match,
+        });
+      }
+      if (action === "share" || action === "unshare") {
+        return runAgendaAction(input.profileId, {
+          action,
+          itemId: inputData.item_id || undefined,
+          match: inputData.match,
+          targetProfile: inputData.target_profile,
+        });
+      }
+      if (action === "list") {
+        if (!inputData.range) {
+          throw new Error("Range is required for list actions.");
+        }
+        const range =
+          inputData.range.kind === "next_n_days"
+            ? {
+                kind: "next_n_days" as const,
+                days: Number(inputData.range.days ?? 0),
+                timezone: inputData.range.timezone,
+                weekStart: inputData.range.week_start,
+              }
+            : {
+                kind: inputData.range.kind,
+                timezone: inputData.range.timezone,
+                weekStart: inputData.range.week_start,
+              };
+        return runAgendaAction(input.profileId, {
+          action,
+          range,
+          includeOverlaps: inputData.include_overlaps,
+        });
+      }
+      throw new Error("Unsupported agenda action.");
+    },
+  });
 
   return {
     displayWeather,
@@ -236,5 +383,6 @@ export function createTools(input: {
     displayNotes,
     displayList,
     displayListsOverview,
+    displayAgenda,
   };
 }

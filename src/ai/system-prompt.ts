@@ -60,6 +60,9 @@ export function buildSystemPrompt(input: {
           'If the user asks to share or stop sharing a list without specifying the target profile, ask which profile to use before calling "displayList".',
           'If the user refers to a shared list and the owner is unclear, ask which profile owns the list and pass it as list_owner.',
           'When calling "displayList" and the user provides items, include those items in the tool input so they are added to the list.',
+          'If the user asks to add, update, delete, share, or list agenda items, you MUST call the "displayAgenda" tool and DO NOT output any other text unless required details are missing.',
+          'For agenda listing, use range.kind = today | tomorrow | this_week | this_month | next_n_days (with days).',
+          "If the user just says 'show my agenda' without a window, default to next_n_days with days=30.",
           ...(input.webToolsEnabled
             ? [
                 [

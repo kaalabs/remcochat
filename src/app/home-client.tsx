@@ -41,6 +41,7 @@ import type { ModelOption } from "@/lib/models";
 import { validateChatTitle } from "@/lib/chat-title";
 import type {
   Chat,
+  AgendaToolOutput,
   ListsOverviewToolOutput,
   MemoryItem,
   Profile,
@@ -86,6 +87,7 @@ import { WeatherForecast } from "@/components/weather-forecast";
 import { MemoryCard } from "@/components/memory-card";
 import { ListCard } from "@/components/list-card";
 import { ListsOverviewCard } from "@/components/lists-overview-card";
+import { AgendaCard } from "@/components/agenda-card";
 import { MemoryPromptCard } from "@/components/memory-prompt-card";
 import { TimezonesCard } from "@/components/timezones-card";
 import {
@@ -2578,6 +2580,43 @@ export function HomeClient({
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
                                         Lists overview error: {part.errorText}
+                                      </div>
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-displayAgenda") {
+                              switch (part.state) {
+                                case "input-streaming":
+                                case "input-available":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | AgendaToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <AgendaCard output={output} />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        Agenda error: {part.errorText}
                                       </div>
                                     </div>
                                   );

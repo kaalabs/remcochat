@@ -143,6 +143,34 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_quick_notes_profile_updated_at
       ON quick_notes(profile_id, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS agenda_items (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      start_at TEXT NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      timezone TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agenda_items_profile_start_at
+      ON agenda_items(profile_id, start_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_agenda_items_profile_updated_at
+      ON agenda_items(profile_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS agenda_item_members (
+      agenda_item_id TEXT NOT NULL REFERENCES agenda_items(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (agenda_item_id, profile_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agenda_item_members_profile
+      ON agenda_item_members(profile_id);
+
     CREATE TABLE IF NOT EXISTS messages (
       chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
       id TEXT NOT NULL,

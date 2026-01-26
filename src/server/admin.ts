@@ -4,6 +4,7 @@ import { listChats, loadChatState } from "@/server/chats";
 import { listProfileMemory } from "@/server/memory";
 import { listProfileLists } from "@/server/lists";
 import { listProfileNotes } from "@/server/notes";
+import { listProfileAgendaItems } from "@/server/agenda";
 
 export function isAdminEnabled(): boolean {
   const v = String(process.env.REMCOCHAT_ENABLE_ADMIN ?? "").trim().toLowerCase();
@@ -18,6 +19,7 @@ export type ExportAllData = {
     memory: ReturnType<typeof listProfileMemory>;
     lists: ReturnType<typeof listProfileLists>;
     notes: ReturnType<typeof listProfileNotes>;
+    agenda: ReturnType<typeof listProfileAgendaItems>;
     chats: Array<
       ReturnType<typeof listChats>[number] & {
         state: ReturnType<typeof loadChatState>;
@@ -37,11 +39,12 @@ export function exportAllData(): ExportAllData {
       const memory = listProfileMemory(profile.id);
       const lists = listProfileLists(profile.id);
       const notes = listProfileNotes(profile.id, 200);
+      const agenda = listProfileAgendaItems(profile.id);
       const chats = listChats(profile.id).map((chat) => ({
         ...chat,
         state: loadChatState(chat.id),
       }));
-      return { profile, memory, lists, notes, chats };
+      return { profile, memory, lists, notes, agenda, chats };
     }),
   };
 }
@@ -50,6 +53,8 @@ export function resetAllData(): void {
   const db = getDb();
   db.exec(`
     PRAGMA foreign_keys = OFF;
+    DELETE FROM agenda_item_members;
+    DELETE FROM agenda_items;
     DELETE FROM list_members;
     DELETE FROM list_items;
     DELETE FROM lists;

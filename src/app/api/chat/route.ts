@@ -1,4 +1,4 @@
-import type { RemcoChatMessageMetadata } from "@/lib/types";
+import type { AgendaToolOutput, RemcoChatMessageMetadata } from "@/lib/types";
 import { getChat, listTurnAssistantTexts, updateChat } from "@/server/chats";
 import { getProfile } from "@/server/profiles";
 import {
@@ -38,10 +38,12 @@ import {
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
 import { routeIntent } from "@/server/intent-router";
+import { routeAgendaCommand } from "@/server/agenda-intent";
 import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { isListIntent } from "@/server/list-intent";
+import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
 
 export const maxDuration = 30;
 
@@ -259,7 +261,14 @@ function shouldRouteIntent(text: string) {
     /\b(weather|forecast|temperature|rain|snow|wind|humidity|degrees|°)\b/.test(
       lower
     );
-  return hasMemoryHint || hasWeatherHint;
+  const hasAgendaHint =
+    /\b(agenda|calendar|schedule|appointment|meeting|afspraak|kalender|plan)\b/.test(
+      lower
+    ) ||
+    /\b(today|tomorrow|this week|this month|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
+      lower
+    );
+  return hasMemoryHint || hasWeatherHint || hasAgendaHint;
 }
 
 function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
@@ -287,6 +296,10 @@ function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
   }
 
   return false;
+}
+
+function isAgendaMutation(action: AgendaActionInput["action"]) {
+  return action !== "list";
 }
 
 function uiTextResponse(input: {
@@ -473,6 +486,111 @@ function uiWeatherForecastResponse(input: {
           toolCallId,
           errorText:
             err instanceof Error ? err.message : "Failed to fetch forecast.",
+        });
+      }
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream });
+}
+
+function toDisplayAgendaToolInput(command: AgendaActionInput) {
+  switch (command.action) {
+    case "create":
+      return {
+        action: "create",
+        description: command.description,
+        date: command.date,
+        time: command.time,
+        duration_minutes: command.durationMinutes,
+        timezone: command.timezone ?? "",
+      };
+    case "update":
+      return {
+        action: "update",
+        item_id: command.itemId ?? "",
+        match: command.match,
+        patch: {
+          description: command.patch.description,
+          date: command.patch.date,
+          time: command.patch.time,
+          duration_minutes: command.patch.durationMinutes,
+          timezone: command.patch.timezone,
+        },
+      };
+    case "delete":
+      return {
+        action: "delete",
+        item_id: command.itemId ?? "",
+        match: command.match,
+      };
+    case "share":
+    case "unshare":
+      return {
+        action: command.action,
+        item_id: command.itemId ?? "",
+        match: command.match,
+        target_profile: command.targetProfile,
+      };
+    case "list":
+      return {
+        action: "list",
+        range: {
+          kind: command.range.kind,
+          days: command.range.kind === "next_n_days" ? command.range.days : undefined,
+          timezone: command.range.timezone,
+          week_start:
+            command.range.kind === "this_week" ? command.range.weekStart : undefined,
+        },
+        include_overlaps: command.includeOverlaps ?? true,
+      };
+    default:
+      return { action: "list", range: { kind: "today" } };
+  }
+}
+
+function uiAgendaResponse(input: {
+  profileId: string;
+  command: AgendaActionInput;
+  messageMetadata?: RemcoChatMessageMetadata;
+}) {
+  const messageId = nanoid();
+  const toolCallId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: async ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({
+        type: "tool-input-available",
+        toolCallId,
+        toolName: "displayAgenda",
+        input: toDisplayAgendaToolInput(input.command),
+      });
+      try {
+        const output: AgendaToolOutput = runAgendaAction(
+          input.profileId,
+          input.command
+        );
+        writer.write({
+          type: "tool-output-available",
+          toolCallId,
+          output,
+        });
+      } catch (err) {
+        writer.write({
+          type: "tool-output-error",
+          toolCallId,
+          errorText:
+            err instanceof Error ? err.message : "Failed to update agenda.",
         });
       }
       writer.write({
@@ -717,6 +835,49 @@ export async function POST(req: Request) {
           });
         }
       }
+      if (routed?.intent === "agenda") {
+        let agendaResult;
+        try {
+          agendaResult = await routeAgendaCommand({ text: lastUserText });
+        } catch (err) {
+          return uiTextResponse({
+            text:
+              err instanceof Error
+                ? err.message
+                : "Agenda intent engine is temporarily unavailable. Please try again.",
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+            },
+          });
+        }
+        if (!agendaResult.ok) {
+          return uiTextResponse({
+            text: agendaResult.error,
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+            },
+          });
+        }
+        if (isAgendaMutation(agendaResult.command.action)) {
+          return uiTextResponse({
+            text: "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+            },
+          });
+        }
+        return uiAgendaResponse({
+          profileId: profile.id,
+          command: agendaResult.command,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+          },
+        });
+      }
     }
 
     try {
@@ -877,6 +1038,7 @@ export async function POST(req: Request) {
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
+            hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
           ],
           tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
@@ -972,6 +1134,7 @@ export async function POST(req: Request) {
               hasToolCall("displayMemoryAnswer"),
               hasToolCall("displayList"),
               hasToolCall("displayListsOverview"),
+              hasToolCall("displayAgenda"),
               stepCountIs(maxSteps),
             ],
             tools,
@@ -1272,6 +1435,59 @@ export async function POST(req: Request) {
         });
       }
     }
+
+    if (routed?.intent === "agenda") {
+      let agendaResult;
+      try {
+        agendaResult = await routeAgendaCommand({ text: lastUserText });
+      } catch (err) {
+        return uiTextResponse({
+          text:
+            err instanceof Error
+              ? err.message
+              : "Agenda intent engine is temporarily unavailable. Please try again.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+      if (!agendaResult.ok) {
+        return uiTextResponse({
+          text: agendaResult.error,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+      if (isAgendaMutation(agendaResult.command.action)) {
+        return uiAgendaResponse({
+          profileId: profile.id,
+          command: agendaResult.command,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+      return uiAgendaResponse({
+        profileId: profile.id,
+        command: agendaResult.command,
+        messageMetadata: {
+          createdAt: now,
+          turnUserMessageId: lastUserMessageId || undefined,
+          profileInstructionsRevision: currentProfileRevision,
+          chatInstructionsRevision: currentChatRevision,
+        },
+      });
+    }
   }
 
   const memoryLines: string[] = [];
@@ -1459,6 +1675,7 @@ export async function POST(req: Request) {
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
+            hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
           ],
           tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
@@ -1619,6 +1836,7 @@ export async function POST(req: Request) {
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
+            hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
           ],
           tools,
