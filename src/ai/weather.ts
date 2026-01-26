@@ -69,42 +69,65 @@ function formatResolvedLocation(result: GeocodingResult): string {
 }
 
 async function geocodeLocation(location: string): Promise<GeocodingResult> {
-  const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  url.searchParams.set("name", location);
-  url.searchParams.set("count", "1");
-  url.searchParams.set("language", "en");
-  url.searchParams.set("format", "json");
+  async function geocodeOnce(query: string): Promise<GeocodingResult | null> {
+    const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    url.searchParams.set("name", query);
+    url.searchParams.set("count", "1");
+    url.searchParams.set("language", "en");
+    url.searchParams.set("format", "json");
 
-  const response = await fetch(url, {
-    headers: { accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Geocoding failed (${response.status}).`);
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`Geocoding failed (${response.status}).`);
+    }
+
+    const json = (await response.json()) as {
+      results?: Array<{
+        name: string;
+        latitude: number;
+        longitude: number;
+        country?: string;
+        admin1?: string;
+      }>;
+    };
+
+    const first = json.results?.[0];
+    if (!first) return null;
+
+    return {
+      name: first.name,
+      latitude: first.latitude,
+      longitude: first.longitude,
+      country: first.country,
+      admin1: first.admin1,
+    };
   }
 
-  const json = (await response.json()) as {
-    results?: Array<{
-      name: string;
-      latitude: number;
-      longitude: number;
-      country?: string;
-      admin1?: string;
-    }>;
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    candidates.push(trimmed);
   };
 
-  const first = json.results?.[0];
-  if (!first) {
-    throw new Error(`No matches for location: "${location}".`);
+  addCandidate(location);
+  if (location.includes(",")) {
+    addCandidate(location.split(",")[0] ?? "");
+  }
+  addCandidate(location.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " "));
+
+  for (const candidate of candidates) {
+    const hit = await geocodeOnce(candidate);
+    if (hit) return hit;
   }
 
-  return {
-    name: first.name,
-    latitude: first.latitude,
-    longitude: first.longitude,
-    country: first.country,
-    admin1: first.admin1,
-  };
+  throw new Error(`No matches for location: "${location}".`);
 }
 
 async function fetchForecast(input: {

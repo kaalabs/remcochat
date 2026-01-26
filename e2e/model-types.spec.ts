@@ -81,7 +81,7 @@ test("Chat works for OpenAI-compatible (chat/completions) model type", async ({ 
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "alpha-glm-4.7",
+      modelId: "glm-4.7",
     });
 
     expect(headers["x-remcochat-model-type"]).toBe("openai_compatible");

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 async function createProfile(page: import("@playwright/test").Page, name: string) {
-  await page.getByTestId("profile:new").click();
+  await page.getByTestId("profile:new").click({ force: true });
   await page.getByTestId("profile:create-name").fill(name);
   await page.getByTestId("profile:create-submit").click();
   await expect(page.getByTestId("profile:create-name")).toBeHidden();

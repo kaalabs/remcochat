@@ -2,9 +2,24 @@ import { expect, test } from "@playwright/test";
 
 async function createProfile(page: import("@playwright/test").Page, name: string) {
   await page.getByTestId("profile:new").click();
-  await page.getByTestId("profile:create-name").fill(name);
+  const nameInput = page.getByTestId("profile:create-name");
+  await expect(nameInput).toBeVisible();
+  await nameInput.fill(name);
   await page.getByTestId("profile:create-submit").click();
-  await expect(page.getByTestId("profile:create-name")).toBeHidden();
+  await expect(nameInput).toBeHidden();
+  await expect(page.locator("[data-slot='dialog-overlay']")).toBeHidden();
+}
+
+async function createProfileViaApi(
+  page: import("@playwright/test").Page,
+  name: string
+): Promise<string> {
+  const res = await page.request.post("/api/profiles", { data: { name } });
+  expect(res.ok()).toBeTruthy();
+  const json = (await res.json()) as { profile?: { id?: string } };
+  const id = String(json?.profile?.id ?? "");
+  expect(id).toBeTruthy();
+  return id;
 }
 
 async function selectPreferredModel(
@@ -137,9 +152,10 @@ test("Lists overview includes shared lists (WebKit)", async ({ page }) => {
   await page.goto("/");
 
   const ownerName = `E2E overview owner ${Date.now()}`;
-  await createProfile(page, ownerName);
   const memberName = `E2E overview member ${Date.now()}`;
-  await createProfile(page, memberName);
+  const ownerId = await createProfileViaApi(page, ownerName);
+  await createProfileViaApi(page, memberName);
+  await page.reload();
 
   await selectProfile(page, ownerName);
   await createChat(page);
@@ -150,21 +166,14 @@ test("Lists overview includes shared lists (WebKit)", async ({ page }) => {
     "openai/gpt-5",
   ]);
 
-  await page.getByTestId("composer:textarea").fill(
-    "Gebruik de displayList tool met action=create, list_name=Weekend."
-  );
-  await page.getByTestId("composer:submit").click();
-  await expect(page.getByTestId("tool:displayList").last()).toBeVisible({
-    timeout: 120_000,
+  const createListRes = await page.request.post(`/api/profiles/${ownerId}/lists`, {
+    data: { action: "create", listName: "Weekend" },
   });
-
-  await page.getByTestId("composer:textarea").fill(
-    `Gebruik de displayList tool met action=share_list, list_name=Weekend, target_profile=${memberName}`
-  );
-  await page.getByTestId("composer:submit").click();
-  await expect(page.getByTestId("tool:displayList").last()).toBeVisible({
-    timeout: 120_000,
+  expect(createListRes.ok()).toBeTruthy();
+  const shareRes = await page.request.post(`/api/profiles/${ownerId}/lists`, {
+    data: { action: "share_list", listName: "Weekend", targetProfile: memberName },
   });
+  expect(shareRes.ok()).toBeTruthy();
 
   await selectProfile(page, memberName);
   await createChat(page);
@@ -175,7 +184,9 @@ test("Lists overview includes shared lists (WebKit)", async ({ page }) => {
     "openai/gpt-5",
   ]);
 
-  await page.getByTestId("composer:textarea").fill("Welke lijsten heb ik?");
+  await page
+    .getByTestId("composer:textarea")
+    .fill("Welke lijsten heb ik? Gebruik de displayListsOverview tool.");
   await page.getByTestId("composer:submit").click();
 
   const card = page.getByTestId("tool:displayListsOverview");

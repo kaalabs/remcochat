@@ -44,7 +44,7 @@ try {
     '  "gpt-5.2",',
     '  "gpt-5.2-codex",',
     '  "claude-opus-4-5",',
-    '  "alpha-glm-4.7",',
+    '  "glm-4.7",',
     "]",
     "",
     "[providers.e2e_vercel]",

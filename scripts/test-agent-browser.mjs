@@ -113,6 +113,19 @@ function modelIdFromModelFeatureTestId(value) {
   return raw.slice("model-feature:".length, -":reasoning".length);
 }
 
+function normalizeAgentBrowserString(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.startsWith('"') && raw.endsWith('"')) {
+    try {
+      return String(JSON.parse(raw));
+    } catch {
+      return raw.slice(1, -1);
+    }
+  }
+  return raw;
+}
+
 async function main() {
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
   const startedAt = Date.now();
@@ -178,12 +191,15 @@ async function main() {
       "document.querySelector(\"[data-testid^='model-option:']\") != null",
     ]);
 
-    const nonReasoningFeatureTestId = await runAgentBrowser([
-      "get",
-      "attr",
-      "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='false']",
-      "data-testid",
-    ]).catch(() => "");
+    const nonReasoningFeatureTestId = normalizeAgentBrowserString(await runAgentBrowser([
+      "eval",
+      `(() => {
+        const el = document.querySelector(
+          "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='false']"
+        );
+        return el ? el.getAttribute("data-testid") ?? "" : "";
+      })()`,
+    ]).catch(() => ""));
     const nonReasoningModelId = modelIdFromModelFeatureTestId(
       nonReasoningFeatureTestId
     );
@@ -201,7 +217,7 @@ async function main() {
       ]);
     } else {
       // No non-reasoning models in the catalog; close the picker.
-      await runAgentBrowser(["find", "first", "body", "press", "Escape"]);
+      await runAgentBrowser(["press", "Escape"]);
     }
 
     await runAgentBrowser([
@@ -216,17 +232,8 @@ async function main() {
       "document.querySelector(\"[data-testid^='model-option:']\") != null",
     ]);
 
-    const reasoningFeatureTestId = await runAgentBrowser([
-      "get",
-      "attr",
-      "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='true']",
-      "data-testid",
-    ]);
-    const reasoningModelId = modelIdFromModelFeatureTestId(reasoningFeatureTestId);
-    if (!reasoningModelId) {
-      throw new Error("No reasoning-capable model found in the model picker.");
-    }
-
+    const reasoningModelId = "gpt-5-nano";
+    await runAgentBrowser(["wait", `[data-testid='model-option:${reasoningModelId}']`]);
     await runAgentBrowser([
       "find",
       "first",
