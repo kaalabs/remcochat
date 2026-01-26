@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { AgendaItem, AgendaToolOutput } from "@/lib/types";
-import { CalendarDays, Users } from "lucide-react";
+import { CalendarDays, Share2, Users } from "lucide-react";
 
 type AgendaCardProps = {
   output: AgendaToolOutput;
@@ -18,9 +18,6 @@ type AgendaCardProps = {
 
 function itemBadgeLabel(item: AgendaItem) {
   if (item.scope === "shared") return "Shared";
-  if (item.sharedWithCount > 0) {
-    return `Shared with ${item.sharedWithCount}`;
-  }
   return "Owned";
 }
 
@@ -159,12 +156,22 @@ export function AgendaCard({ output }: AgendaCardProps) {
                             </div>
                           ) : null}
                         </div>
-                        {item.scope === "shared" && item.ownerProfileName ? (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Users className="size-3.5" />
-                            <span className="truncate">{item.ownerProfileName}</span>
-                          </div>
-                        ) : null}
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {item.scope === "shared" && item.ownerProfileName ? (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Users className="size-3.5" />
+                              <span className="max-w-[140px] truncate">
+                                {item.ownerProfileName}
+                              </span>
+                            </div>
+                          ) : null}
+                          {item.sharedWithCount > 0 ? (
+                            <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/50 px-2 py-0.5 text-[11px] text-muted-foreground">
+                              <Share2 className="size-3.5" />
+                              <span>{item.sharedWithCount}</span>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   );
