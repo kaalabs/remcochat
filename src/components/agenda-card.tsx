@@ -35,21 +35,22 @@ function formatTimeLabel(date: Date) {
   }).format(date);
 }
 
-function formatRangeLine(startAt: string, endAt: string) {
+function formatTimeRangeLine(startAt: string, endAt: string) {
   const start = new Date(startAt);
   const end = new Date(endAt);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
 
-  const startDay = formatDayLabel(start);
-  const endDay = formatDayLabel(end);
   const startTime = formatTimeLabel(start);
   const endTime = formatTimeLabel(end);
 
-  if (startDay === endDay) {
-    return `${startDay} from ${startTime} to ${endTime}`;
-  }
+  // Date is already shown in the day header. Keep this line time-only.
+  const sameDay = start.toISOString().slice(0, 10) === end.toISOString().slice(0, 10);
+  if (sameDay) return `${startTime}–${endTime}`;
 
-  return `${startDay} ${startTime} to ${endDay} ${endTime}`;
+  // Cross-day items are rare; include just weekday labels to reduce ambiguity.
+  const startWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(start);
+  const endWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(end);
+  return `${startWeekday} ${startTime}–${endWeekday} ${endTime}`;
 }
 
 function groupItemsByDay(items: AgendaItem[]) {
@@ -126,7 +127,7 @@ export function AgendaCard({ output }: AgendaCardProps) {
               </div>
               <div className="grid gap-2">
                 {group.items.map((item) => {
-                  const line = formatRangeLine(item.startAt, item.endAt);
+                  const line = formatTimeRangeLine(item.startAt, item.endAt);
                   const scopeLabel = item.scope === "shared" ? "Shared" : "Owned";
                   const ScopeIcon = item.scope === "shared" ? Users : User;
                   return (
