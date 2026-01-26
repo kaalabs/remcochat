@@ -16,15 +16,6 @@ type AgendaCardProps = {
   output: AgendaToolOutput;
 };
 
-function formatDuration(minutes: number) {
-  const total = Math.max(0, Math.floor(Number(minutes)));
-  if (total < 60) return `${total} min`;
-  const hours = Math.floor(total / 60);
-  const mins = total % 60;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
-}
-
 function itemBadgeLabel(item: AgendaItem) {
   if (item.scope === "shared") return "Shared";
   if (item.sharedWithCount > 0) {
@@ -33,11 +24,56 @@ function itemBadgeLabel(item: AgendaItem) {
   return "Owned";
 }
 
-function formatItemTimes(item: AgendaItem) {
-  return {
-    local: `${item.localDate} ${item.localTime} (${item.timezone})`,
-    viewer: `${item.viewerLocalDate} ${item.viewerLocalTime}`,
-  };
+function formatDayLabel(date: Date) {
+  // e.g. "Monday 12 September 2026" (uses viewer locale + timezone).
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatTimeLabel(date: Date) {
+  // e.g. "12:15" (uses viewer locale + timezone).
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatRangeLine(startAt: string, endAt: string) {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+
+  const startDay = formatDayLabel(start);
+  const endDay = formatDayLabel(end);
+  const startTime = formatTimeLabel(start);
+  const endTime = formatTimeLabel(end);
+
+  if (startDay === endDay) {
+    return `${startDay} from ${startTime} to ${endTime}`;
+  }
+
+  return `${startDay} ${startTime} to ${endDay} ${endTime}`;
+}
+
+function groupItemsByDay(items: AgendaItem[]) {
+  const groups = new Map<string, { key: string; label: string; items: AgendaItem[] }>();
+  for (const item of items) {
+    const start = new Date(item.startAt);
+    const key = Number.isNaN(start.getTime()) ? item.startAt : start.toISOString().slice(0, 10);
+    const label = Number.isNaN(start.getTime()) ? "Scheduled" : formatDayLabel(start);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groups.set(key, { key, label, items: [item] });
+    }
+  }
+  return [...groups.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function normalizeItems(output: AgendaToolOutput) {
@@ -50,6 +86,7 @@ function normalizeItems(output: AgendaToolOutput) {
 
 export function AgendaCard({ output }: AgendaCardProps) {
   const items = normalizeItems(output);
+  const dayGroups = groupItemsByDay(items);
   const isList = output.ok && output.action === "list";
   const headerNote = output.ok
     ? isList
@@ -90,45 +127,55 @@ export function AgendaCard({ output }: AgendaCardProps) {
                 : "No matching agenda items found."}
           </div>
         ) : (
-          items.map((item) => {
-            const times = formatItemTimes(item);
-            return (
-              <div
-                className="grid gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm"
-                key={item.id}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Badge className="px-1.5 py-0 text-[10px]" variant="outline">
-                        {itemBadgeLabel(item)}
-                      </Badge>
-                      <span className="truncate font-semibold">
-                        {item.description}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Duration: {formatDuration(item.durationMinutes)}
-                    </div>
-                  </div>
-                  {item.scope === "shared" && item.ownerProfileName ? (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Users className="size-3.5" />
-                      <span className="truncate">{item.ownerProfileName}</span>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="grid gap-1 text-xs text-muted-foreground">
-                  <div>Local: {times.local}</div>
-                  <div>Viewer: {times.viewer}</div>
-                </div>
+          dayGroups.map((group) => (
+            <div className="grid gap-2" key={group.key}>
+              <div className="px-1 text-xs font-semibold text-emerald-900/70 dark:text-emerald-100/70">
+                {group.label}
               </div>
-            );
-          })
+              <div className="grid gap-2">
+                {group.items.map((item) => {
+                  const line = formatRangeLine(item.startAt, item.endAt);
+                  return (
+                    <div
+                      className="group grid gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm transition hover:bg-background/75"
+                      key={item.id}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              className="px-1.5 py-0 text-[10px]"
+                              variant="outline"
+                            >
+                              {itemBadgeLabel(item)}
+                            </Badge>
+                            <span className="min-w-0 truncate font-semibold">
+                              {item.description}
+                            </span>
+                          </div>
+                          {line ? (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {line}
+                            </div>
+                          ) : null}
+                        </div>
+                        {item.scope === "shared" && item.ownerProfileName ? (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Users className="size-3.5" />
+                            <span className="truncate">{item.ownerProfileName}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
         )}
       </CardContent>
       <CardFooter className="border-t border-border/60 pt-4 text-xs text-muted-foreground">
-        Ask to add, update, share, or list agenda items.
+        Tip: ask “show my agenda”, “this week”, or “next 30 days”.
       </CardFooter>
     </Card>
   );
