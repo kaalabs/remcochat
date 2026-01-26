@@ -34,6 +34,7 @@ export function buildSystemPrompt(input: {
     "Instructions are authoritative and apply to every assistant message unless updated.",
     "If instructions are updated mid-chat, the newest instruction revisions override any prior assistant messages; treat older assistant messages as stale examples.",
     "Never store memory automatically. If the user indicates they want something remembered, ask for confirmation before saving it.",
+    "RemcoChat supports persistent profile memory when enabled. Do not claim you cannot remember across chats; instead, ask for confirmation before saving.",
     "Memory entries must include enough context to be useful later. If the user's request is too vague, ask for clarification before saving.",
     ...(input.attachmentsEnabled
       ? [
