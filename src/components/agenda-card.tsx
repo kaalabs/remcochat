@@ -143,7 +143,7 @@ export function AgendaCard({ output }: AgendaCardProps) {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="min-w-0 truncate font-semibold">
+                          <div className="min-w-0 whitespace-normal break-words font-semibold">
                             {item.description}
                           </div>
                           {line ? (
