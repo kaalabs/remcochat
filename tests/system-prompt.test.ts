@@ -183,3 +183,21 @@ test("memory enabled is true even when there are no memory lines", () => {
   assert.match(prompt, /Memory \(lowest priority; enabled=true\)/);
   assert.match(prompt, /<memory enabled=\"true\">/);
 });
+
+test("includes memory prompt tool guidance when tools and memory are enabled", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryEnabled: true,
+    memoryLines: [],
+    isTemporary: false,
+    toolsEnabled: true,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+  });
+
+  assert.match(prompt, /displayMemoryPrompt/);
+});

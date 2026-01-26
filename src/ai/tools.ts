@@ -6,6 +6,7 @@ import { getUrlSummary } from "@/ai/url-summary";
 import { listProfileListOverviews, runListAction } from "@/server/lists";
 import { runNoteAction } from "@/server/notes";
 import { runAgendaAction } from "@/server/agenda";
+import { upsertPendingMemory } from "@/server/pending-memory";
 
 export const displayWeather = createTool({
   description:
@@ -103,15 +104,50 @@ function createUrlSummaryTool(options: {
 }
 
 export function createTools(input: {
+  chatId?: string;
   profileId: string;
+  memoryEnabled?: boolean;
+  isTemporary?: boolean;
   summaryModel?: LanguageModel;
   summarySupportsTemperature?: boolean;
   viewerTimeZone?: string;
 }) {
+  const memoryEnabled = Boolean(input.memoryEnabled);
+  const isTemporary = Boolean(input.isTemporary);
+
   const displayUrlSummary = createUrlSummaryTool({
     model: input.summaryModel,
     supportsTemperature: input.summarySupportsTemperature,
   });
+
+  const displayMemoryPrompt = createTool({
+    description:
+      "Ask the user to confirm saving a memory. This tool does not save automatically; it prepares a pending memory item and shows a confirmation card.",
+    inputSchema: z.object({
+      content: z
+        .string()
+        .describe("A self-contained memory candidate to propose saving."),
+    }),
+    execute: async ({ content }) => {
+      if (isTemporary) {
+        throw new Error("Temporary chats do not support memory saves.");
+      }
+      if (!memoryEnabled) {
+        throw new Error("Memory is currently off for this profile.");
+      }
+      const chatId = String(input.chatId ?? "").trim();
+      if (!chatId) {
+        throw new Error("Missing chat id for pending memory.");
+      }
+      const pending = upsertPendingMemory({
+        chatId,
+        profileId: input.profileId,
+        content,
+      });
+      return { content: pending.content };
+    },
+  });
+
   const displayNotes = createTool({
     description: "Create, delete, or show quick notes for the active profile.",
     inputSchema: z.object({
@@ -378,6 +414,7 @@ export function createTools(input: {
   return {
     displayWeather,
     displayWeatherForecast,
+    displayMemoryPrompt,
     displayMemoryAnswer,
     displayTimezones,
     displayUrlSummary,

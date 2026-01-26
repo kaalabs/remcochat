@@ -2291,6 +2291,11 @@ export function HomeClient({
                     const hasMemoryAnswerCard =
                       role === "assistant" &&
                       parts.some((p) => p.type === "tool-displayMemoryAnswer");
+                    const hasMemoryPromptCard =
+                      role === "assistant" &&
+                      parts.some((p) => p.type === "tool-displayMemoryPrompt");
+                    const suppressAssistantText =
+                      hasMemoryAnswerCard || hasMemoryPromptCard;
 
                     const turnUserMessageId =
                       role === "assistant"
@@ -2394,7 +2399,7 @@ export function HomeClient({
                             }
 
                             if (part.type === "text") {
-                              if (hasMemoryAnswerCard) return null;
+                              if (suppressAssistantText) return null;
                               return (
                                 <MessageResponse
                                   className="prose-neutral dark:prose-invert"
@@ -2406,7 +2411,7 @@ export function HomeClient({
                             }
 
                             if (part.type === "reasoning") {
-                              if (hasMemoryAnswerCard) return null;
+                              if (suppressAssistantText) return null;
                               const text = typeof part.text === "string" ? part.text : "";
                               if (!text.trim()) return null;
 

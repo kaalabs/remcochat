@@ -34,7 +34,8 @@ export function buildSystemPrompt(input: {
     "When Chat instructions are present, treat them as the definitive behavior constraints for this chat; apply Profile instructions only where they do not conflict.",
     "Instructions are authoritative and apply to every assistant message unless updated.",
     "If instructions are updated mid-chat, the newest instruction revisions override any prior assistant messages; treat older assistant messages as stale examples.",
-    "Never store memory automatically. If the user indicates they want something remembered, ask for confirmation before saving it.",
+    "Users may speak in any language. Follow requests based on meaning, not keyword matching.",
+    "Never store memory automatically. If the user explicitly asks to remember/save something, require confirmation before saving it.",
     "RemcoChat supports persistent profile memory when enabled. Do not claim you cannot remember across chats; instead, ask for confirmation before saving.",
     "Memory entries must include enough context to be useful later. If the user's request is too vague, ask for clarification before saving.",
     ...(input.attachmentsEnabled
@@ -45,6 +46,15 @@ export function buildSystemPrompt(input: {
       : []),
     ...(input.toolsEnabled
       ? [
+          ...(input.memoryEnabled && !input.isTemporary
+            ? [
+                [
+                  'If the user explicitly asks to remember/save/store something to profile memory, you MUST call the "displayMemoryPrompt" tool with a self-contained memory candidate (omit the command phrase) and DO NOT output any other text.',
+                  "The memory will only be saved if the user confirms; do not assume it was saved unless you later see confirmation.",
+                  "Do not use memory saving for quick notes; use the notes tool for that.",
+                ].join(" "),
+              ]
+            : []),
           'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
           'If the user asks about current weather for a location, you MUST call the "displayWeather" tool and DO NOT output any other text.',
           'If the user asks for a multi-day forecast for a location, you MUST call the "displayWeatherForecast" tool and DO NOT output any other text.',

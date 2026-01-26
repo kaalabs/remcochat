@@ -41,6 +41,7 @@ const IntentSchema = z.object({
 const ROUTER_PROMPT = [
   "You are RemcoChat's intent router. Classify ONLY the latest user message.",
   "You may be given brief context about the prior assistant response or tool usage; use it only to interpret follow-up commands.",
+  "The user message may be in any language. Classify based on meaning, not keyword matching.",
   "Choose one intent: none | memory_add | weather_current | weather_forecast | agenda.",
   "Only set intent when you are confident; otherwise choose none.",
   "If the user explicitly asks to memorize/remember/save/store something in memory, choose intent=memory_add and extract the memory_candidate (omit the command phrase). Set confidence high (>=0.85) for clear memory requests.",
@@ -59,6 +60,8 @@ const ROUTER_PROMPT = [
   '- "memorize my timezone is Europe/Amsterdam" -> memory_add',
   '- "remember this: my timezone is Europe/Amsterdam" -> memory_add',
   '- "remember this: my passport number is ..." -> memory_add',
+  '- "onthoud dit: mijn tijdzone is Europe/Amsterdam" -> memory_add',
+  '- "wat is het weer in amsterdam?" -> weather_current',
   '- "note this: buy milk" -> none',
   '- "weather in amsterdam" -> weather_current',
   "Return JSON only.",

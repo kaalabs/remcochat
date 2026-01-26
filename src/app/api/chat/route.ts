@@ -39,6 +39,7 @@ import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
 import { routeIntent } from "@/server/intent-router";
 import { routeAgendaCommand } from "@/server/agenda-intent";
+import { parseMemoryAddCommand, parseMemorizeDecision } from "@/server/memory-commands";
 import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
@@ -71,6 +72,21 @@ function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
     .trim();
 }
 
+function previousUserMessageText(
+  messages: UIMessage<RemcoChatMessageMetadata>[],
+  currentUserMessageId: string
+) {
+  if (!currentUserMessageId) return "";
+  const index = messages.findIndex((m) => m.id === currentUserMessageId);
+  if (index <= 0) return "";
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "user") continue;
+    return messageText(msg);
+  }
+  return "";
+}
+
 function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
   if (lastUserIndex <= 0) return {};
@@ -96,55 +112,6 @@ function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   }
 
   return {};
-}
-
-function parseMemorizeDecision(text: string) {
-  const normalized = text
-    .trim()
-    .toLowerCase()
-    .replace(/[.!?,]/g, "")
-    .replace(/['"]/g, "")
-    .replace(/\s+/g, " ");
-  if (!normalized) return null;
-
-  const confirm = new Set([
-    "confirm",
-    "confirm memory",
-    "confirm memorize",
-    "confirm memorization",
-    "confirm save",
-    "confirm it",
-    "yes",
-    "yes please",
-    "ok",
-    "okay",
-    "sure",
-    "save it",
-    "save this",
-    "please save",
-  ]);
-
-  const cancel = new Set([
-    "cancel",
-    "cancel memory",
-    "cancel memorize",
-    "cancel memorization",
-    "cancel save",
-    "cancel it",
-    "no",
-    "no thanks",
-    "dont save",
-    "do not save",
-    "nope",
-    "stop",
-    "skip",
-  ]);
-
-  if (confirm.has(normalized)) return "confirm";
-  if (cancel.has(normalized)) return "cancel";
-  if (normalized.startsWith("confirm ")) return "confirm";
-  if (normalized.startsWith("cancel ")) return "cancel";
-  return null;
 }
 
 function getEffectiveReasoning(input: {
@@ -226,26 +193,41 @@ function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
   if (!text) return false;
   if (!Array.isArray(memoryLines) || memoryLines.length === 0) return false;
 
-  const looksPersonal = /\b(my|mine|me|i|we|our|us)\b/.test(text);
-  if (!looksPersonal) return false;
+  const explicitlyRequestsMemory =
+    /\b(profile memory|from memory|in memory|do you remember|did i tell you|what do you remember)\b/.test(
+      text
+    ) || /\bmemory\b/.test(text);
 
-  const queryTokens = new Set(
-    (text.match(/[a-z0-9]+/g) ?? []).filter((token) => token.length >= 4)
-  );
+  const rawTokens = text.match(/[a-z0-9]+/g) ?? [];
+  const queryTokens = new Set(rawTokens.filter((token) => token.length >= 4));
+  for (let i = 0; i + 1 < rawTokens.length; i += 1) {
+    const a = rawTokens[i];
+    const b = rawTokens[i + 1];
+    if (!a || !b) continue;
+    if (a.length < 3 || b.length < 3) continue;
+    queryTokens.add(`${a}${b}`);
+  }
   if (queryTokens.size === 0) return false;
 
   for (const line of memoryLines) {
-    const lineTokens = (
+    const lineRawTokens =
       String(line ?? "")
         .toLowerCase()
-        .match(/[a-z0-9]+/g) ?? []
-    ).filter((token) => token.length >= 4);
+        .match(/[a-z0-9]+/g) ?? [];
+    const lineTokens = lineRawTokens.filter((token) => token.length >= 4);
     for (const token of lineTokens) {
       if (queryTokens.has(token)) return true;
     }
+    for (let i = 0; i + 1 < lineRawTokens.length; i += 1) {
+      const a = lineRawTokens[i];
+      const b = lineRawTokens[i + 1];
+      if (!a || !b) continue;
+      if (a.length < 3 || b.length < 3) continue;
+      if (queryTokens.has(`${a}${b}`)) return true;
+    }
   }
 
-  return false;
+  return explicitlyRequestsMemory;
 }
 
 function isAgendaMutation(action: AgendaActionInput["action"]) {
@@ -693,9 +675,8 @@ export async function POST(req: Request) {
     : "";
 
   const memorizeDecision = parseMemorizeDecision(lastUserText);
-  const canRouteIntent =
-    !isRegenerate &&
-    memorizeDecision == null;
+  const directMemoryCandidate = parseMemoryAddCommand(lastUserText);
+  const canRouteIntent = !isRegenerate && memorizeDecision == null;
   const routerContext = lastAssistantContext(body.messages);
 
   const needsViewerTimeZoneForAgenda = (command: AgendaActionInput) => {
@@ -740,6 +721,16 @@ export async function POST(req: Request) {
     };
 
     if (canRouteIntent) {
+      if (directMemoryCandidate) {
+        return uiTextResponse({
+          text: "Temporary chats do not save memory. Turn off Temp, then ask me to remember something and confirm when asked.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+          },
+        });
+      }
+
       let routed: Awaited<ReturnType<typeof routeIntent>>;
       try {
         routed = await routeIntent({ text: lastUserText, context: routerContext });
@@ -933,6 +924,8 @@ export async function POST(req: Request) {
 
     const chatTools = createTools({
       profileId: profile.id,
+      isTemporary: true,
+      memoryEnabled: false,
       summaryModel: resolved.model,
       summarySupportsTemperature:
         resolved.capabilities.temperature && !resolved.capabilities.reasoning,
@@ -1020,6 +1013,7 @@ export async function POST(req: Request) {
             hasToolCall("displayTimezones"),
             hasToolCall("displayUrlSummary"),
             hasToolCall("displayNotes"),
+            hasToolCall("displayMemoryPrompt"),
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
@@ -1228,7 +1222,145 @@ export async function POST(req: Request) {
     }
   }
 
+  if (!pendingMemory && memorizeDecision) {
+    const previousUserText = previousUserMessageText(
+      body.messages,
+      lastUserMessageId
+    );
+    const previousCandidate = parseMemoryAddCommand(previousUserText);
+    if (previousCandidate) {
+      if (memorizeDecision === "cancel") {
+        return uiTextResponse({
+          text: "Okay, I won't save that.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+
+      if (!profile.memoryEnabled) {
+        return uiTextResponse({
+          text: "Memory is currently off for this profile. Enable it in Profile Settings, then try again.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+
+      if (needsMemoryContext(previousCandidate)) {
+        return uiTextResponse({
+          text:
+            "I need a bit more context to store this memory. Please restate it as a short sentence (who/what/why), then ask me to remember it again.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+
+      try {
+        createMemoryItem({
+          profileId: profile.id,
+          content: previousCandidate,
+        });
+        return uiMemoryAnswerResponse({
+          answer: "Saved to memory.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      } catch (err) {
+        return uiTextResponse({
+          text:
+            err instanceof Error ? err.message : "Failed to save memory item.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+    }
+
+    return uiTextResponse({
+      text: "I don't have anything pending to confirm. Ask me to remember something first, then confirm when prompted.",
+      messageMetadata: {
+        createdAt: now,
+        turnUserMessageId: lastUserMessageId || undefined,
+        profileInstructionsRevision: currentProfileRevision,
+        chatInstructionsRevision: currentChatRevision,
+      },
+    });
+  }
+
   if (canRouteIntent) {
+    if (directMemoryCandidate) {
+      if (!profile.memoryEnabled) {
+        return uiTextResponse({
+          text: "Memory is currently off for this profile. Enable it in Profile Settings, then try again.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+      if (needsMemoryContext(directMemoryCandidate)) {
+        return uiTextResponse({
+          text:
+            "I need a bit more context to store this memory. Please add a short sentence (who/what/why) so it will be useful later.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+      try {
+        const pending = upsertPendingMemory({
+          chatId: effectiveChat.id,
+          profileId: profile.id,
+          content: directMemoryCandidate,
+        });
+        return uiMemoryPromptResponse({
+          content: pending.content,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      } catch (err) {
+        return uiTextResponse({
+          text:
+            err instanceof Error
+              ? err.message
+              : "Failed to prepare memory confirmation.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
+    }
+
     let routed: Awaited<ReturnType<typeof routeIntent>>;
     try {
       routed = await routeIntent({ text: lastUserText, context: routerContext });
@@ -1559,7 +1691,10 @@ export async function POST(req: Request) {
   }
 
   const chatTools = createTools({
+    chatId: effectiveChat.id,
     profileId: profile.id,
+    isTemporary: false,
+    memoryEnabled: profile.memoryEnabled,
     summaryModel: resolved.model,
     summarySupportsTemperature:
       resolved.capabilities.temperature && !resolved.capabilities.reasoning,
@@ -1596,6 +1731,7 @@ export async function POST(req: Request) {
             hasToolCall("displayTimezones"),
             hasToolCall("displayUrlSummary"),
             hasToolCall("displayNotes"),
+            hasToolCall("displayMemoryPrompt"),
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
