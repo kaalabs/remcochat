@@ -3302,7 +3302,7 @@ export function HomeClient({
 	                />
                 </div>
 
-                <div className="mt-2 flex basis-full items-center justify-between gap-2 border-t px-2 pt-2">
+                <div className="mt-2 flex basis-full items-center justify-between gap-2 border-t px-2 pt-2 pb-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <PromptInputActionMenu>
                       <PromptInputActionMenuTrigger
