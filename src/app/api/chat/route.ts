@@ -246,31 +246,6 @@ function needsMemoryContext(content: string) {
   return /^[A-Za-z][A-Za-z'-]*$/.test(stripped);
 }
 
-function shouldRouteIntent(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  const lower = trimmed.toLowerCase();
-  if (isNotesIntent(lower)) return false;
-  if (isListIntent(lower)) return false;
-  const hasQuestion = trimmed.includes("?");
-  const hasMemoryHint =
-    /\b(remember|save|store|memorize|keep in mind|add to memory|put in memory)\b/.test(
-      lower
-    );
-  const hasWeatherHint =
-    /\b(weather|forecast|temperature|rain|snow|wind|humidity|degrees|°)\b/.test(
-      lower
-    );
-  const hasAgendaHint =
-    /\b(agenda|calendar|schedule|appointment|meeting|afspraak|kalender|plan)\b/.test(
-      lower
-    ) ||
-    /\b(today|tomorrow|this week|this month|next week|coming week|volgende week|komende week|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
-      lower
-    );
-  return hasMemoryHint || hasWeatherHint || hasAgendaHint;
-}
-
 function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
   const text = String(userText ?? "").trim().toLowerCase();
   if (!text) return false;
@@ -749,7 +724,6 @@ export async function POST(req: Request) {
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const canRouteIntent =
     !isRegenerate &&
-    shouldRouteIntent(lastUserText) &&
     memorizeContent == null &&
     memorizeDecision == null;
 
