@@ -557,6 +557,7 @@ function toDisplayAgendaToolInput(command: AgendaActionInput) {
 function uiAgendaResponse(input: {
   profileId: string;
   command: AgendaActionInput;
+  viewerTimeZone?: string;
   messageMetadata?: RemcoChatMessageMetadata;
 }) {
   const messageId = nanoid();
@@ -578,7 +579,8 @@ function uiAgendaResponse(input: {
       try {
         const output: AgendaToolOutput = runAgendaAction(
           input.profileId,
-          input.command
+          input.command,
+          { viewerTimeZone: input.viewerTimeZone }
         );
         writer.write({
           type: "tool-output-available",
@@ -606,6 +608,15 @@ function uiAgendaResponse(input: {
 
 function hash8(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
+}
+
+function isValidTimeZone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const WEB_TOOL_NAMES = new Set([
@@ -707,6 +718,13 @@ export async function POST(req: Request) {
   const body = (await req.json()) as ChatRequestBody;
   const isRegenerate = Boolean(body.regenerate);
   const config = getConfig();
+  const viewerTimeZoneHeader = String(
+    req.headers.get("x-remcochat-viewer-timezone") ?? ""
+  ).trim();
+  const viewerTimeZone =
+    viewerTimeZoneHeader && isValidTimeZone(viewerTimeZoneHeader)
+      ? viewerTimeZoneHeader
+      : undefined;
 
   if (!body.profileId) {
     return Response.json({ error: "Missing profileId." }, { status: 400 });
@@ -734,6 +752,32 @@ export async function POST(req: Request) {
     shouldRouteIntent(lastUserText) &&
     memorizeContent == null &&
     memorizeDecision == null;
+
+  const needsViewerTimeZoneForAgenda = (command: AgendaActionInput) => {
+    if (viewerTimeZone) return false;
+    switch (command.action) {
+      case "create":
+        return !command.timezone;
+      case "list":
+        return !command.range.timezone;
+      case "update":
+        return (
+          !command.patch.timezone &&
+          Boolean(
+            command.match?.date ||
+              command.match?.time ||
+              command.patch.date ||
+              command.patch.time
+          )
+        );
+      case "delete":
+      case "share":
+      case "unshare":
+        return Boolean(command.match?.date || command.match?.time);
+      default:
+        return true;
+    }
+  };
 
   if (isTemporary) {
     const candidateModelId =
@@ -860,6 +904,16 @@ export async function POST(req: Request) {
             },
           });
         }
+        if (needsViewerTimeZoneForAgenda(agendaResult.command)) {
+          return uiTextResponse({
+            text:
+              "I couldn't determine your timezone. Tell me your timezone (example: Europe/Amsterdam) or include it in your request, then try again.",
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+            },
+          });
+        }
         if (isAgendaMutation(agendaResult.command.action)) {
           return uiTextResponse({
             text: "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
@@ -872,6 +926,7 @@ export async function POST(req: Request) {
         return uiAgendaResponse({
           profileId: profile.id,
           command: agendaResult.command,
+          viewerTimeZone,
           messageMetadata: {
             createdAt: now,
             turnUserMessageId: lastUserMessageId || undefined,
@@ -952,6 +1007,7 @@ export async function POST(req: Request) {
       summaryModel: resolved.model,
       summarySupportsTemperature:
         resolved.capabilities.temperature && !resolved.capabilities.reasoning,
+      viewerTimeZone,
     });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
@@ -1465,10 +1521,23 @@ export async function POST(req: Request) {
           },
         });
       }
+      if (needsViewerTimeZoneForAgenda(agendaResult.command)) {
+        return uiTextResponse({
+          text:
+            "I couldn't determine your timezone. Tell me your timezone (example: Europe/Amsterdam) or include it in your request, then try again.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      }
       if (isAgendaMutation(agendaResult.command.action)) {
         return uiAgendaResponse({
           profileId: profile.id,
           command: agendaResult.command,
+          viewerTimeZone,
           messageMetadata: {
             createdAt: now,
             turnUserMessageId: lastUserMessageId || undefined,
@@ -1480,6 +1549,7 @@ export async function POST(req: Request) {
       return uiAgendaResponse({
         profileId: profile.id,
         command: agendaResult.command,
+        viewerTimeZone,
         messageMetadata: {
           createdAt: now,
           turnUserMessageId: lastUserMessageId || undefined,
@@ -1640,6 +1710,7 @@ export async function POST(req: Request) {
     summaryModel: resolved.model,
     summarySupportsTemperature:
       resolved.capabilities.temperature && !resolved.capabilities.reasoning,
+    viewerTimeZone,
   });
   const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
   const providerOptions = createProviderOptionsForWebTools({

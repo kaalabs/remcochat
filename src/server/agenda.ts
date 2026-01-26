@@ -270,8 +270,8 @@ function getRangeLabel(range: AgendaRange) {
   }
 }
 
-function computeRange(range: AgendaRange) {
-  const timeZone = resolveTimeZone(range.timezone);
+function computeRange(range: AgendaRange, fallbackTimeZone?: string) {
+  const timeZone = resolveTimeZone(range.timezone || fallbackTimeZone);
   const today = getDatePartsInZone(new Date(), timeZone);
   let startDate = today;
   let endDate = today;
@@ -791,9 +791,10 @@ function buildCandidatesOutput(
 
 export function runAgendaAction(
   profileId: string,
-  input: AgendaActionInput
+  input: AgendaActionInput,
+  options?: { viewerTimeZone?: string }
 ): AgendaToolOutput {
-  const viewerZone = getSystemTimeZone();
+  const viewerZone = resolveTimeZone(options?.viewerTimeZone);
 
   switch (input.action) {
     case "create": {
@@ -803,7 +804,7 @@ export function runAgendaAction(
         date: input.date,
         time: input.time,
         durationMinutes: input.durationMinutes,
-        timezone: input.timezone,
+        timezone: input.timezone ?? viewerZone,
       });
       const item = rowToAgendaItem(row, viewerZone);
       return {
@@ -818,7 +819,7 @@ export function runAgendaAction(
         profileId,
         itemId: input.itemId,
         match: input.match,
-        timeZone: input.patch?.timezone,
+        timeZone: input.patch?.timezone ?? viewerZone,
       });
       if (!resolved.item) {
         if (resolved.candidates.length > 1) {
@@ -844,6 +845,7 @@ export function runAgendaAction(
         profileId,
         itemId: input.itemId,
         match: input.match,
+        timeZone: viewerZone,
       });
       if (!resolved.item) {
         if (resolved.candidates.length > 1) {
@@ -866,6 +868,7 @@ export function runAgendaAction(
         profileId,
         itemId: input.itemId,
         match: input.match,
+        timeZone: viewerZone,
       });
       if (!resolved.item) {
         if (resolved.candidates.length > 1) {
@@ -901,7 +904,7 @@ export function runAgendaAction(
       };
     }
     case "list": {
-      const range = computeRange(input.range);
+      const range = computeRange(input.range, viewerZone);
       const rows = listAgendaRows({
         profileId,
         rangeStartUtc: range.startUtc,

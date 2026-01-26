@@ -106,6 +106,7 @@ export function createTools(input: {
   profileId: string;
   summaryModel?: LanguageModel;
   summarySupportsTemperature?: boolean;
+  viewerTimeZone?: string;
 }) {
   const displayUrlSummary = createUrlSummaryTool({
     model: input.summaryModel,
@@ -316,7 +317,7 @@ export function createTools(input: {
           time: inputData.time,
           durationMinutes: Number(inputData.duration_minutes ?? 0),
           timezone: inputData.timezone,
-        });
+        }, { viewerTimeZone: input.viewerTimeZone });
       }
       if (action === "update") {
         return runAgendaAction(input.profileId, {
@@ -330,14 +331,14 @@ export function createTools(input: {
             durationMinutes: inputData.patch?.duration_minutes,
             timezone: inputData.patch?.timezone,
           },
-        });
+        }, { viewerTimeZone: input.viewerTimeZone });
       }
       if (action === "delete") {
         return runAgendaAction(input.profileId, {
           action,
           itemId: inputData.item_id || undefined,
           match: inputData.match,
-        });
+        }, { viewerTimeZone: input.viewerTimeZone });
       }
       if (action === "share" || action === "unshare") {
         return runAgendaAction(input.profileId, {
@@ -345,7 +346,7 @@ export function createTools(input: {
           itemId: inputData.item_id || undefined,
           match: inputData.match,
           targetProfile: inputData.target_profile,
-        });
+        }, { viewerTimeZone: input.viewerTimeZone });
       }
       if (action === "list") {
         if (!inputData.range) {
@@ -368,7 +369,7 @@ export function createTools(input: {
           action,
           range,
           includeOverlaps: inputData.include_overlaps,
-        });
+        }, { viewerTimeZone: input.viewerTimeZone });
       }
       throw new Error("Unsupported agenda action.");
     },

@@ -346,6 +346,8 @@ export function HomeClient({
       fetch: instrumentedChatFetch,
       headers: () => {
         const headers: Record<string, string> = {};
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) headers["x-remcochat-viewer-timezone"] = tz;
         if (!bashToolsLanAccessEnabled) return headers;
         const token = readLanAdminToken();
         if (token) headers["x-remcochat-admin-token"] = token;
