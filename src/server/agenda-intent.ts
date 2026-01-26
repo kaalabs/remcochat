@@ -97,14 +97,6 @@ export async function routeAgendaCommand(input: {
   if (!text) return { ok: false, error: "Missing agenda request." };
 
   const clipped = text.slice(0, router.maxInputChars);
-  const lower = clipped.toLowerCase();
-  const hasExplicitListWindow =
-    /\b(today|tomorrow|this week|this month|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
-      lower
-    ) ||
-    /\b(vandaag|morgen|deze week|deze maand|komende\s+\d+\s+dagen|volgende\s+\d+\s+dagen)\b/.test(
-      lower
-    );
   let resolved;
   try {
     resolved = await getLanguageModelForProvider(
@@ -164,16 +156,8 @@ export async function routeAgendaCommand(input: {
   }
 
   if (action === "list") {
-    // Be forgiving: if no range is provided, default to upcoming items.
-    const shouldDefaultUpcoming =
-      !hasExplicitListWindow &&
-      /\b(agenda|calendar|schedule|afspraak|afspraken|kalender|planning)\b/.test(
-        lower
-      );
     const rawRange: z.infer<typeof AgendaRangeSchema> =
-      object.range && !shouldDefaultUpcoming
-        ? object.range
-        : ({ kind: "next_n_days", days: 30 } as const);
+      object.range ?? ({ kind: "next_n_days", days: 30 } as const);
     if (
       rawRange.kind === "next_n_days" &&
       !Number.isFinite(rawRange.days ?? NaN)

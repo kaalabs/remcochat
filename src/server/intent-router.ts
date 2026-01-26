@@ -40,6 +40,7 @@ const IntentSchema = z.object({
 
 const ROUTER_PROMPT = [
   "You are RemcoChat's intent router. Classify ONLY the latest user message.",
+  "You may be given brief context about the prior assistant response or tool usage; use it only to interpret follow-up commands.",
   "Choose one intent: none | memory_add | weather_current | weather_forecast | agenda.",
   "Only set intent when you are confident; otherwise choose none.",
   "Use memory_add only when the user is asking to store/remember new info, not when they are asking a question about existing memory.",
@@ -54,6 +55,10 @@ const ROUTER_PROMPT = [
 
 export async function routeIntent(input: {
   text: string;
+  context?: {
+    lastAssistantText?: string;
+    lastToolName?: string;
+  };
 }): Promise<IntentRoute | null> {
   const router = getConfig().intentRouter;
   if (!router || !router.enabled) return null;
@@ -62,16 +67,33 @@ export async function routeIntent(input: {
   if (!text) return null;
 
   const clipped = text.slice(0, router.maxInputChars);
-  const resolved = await getLanguageModelForProvider(
-    router.providerId,
-    router.modelId
-  );
+  let resolved: Awaited<ReturnType<typeof getLanguageModelForProvider>>;
+  try {
+    resolved = await getLanguageModelForProvider(router.providerId, router.modelId);
+  } catch (err) {
+    console.error("Intent router model resolution failed", err);
+    return { intent: "none", confidence: 0 };
+  }
 
   let object: z.infer<typeof IntentSchema>;
   try {
+    const lastTool = String(input.context?.lastToolName ?? "").trim();
+    const lastAssistantText = String(input.context?.lastAssistantText ?? "").trim();
+    const contextBlock =
+      lastTool || lastAssistantText
+        ? [
+            "Context (may be empty; use only if helpful):",
+            ...(lastTool ? [`- last_tool: ${lastTool}`] : []),
+            ...(lastAssistantText
+              ? [`- last_assistant_text: """${lastAssistantText.slice(0, 800)}"""`]
+              : []),
+            "",
+          ].join("\n")
+        : "";
+
     const { text } = await generateText({
       model: resolved.model,
-      prompt: `${ROUTER_PROMPT}\n\nUser message:\n"""${clipped}"""\n\nReturn ONLY valid JSON and no other text.`,
+      prompt: `${ROUTER_PROMPT}\n\n${contextBlock}User message:\n"""${clipped}"""\n\nReturn ONLY valid JSON and no other text.`,
       ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
         ? { temperature: 0 }
         : {}),
