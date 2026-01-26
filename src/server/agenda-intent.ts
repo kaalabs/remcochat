@@ -51,6 +51,7 @@ const ROUTER_PROMPT = [
   "- Use action=delete to remove items.",
   "- Use action=share or action=unshare to share/stop sharing an item with a profile.",
   "- Use action=list for listing windows (today, tomorrow, this week, this month, coming N days).",
+  "- If the user asks for the coming/next week, use action=list with range.kind=next_n_days and days=7 unless they explicitly specify a different window.",
   "- If the user asks to show their agenda without specifying a window, choose range.kind=next_n_days with days=30.",
   "",
   "Fields:",
