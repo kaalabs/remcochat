@@ -146,6 +146,10 @@ fi
 COMPOSE_FILES=(-f docker-compose.yml)
 if [[ "$ENABLE_PROXY" -eq 1 ]]; then
   COMPOSE_FILES+=(-f docker-compose.proxy.yml)
+else
+  if [[ -f docker-compose.proxy.yml ]]; then
+    log "NOTE: reverse proxy not started (pass --proxy to start remcochat-proxy)"
+  fi
 fi
 
 log "Starting compose stack"
@@ -177,6 +181,12 @@ wait_http_ok "http://127.0.0.1:8080/v1/health" "sandboxd" 40 1 || die "sandboxd 
 wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not serving on http://127.0.0.1:3100"
   if [[ "$ENABLE_PROXY" -eq 1 ]]; then
     curl -fsSk --max-time 2 https://127.0.0.1/remcochat/ >/dev/null 2>&1 || die "proxy not serving on https://127.0.0.1/remcochat/"
+    if ! compose "${COMPOSE_FILES[@]}" ps --services --status running 2>/dev/null | grep -qx "remcochat-proxy"; then
+      log "ERROR: remcochat-proxy is not running"
+      compose "${COMPOSE_FILES[@]}" ps -a || true
+      compose "${COMPOSE_FILES[@]}" logs --tail 200 remcochat-proxy || true
+      exit 3
+    fi
   fi
 
 log "OK: remcochat on http://127.0.0.1:3100 (local only); sandboxd on http://0.0.0.0:8080"

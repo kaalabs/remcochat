@@ -12,6 +12,9 @@ Environment variables:
   BRANCH        Git branch to track (default: main)
   REMOTE        Git remote to track (default: origin)
   COMPOSE_FILE  Compose file path relative to REPO_DIR (default: docker-compose.yml)
+  COMPOSE_FILES Comma-separated compose file paths relative to REPO_DIR (overrides COMPOSE_FILE)
+               Example: docker-compose.yml,docker-compose.proxy.yml
+  REMOVE_ORPHANS Whether to delete orphan containers during update (default: 1)
   LOCK_FILE     Flock lock file path (default: /tmp/remcochat-update.lock)
 
 Exit codes:
@@ -35,6 +38,8 @@ REPO_DIR="${REPO_DIR:-"$(cd -- "$SCRIPT_DIR/.." && pwd)"}"
 BRANCH="${BRANCH:-main}"
 REMOTE="${REMOTE:-origin}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+COMPOSE_FILES="${COMPOSE_FILES:-}"
+REMOVE_ORPHANS="${REMOVE_ORPHANS:-1}"
 LOCK_FILE="${LOCK_FILE:-/tmp/remcochat-update.lock}"
 
 command -v git >/dev/null 2>&1 || die "git not found"
@@ -52,10 +57,34 @@ compose() {
   die "docker compose not available (need docker compose v2 or docker-compose)"
 }
 
+is_truthy() {
+  local v
+  v="$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  [[ "$v" == "1" || "$v" == "true" || "$v" == "yes" || "$v" == "on" ]]
+}
+
 cd "$REPO_DIR"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "REPO_DIR is not a git repo: $REPO_DIR"
-[[ -f "$COMPOSE_FILE" ]] || die "compose file missing: $REPO_DIR/$COMPOSE_FILE"
+
+compose_files=()
+if [[ -n "$COMPOSE_FILES" ]]; then
+  IFS=',' read -r -a compose_files <<<"$COMPOSE_FILES"
+else
+  compose_files=("$COMPOSE_FILE")
+fi
+
+COMPOSE_ARGS=()
+for f in "${compose_files[@]}"; do
+  f="$(printf "%s" "$f" | xargs)"
+  [[ -n "$f" ]] || continue
+  [[ -f "$f" ]] || die "compose file missing: $REPO_DIR/$f"
+  COMPOSE_ARGS+=(-f "$f")
+done
+
+if [[ "${#COMPOSE_ARGS[@]}" -eq 0 ]]; then
+  die "no compose files specified (set COMPOSE_FILE or COMPOSE_FILES)"
+fi
 
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCK_FILE"
@@ -97,6 +126,11 @@ log "Update available: $local_sha -> $remote_sha"
 git pull --ff-only "$REMOTE" "$BRANCH"
 
 log "Rebuilding & restarting via docker compose"
-compose -f "$COMPOSE_FILE" up -d --build
+REMOVE_ARGS=()
+if is_truthy "$REMOVE_ORPHANS"; then
+  REMOVE_ARGS+=(--remove-orphans)
+fi
+
+compose "${COMPOSE_ARGS[@]}" up -d --build "${REMOVE_ARGS[@]}"
 
 log "Update complete: $(git rev-parse HEAD)"
