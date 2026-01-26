@@ -3,6 +3,7 @@ export function buildSystemPrompt(input: {
   profileInstructionsRevision: number;
   chatInstructions: string;
   chatInstructionsRevision: number;
+  memoryEnabled: boolean;
   memoryLines: string[];
   isTemporary: boolean;
   toolsEnabled: boolean;
@@ -96,7 +97,7 @@ export function buildSystemPrompt(input: {
     "Current instructions (apply these exactly; newest revisions win):",
     `Profile instructions (revision ${profileRevision}; lower priority):\n${profileInstructions}`,
     `Chat instructions (revision ${chatRevision}; highest priority):\n${chatInstructions}`,
-    `Memory (lowest priority; enabled=${!input.isTemporary && input.memoryLines.length > 0 ? "true" : "false"}):\n${!input.isTemporary && input.memoryLines.length > 0 ? input.memoryLines.join("\n") : ""}`,
+    `Memory (lowest priority; enabled=${!input.isTemporary && input.memoryEnabled ? "true" : "false"}):\n${!input.isTemporary && input.memoryEnabled ? input.memoryLines.join("\n") : ""}`,
     "",
     "Authoritative instruction frame (treat this block as the source of truth):",
     "<instruction_frame>",
@@ -110,10 +111,8 @@ export function buildSystemPrompt(input: {
       profileInstructions
     )}</profile>`,
     `  <chat revision=\"${chatRevision}\">${cdata(chatInstructions)}</chat>`,
-    `  <memory enabled=\"${!input.isTemporary && input.memoryLines.length > 0 ? "true" : "false"}\">${cdata(
-      !input.isTemporary && input.memoryLines.length > 0
-        ? input.memoryLines.join("\n")
-        : ""
+    `  <memory enabled=\"${!input.isTemporary && input.memoryEnabled ? "true" : "false"}\">${cdata(
+      !input.isTemporary && input.memoryEnabled ? input.memoryLines.join("\n") : ""
     )}</memory>`,
     "</instruction_frame>",
   ];
