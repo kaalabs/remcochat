@@ -42,7 +42,6 @@ import { routeAgendaCommand } from "@/server/agenda-intent";
 import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
-import { isListIntent } from "@/server/list-intent";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
 
 export const maxDuration = 30;
@@ -72,55 +71,31 @@ function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
     .trim();
 }
 
-function parseMemorizeIntent(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
+function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+  if (lastUserIndex <= 0) return {};
 
-  const patterns = [
-    /^(?:please\s+)?memorize(?:\s+(?:this|that))?\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?remember(?:\s+(?:this|that))?\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?save(?:\s+(?:this|that))?(?:\s+for\s+later)?\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?store(?:\s+(?:this|that))?\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?keep(?:\s+(?:this|that))?\s+in\s+mind\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?add(?:\s+(?:this|that))?\s+(?:to|into)\s+(?:memory|profile memory|chat memory)\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?put(?:\s+(?:this|that))?\s+(?:in|into)\s+(?:memory|profile memory|chat memory)\s*[,.:]?\s*(.*)$/i,
-    /^(?:please\s+)?save(?:\s+(?:this|that))?\s+(?:to|into)\s+(?:memory|profile memory|chat memory)\s*[,.:]?\s*(.*)$/i,
-  ];
+  for (let i = lastUserIndex - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "assistant") continue;
 
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern);
-    if (!match) continue;
-    return (match[1] ?? "").trim();
+    const lastAssistantText = messageText(msg);
+    let lastToolName: string | undefined;
+    for (const part of msg.parts) {
+      const type = (part as { type?: unknown }).type;
+      if (typeof type === "string" && type.startsWith("tool-")) {
+        lastToolName = type.slice("tool-".length);
+        break;
+      }
+    }
+
+    return {
+      lastAssistantText: lastAssistantText || undefined,
+      lastToolName,
+    };
   }
 
-  return null;
-}
-
-function isNotesIntent(text: string) {
-  const trimmed = text.trim().toLowerCase();
-  if (!trimmed) return false;
-  const patterns = [
-    /\bnote this\b/,
-    /\bmake a note\b/,
-    /\bmake note\b/,
-    /\bquick note\b/,
-    /\bnote to self\b/,
-    /\bjot (this|that) down\b/,
-    /\bjot down\b/,
-    /\bsave (this|that) as a note\b/,
-    /\bsave as a note\b/,
-    /\badd (this|that) to notes\b/,
-    /\badd to notes\b/,
-    /\bshow notes\b/,
-    /\bshow my notes\b/,
-    /\bnoteer\b/,
-    /\bnotitie\b/,
-    /\bnotities\b/,
-    /\bschrijf dit op\b/,
-    /\bopschrijven\b/,
-    /\bnote this:\b/,
-  ];
-  return patterns.some((pattern) => pattern.test(trimmed));
+  return {};
 }
 
 function parseMemorizeDecision(text: string) {
@@ -244,31 +219,6 @@ function needsMemoryContext(content: string) {
   const stripped = trimmed.replace(/[.!?,;:]+$/g, "");
   if (!stripped) return true;
   return /^[A-Za-z][A-Za-z'-]*$/.test(stripped);
-}
-
-function shouldRouteIntent(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  const lower = trimmed.toLowerCase();
-  if (isNotesIntent(lower)) return false;
-  if (isListIntent(lower)) return false;
-  const hasQuestion = trimmed.includes("?");
-  const hasMemoryHint =
-    /\b(remember|save|store|memorize|keep in mind|add to memory|put in memory)\b/.test(
-      lower
-    );
-  const hasWeatherHint =
-    /\b(weather|forecast|temperature|rain|snow|wind|humidity|degrees|°)\b/.test(
-      lower
-    );
-  const hasAgendaHint =
-    /\b(agenda|calendar|schedule|appointment|meeting|afspraak|kalender|plan)\b/.test(
-      lower
-    ) ||
-    /\b(today|tomorrow|this week|this month|next week|coming week|volgende week|komende week|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
-      lower
-    );
-  return hasMemoryHint || hasWeatherHint || hasAgendaHint;
 }
 
 function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
@@ -742,16 +692,11 @@ export async function POST(req: Request) {
       )
     : "";
 
-  const notesIntent = isNotesIntent(lastUserText);
-  const listIntent = isListIntent(lastUserText);
-  const memorizeContent =
-    notesIntent || listIntent ? null : parseMemorizeIntent(lastUserText);
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const canRouteIntent =
     !isRegenerate &&
-    shouldRouteIntent(lastUserText) &&
-    memorizeContent == null &&
     memorizeDecision == null;
+  const routerContext = lastAssistantContext(body.messages);
 
   const needsViewerTimeZoneForAgenda = (command: AgendaActionInput) => {
     if (viewerTimeZone) return false;
@@ -794,33 +739,16 @@ export async function POST(req: Request) {
       return resolved;
     };
 
-    if (memorizeContent != null) {
-      return uiTextResponse({
-        text: "Temporary chats do not save memory. Turn off Temp, then ask me to remember something and confirm when asked.",
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-        },
-      });
-    }
-
     if (canRouteIntent) {
-      let routed;
+      let routed: Awaited<ReturnType<typeof routeIntent>>;
       try {
-        routed = await routeIntent({ text: lastUserText });
+        routed = await routeIntent({ text: lastUserText, context: routerContext });
       } catch (err) {
-        return Response.json(
-          {
-            error:
-              err instanceof Error
-                ? `Intent router failed: ${err.message}`
-                : "Intent router failed.",
-          },
-          { status: 500 }
-        );
+        console.error("Intent router failed", err);
+        routed = { intent: "none", confidence: 0 };
       }
 
-      if (routed?.intent === "memory_add") {
+      if (routed && routed.intent === "memory_add") {
         return uiTextResponse({
           text: "Temporary chats do not save memory. Turn off Temp, then ask me to remember something and confirm when asked.",
           messageMetadata: {
@@ -829,7 +757,7 @@ export async function POST(req: Request) {
           },
         });
       }
-      if (routed?.intent === "weather_current") {
+      if (routed && routed.intent === "weather_current") {
         let resolvedForTools;
         try {
           resolvedForTools = await resolveModel();
@@ -854,7 +782,7 @@ export async function POST(req: Request) {
           });
         }
       }
-      if (routed?.intent === "weather_forecast") {
+      if (routed && routed.intent === "weather_forecast") {
         let resolvedForTools;
         try {
           resolvedForTools = await resolveModel();
@@ -879,7 +807,7 @@ export async function POST(req: Request) {
           });
         }
       }
-      if (routed?.intent === "agenda") {
+      if (routed && routed.intent === "agenda") {
         let agendaResult;
         try {
           agendaResult = await routeAgendaCommand({ text: lastUserText });
@@ -1299,93 +1227,16 @@ export async function POST(req: Request) {
     }
   }
 
-  if (memorizeContent != null) {
-    if (!memorizeContent) {
-      return uiTextResponse({
-        text:
-          'To memorize something, start your message with something like "Remember this: <thing to remember>". I will ask you to confirm before saving.',
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
-    }
-
-    if (!profile.memoryEnabled) {
-      return uiTextResponse({
-        text: "Memory is currently off for this profile. Enable it in Profile Settings, then try again.",
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
-    }
-
-    if (needsMemoryContext(memorizeContent)) {
-      return uiTextResponse({
-        text:
-          "I need a bit more context to store this memory. Please add a short sentence (who/what/why) so it will be useful later.",
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
-    }
-
-    try {
-      const pending = upsertPendingMemory({
-        chatId: effectiveChat.id,
-        profileId: profile.id,
-        content: memorizeContent,
-      });
-      return uiMemoryPromptResponse({
-        content: pending.content,
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
-    } catch (err) {
-      return uiTextResponse({
-        text:
-          err instanceof Error
-            ? err.message
-            : "Failed to prepare memory confirmation.",
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
-    }
-  }
-
   if (canRouteIntent) {
-    let routed;
+    let routed: Awaited<ReturnType<typeof routeIntent>>;
     try {
-      routed = await routeIntent({ text: lastUserText });
+      routed = await routeIntent({ text: lastUserText, context: routerContext });
     } catch (err) {
-      return Response.json(
-        {
-          error:
-            err instanceof Error
-              ? `Intent router failed: ${err.message}`
-              : "Intent router failed.",
-        },
-        { status: 500 }
-      );
+      console.error("Intent router failed", err);
+      routed = { intent: "none", confidence: 0 };
     }
 
-      if (routed?.intent === "memory_add") {
+      if (routed && routed.intent === "memory_add") {
         if (!profile.memoryEnabled) {
           return uiTextResponse({
             text: "Memory is currently off for this profile. Enable it in Profile Settings, then try again.",
@@ -1438,9 +1289,9 @@ export async function POST(req: Request) {
           },
         });
       }
-    }
+      }
 
-    if (routed?.intent === "weather_current") {
+    if (routed && routed.intent === "weather_current") {
       let resolvedForTools;
       try {
         resolvedForTools = await resolveModel();
@@ -1466,7 +1317,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (routed?.intent === "weather_forecast") {
+    if (routed && routed.intent === "weather_forecast") {
       let resolvedForTools;
       try {
         resolvedForTools = await resolveModel();
@@ -1492,7 +1343,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (routed?.intent === "agenda") {
+    if (routed && routed.intent === "agenda") {
       let agendaResult;
       try {
         agendaResult = await routeAgendaCommand({ text: lastUserText });
