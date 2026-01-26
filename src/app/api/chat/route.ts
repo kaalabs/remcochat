@@ -265,7 +265,7 @@ function shouldRouteIntent(text: string) {
     /\b(agenda|calendar|schedule|appointment|meeting|afspraak|kalender|plan)\b/.test(
       lower
     ) ||
-    /\b(today|tomorrow|this week|this month|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
+    /\b(today|tomorrow|this week|this month|next week|coming week|volgende week|komende week|next\s+\d+\s+days|coming\s+\d+\s+days)\b/.test(
       lower
     );
   return hasMemoryHint || hasWeatherHint || hasAgendaHint;
