@@ -115,6 +115,13 @@ Those patterns scale poorly and are exactly what semantic routing is designed to
 If we want maximum flexibility quickly: Option A.
 If we want to optimize latency/cost and scale tool count later: Option C (or B if we want to avoid an LLM router entirely).
 
+## Project Policy (Owner-Approved Default)
+RemcoChat should route tool usage exclusively via the intent engine (router + confidence thresholds).
+
+Do not introduce programmatic gating in front of the intent engine (regex/keyword/phrase gates, special-case routing shortcuts, etc.) unless:
+- The architecture change is explicitly proposed, discussed, and approved by the project owner (Remco).
+- The rationale is documented (what problem it solves, what trade-offs it introduces, and how it will be maintained).
+
 ## References (for Later)
 - Aurelio AI Semantic Router docs (routing by semantic similarity + thresholds):
   - https://docs.aurelio.ai/semantic-router/user-guide/concepts/overview
@@ -127,4 +134,3 @@ If we want to optimize latency/cost and scale tool count later: Option C (or B i
   - https://vllm-semantic-router.com/blog/semantic-tool-selection
 - Intent recognition + routing notes (router agent / semantic routing discussion):
   - https://gist.github.com/mkbctrl/a35764e99fe0c8e8c00b2358f55cd7fa
-
