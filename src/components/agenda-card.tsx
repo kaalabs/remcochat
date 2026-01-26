@@ -44,7 +44,10 @@ function formatTimeRangeLine(startAt: string, endAt: string) {
   const endTime = formatTimeLabel(end);
 
   // Date is already shown in the day header. Keep this line time-only.
-  const sameDay = start.toISOString().slice(0, 10) === end.toISOString().slice(0, 10);
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
   if (sameDay) return `${startTime}–${endTime}`;
 
   // Cross-day items are rare; include just weekday labels to reduce ambiguity.
@@ -57,7 +60,10 @@ function groupItemsByDay(items: AgendaItem[]) {
   const groups = new Map<string, { key: string; label: string; items: AgendaItem[] }>();
   for (const item of items) {
     const start = new Date(item.startAt);
-    const key = Number.isNaN(start.getTime()) ? item.startAt : start.toISOString().slice(0, 10);
+    // Group by viewer-local date to avoid splitting one local day into multiple groups due to UTC offsets.
+    const key =
+      item.viewerLocalDate ||
+      (Number.isNaN(start.getTime()) ? item.startAt : start.toISOString().slice(0, 10));
     const label = Number.isNaN(start.getTime()) ? "Scheduled" : formatDayLabel(start);
     const existing = groups.get(key);
     if (existing) {
