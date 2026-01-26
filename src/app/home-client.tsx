@@ -3302,7 +3302,7 @@ export function HomeClient({
 	                />
                 </div>
 
-                <div className="mt-2 flex basis-full items-center justify-between gap-2 border-t px-2 pt-2 pb-3">
+                <div className="mt-2 flex min-h-10 basis-full items-center justify-between gap-2 border-t px-2 pt-2 pb-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <PromptInputActionMenu>
                       <PromptInputActionMenuTrigger
@@ -3375,7 +3375,9 @@ export function HomeClient({
                     >
                       <SlidersHorizontalIcon className="size-4" />
                     </button>
-                  ) : null}
+                  ) : (
+                    <div aria-hidden="true" className="size-10" />
+                  )}
                 </div>
 	              </PromptInput>
 	            </div>
