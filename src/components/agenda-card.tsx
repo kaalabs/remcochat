@@ -10,16 +10,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { AgendaItem, AgendaToolOutput } from "@/lib/types";
-import { CalendarDays, Share2, Users } from "lucide-react";
+import { CalendarDays, Share2, User, Users } from "lucide-react";
 
 type AgendaCardProps = {
   output: AgendaToolOutput;
 };
-
-function itemBadgeLabel(item: AgendaItem) {
-  if (item.scope === "shared") return "Shared";
-  return "Owned";
-}
 
 function formatDayLabel(date: Date) {
   // e.g. "Monday 12 September 2026" (uses viewer locale + timezone).
@@ -132,6 +127,8 @@ export function AgendaCard({ output }: AgendaCardProps) {
               <div className="grid gap-2">
                 {group.items.map((item) => {
                   const line = formatRangeLine(item.startAt, item.endAt);
+                  const scopeLabel = item.scope === "shared" ? "Shared" : "Owned";
+                  const ScopeIcon = item.scope === "shared" ? Users : User;
                   return (
                     <div
                       className="group grid gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm transition hover:bg-background/75"
@@ -139,16 +136,8 @@ export function AgendaCard({ output }: AgendaCardProps) {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              className="px-1.5 py-0 text-[10px]"
-                              variant="outline"
-                            >
-                              {itemBadgeLabel(item)}
-                            </Badge>
-                            <span className="min-w-0 truncate font-semibold">
-                              {item.description}
-                            </span>
+                          <div className="min-w-0 truncate font-semibold">
+                            {item.description}
                           </div>
                           {line ? (
                             <div className="mt-1 text-xs text-muted-foreground">
@@ -159,18 +148,33 @@ export function AgendaCard({ output }: AgendaCardProps) {
                         <div className="flex shrink-0 flex-col items-end gap-1">
                           {item.scope === "shared" && item.ownerProfileName ? (
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Users className="size-3.5" />
+                              <User className="size-3.5" />
                               <span className="max-w-[140px] truncate">
                                 {item.ownerProfileName}
                               </span>
                             </div>
                           ) : null}
-                          {item.sharedWithCount > 0 ? (
-                            <div className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/50 px-2 py-0.5 text-[11px] text-muted-foreground">
-                              <Share2 className="size-3.5" />
-                              <span>{item.sharedWithCount}</span>
+                          <div className="inline-flex items-center gap-1.5">
+                            <div
+                              className="inline-flex size-6 items-center justify-center rounded-full border border-border/60 bg-background/50 text-muted-foreground"
+                              title={scopeLabel}
+                            >
+                              <ScopeIcon className="size-3.5" />
+                              <span className="sr-only">{scopeLabel}</span>
                             </div>
-                          ) : null}
+                            {item.sharedWithCount > 0 ? (
+                              <div
+                                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/50 px-2 py-0.5 text-[11px] text-muted-foreground"
+                                title={`Shared with ${item.sharedWithCount}`}
+                              >
+                                <Share2 className="size-3.5" />
+                                <span>{item.sharedWithCount}</span>
+                                <span className="sr-only">
+                                  Shared with {item.sharedWithCount}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     </div>
