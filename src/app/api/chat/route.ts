@@ -227,10 +227,50 @@ function needsMemoryContext(content: string) {
   return /^[A-Za-z][A-Za-z'-]*$/.test(stripped);
 }
 
+function looksLikeTimeRequest(text: string) {
+  return (
+    /\b(time|timezone|timezones|current time|what time|time in|local time)\b/.test(
+      text
+    ) ||
+    /\b(utc|gmt)\b/.test(text)
+  );
+}
+
+function looksLikeWeatherRequest(text: string) {
+  return /\b(weather|forecast|temperature|rain|snow|wind)\b/.test(text);
+}
+
+function looksLikeUrlSummaryRequest(text: string) {
+  return /\b(summarize|summary)\b/.test(text) && /https?:\/\//.test(text);
+}
+
+function looksLikeNotesRequest(text: string) {
+  return /\b(note|notes|jot|remember this|save this)\b/.test(text);
+}
+
+function looksLikeListsRequest(text: string) {
+  return /\b(list|todo|to-do|shopping)\b/.test(text);
+}
+
+function looksLikeAgendaRequest(text: string) {
+  return /\b(agenda|schedule|calendar|meeting|appointment)\b/.test(text);
+}
+
 function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
   const text = String(userText ?? "").trim().toLowerCase();
   if (!text) return false;
   if (!Array.isArray(memoryLines) || memoryLines.length === 0) return false;
+
+  if (
+    looksLikeTimeRequest(text) ||
+    looksLikeWeatherRequest(text) ||
+    looksLikeUrlSummaryRequest(text) ||
+    looksLikeNotesRequest(text) ||
+    looksLikeListsRequest(text) ||
+    looksLikeAgendaRequest(text)
+  ) {
+    return false;
+  }
 
   const explicitlyRequestsMemory =
     /\b(profile memory|from memory|in memory|do you remember|did i tell you|what do you remember)\b/.test(
