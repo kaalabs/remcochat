@@ -60,6 +60,7 @@ try {
     "",
   ].join("\n");
   let configText = example.trimEnd();
+  const hasSkillsConfig = /\[app\.skills\]/.test(configText);
 
   // Default to OpenCode in E2E environments to avoid relying on Vercel credits.
   configText = configText.replace(/\[app\][\s\S]*?(?=\n\[|$)/, (block) => {
@@ -72,6 +73,9 @@ try {
     let out = block;
     out = out.replace(/\bprovider_id\s*=\s*\"[^\"]+\"/, 'provider_id = "e2e_alt"');
     out = out.replace(/\bmodel_id\s*=\s*\"[^\"]+\"/, 'model_id = "gpt-5-nano"');
+    if (!hasSkillsConfig) {
+      out = `${out.trimEnd()}\n\n[app.skills]\nenabled = true\ndirectories = [\"./.skills\"]\n`;
+    }
     return out;
   });
 
@@ -127,7 +131,7 @@ try {
       (block) => {
         let out = block;
         out = out.replace(/\bmode\s*=\s*\"[^\"]+\"/, 'mode = "upload"');
-        out = out.replace(/\bupload_include\s*=\s*\"[^\"]*\"/, 'upload_include = "**/*.nope"');
+        out = out.replace(/\bupload_include\s*=\s*\"[^\"]*\"/, 'upload_include = ".skills/**"');
         return out;
       }
     );

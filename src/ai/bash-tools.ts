@@ -43,6 +43,13 @@ export type BashToolsResult = {
   tools: Record<string, unknown>;
 };
 
+export type ExplicitBashCommandResult = {
+  enabled: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+};
+
 type SandboxEntry = {
   provider: "vercel" | "docker";
   key: string;
@@ -1083,5 +1090,97 @@ export async function createBashTools(input: {
       err
     );
     return { enabled: false, tools: {} };
+  }
+}
+
+export async function runExplicitBashCommand(input: {
+  request: Request;
+  sessionKey: string;
+  command: string;
+}): Promise<ExplicitBashCommandResult> {
+  const cfg = getConfig().bashTools;
+  if (!cfg || !cfg.enabled) {
+    return { enabled: false, stdout: "", stderr: "Bash tools are disabled.", exitCode: 1 };
+  }
+  if (!bashToolsKillSwitchEnabled()) {
+    return { enabled: false, stdout: "", stderr: "Bash tools are disabled.", exitCode: 1 };
+  }
+  if (!isRequestAllowedByAccessPolicy(input.request, cfg)) {
+    return { enabled: false, stdout: "", stderr: "Bash tools are not enabled for this request.", exitCode: 1 };
+  }
+
+  const entry = await getOrCreateSandboxEntry(input.sessionKey, cfg);
+  const destination = "/vercel/sandbox/workspace";
+  const command = String(input.command ?? "");
+  const fullCommand = `cd "${destination}" && ${command}`;
+
+  if (entry.provider === "docker") {
+    const res = await runDockerBashCommand({
+      client: entry.dockerClient!,
+      sandboxId: entry.sandboxId!,
+      script: wrapSandboxCommand(fullCommand),
+      timeoutMs: cfg.timeoutMs,
+    });
+    return {
+      enabled: true,
+      stdout: truncateWithNotice(
+        String(res.stdout ?? "").trimEnd(),
+        cfg.maxStdoutChars,
+        "stdout"
+      ),
+      stderr: truncateWithNotice(
+        String(res.stderr ?? "").trimEnd(),
+        cfg.maxStderrChars,
+        "stderr"
+      ),
+      exitCode: res.exitCode,
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  try {
+    const result = await entry.sandbox!.runCommand(
+      "bash",
+      ["-lc", wrapSandboxCommand(fullCommand)],
+      { signal: controller.signal }
+    );
+    const [stdoutStream, stderrStream] = await Promise.all([
+      result.stdout({ signal: controller.signal }),
+      result.stderr({ signal: controller.signal }),
+    ]);
+    const [stdout, stderr] = await Promise.all([
+      readStreamToString(stdoutStream),
+      readStreamToString(stderrStream),
+    ]);
+
+    return {
+      enabled: true,
+      stdout: truncateWithNotice(
+        String(stdout ?? "").trimEnd(),
+        cfg.maxStdoutChars,
+        "stdout"
+      ),
+      stderr: truncateWithNotice(
+        String(stderr ?? "").trimEnd(),
+        cfg.maxStderrChars,
+        "stderr"
+      ),
+      exitCode: result.exitCode,
+    };
+  } catch (err) {
+    const isAbort =
+      err instanceof Error && (err.name === "AbortError" || /aborted/i.test(err.message));
+    if (isAbort) {
+      return {
+        enabled: true,
+        stdout: "",
+        stderr: `Command timed out after ${cfg.timeoutMs}ms.`,
+        exitCode: 124,
+      };
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }

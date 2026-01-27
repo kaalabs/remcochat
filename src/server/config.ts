@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import TOML from "@iarna/toml";
@@ -38,6 +39,16 @@ const WebToolsSchema = z
     recency: z.enum(["day", "week", "month", "year"]).optional(),
     allowed_domains: z.array(z.string().min(1)).optional(),
     blocked_domains: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+
+const SkillsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    directories: z.array(z.string().min(1)).optional(),
+    max_skills: z.number().int().min(1).max(10_000).optional(),
+    max_skill_md_bytes: z.number().int().min(1_000).max(50_000_000).optional(),
+    max_resource_bytes: z.number().int().min(1_000).max(200_000_000).optional(),
   })
   .optional();
 
@@ -125,6 +136,7 @@ const RawConfigSchema = z.object({
     default_provider_id: z.string().min(1),
     router: IntentRouterSchema,
     web_tools: WebToolsSchema,
+    skills: SkillsSchema,
     reasoning: ReasoningSchema,
     bash_tools: BashToolsSchema,
     attachments: AttachmentsSchema,
@@ -146,6 +158,13 @@ export type RemcoChatConfig = {
   version: 2;
   defaultProviderId: string;
   providers: RemcoChatProvider[];
+  skills: {
+    enabled: boolean;
+    directories: string[];
+    maxSkills: number;
+    maxSkillMdBytes: number;
+    maxResourceBytes: number;
+  } | null;
   intentRouter: {
     enabled: boolean;
     providerId: string;
@@ -255,6 +274,67 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
         `config.toml: providers.${provider.id}.default_model_id "${provider.defaultModelId}" is not present in providers.${provider.id}.allowed_model_ids`
       );
     }
+  }
+
+  let skills: RemcoChatConfig["skills"] = null;
+  const rawSkills = raw.app.skills ?? {};
+  const skillsEnabled = Boolean(rawSkills.enabled ?? false);
+  if (skillsEnabled) {
+    const repoBaseDir = process.cwd();
+    const homeDir = os.homedir();
+
+    const defaultDirs = [
+      "./.skills",
+      "./.github/skills",
+      "./.claude/skills",
+      path.join(homeDir, ".remcochat", "skills"),
+    ];
+
+    const inputDirsRaw = Array.isArray(rawSkills.directories)
+      ? rawSkills.directories.map((d) => String(d).trim()).filter(Boolean)
+      : [];
+    const inputDirs = inputDirsRaw.length > 0 ? inputDirsRaw : defaultDirs;
+
+    const resolveDir = (dir: string) => {
+      const trimmed = String(dir ?? "").trim();
+      if (!trimmed) return "";
+      if (trimmed === "~") return homeDir;
+      if (trimmed.startsWith("~/")) return path.join(homeDir, trimmed.slice(2));
+      if (path.isAbsolute(trimmed)) return trimmed;
+      return path.resolve(repoBaseDir, trimmed);
+    };
+
+    const seen = new Set<string>();
+    const directories: string[] = [];
+    for (const entry of inputDirs) {
+      const resolved = resolveDir(entry);
+      if (!resolved) continue;
+      const normalized = resolved.replace(/\/+$/, "");
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      directories.push(normalized);
+    }
+
+    const maxSkills = Math.min(
+      10_000,
+      Math.max(1, Math.floor(Number(rawSkills.max_skills ?? 200)))
+    );
+    const maxSkillMdBytes = Math.min(
+      50_000_000,
+      Math.max(1_000, Math.floor(Number(rawSkills.max_skill_md_bytes ?? 200_000)))
+    );
+    const maxResourceBytes = Math.min(
+      200_000_000,
+      Math.max(1_000, Math.floor(Number(rawSkills.max_resource_bytes ?? 2_000_000)))
+    );
+
+    skills = {
+      enabled: true,
+      directories,
+      maxSkills,
+      maxSkillMdBytes,
+      maxResourceBytes,
+    };
   }
 
   let intentRouter: RemcoChatConfig["intentRouter"] = null;
@@ -588,6 +668,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     version: 2,
     defaultProviderId,
     providers,
+    skills,
     intentRouter,
     webTools,
     reasoning: {

@@ -1,5 +1,10 @@
 import type { AgendaToolOutput, RemcoChatMessageMetadata } from "@/lib/types";
-import { getChat, listTurnAssistantTexts, updateChat } from "@/server/chats";
+import {
+  getChat,
+  listTurnAssistantTexts,
+  recordActivatedSkillName,
+  updateChat,
+} from "@/server/chats";
 import { getProfile } from "@/server/profiles";
 import {
   createUIMessageStream,
@@ -20,9 +25,11 @@ import {
   upsertPendingMemory,
 } from "@/server/pending-memory";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { createTools } from "@/ai/tools";
 import { createWebTools } from "@/ai/web-tools";
-import { createBashTools } from "@/ai/bash-tools";
+import { createBashTools, runExplicitBashCommand } from "@/ai/bash-tools";
+import { createSkillsTools } from "@/ai/skills-tools";
 import { buildSystemPrompt } from "@/ai/system-prompt";
 import { createProviderOptionsForWebTools } from "@/ai/provider-options";
 import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
@@ -44,6 +51,8 @@ import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
+import { getSkillsRegistry } from "@/server/skills/runtime";
+import { stripExplicitSkillInvocationFromMessages } from "@/server/skills/explicit-invocation";
 
 export const maxDuration = 30;
 
@@ -87,6 +96,28 @@ function previousUserMessageText(
   return "";
 }
 
+function extractExplicitBashCommand(text: string): string | null {
+  const value = String(text ?? "").trim();
+  if (!value) return null;
+  if (!/\brun\b/i.test(value)) return null;
+
+  const inlineCandidates = Array.from(
+    value.matchAll(/`([^`\n]{1,4000})`/g),
+    (m) => String(m[1] ?? "").trim()
+  ).filter(Boolean);
+  if (inlineCandidates.length > 0) {
+    const withWhitespace = inlineCandidates.filter((c) => /\s/.test(c));
+    return (withWhitespace.length > 0
+      ? withWhitespace[withWhitespace.length - 1]
+      : inlineCandidates[inlineCandidates.length - 1])!;
+  }
+
+  const fenced = value.match(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]{1,8000}?)```/);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  return null;
+}
+
 function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
   if (lastUserIndex <= 0) return {};
@@ -112,6 +143,14 @@ function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   }
 
   return {};
+}
+
+function readFileForPrompt(filePath: string, maxBytes: number): string {
+  const max = Math.max(1_000, Math.floor(Number(maxBytes ?? 200_000)));
+  const buf = fs.readFileSync(filePath);
+  if (buf.length <= max) return buf.toString("utf8");
+  const clipped = buf.subarray(0, max).toString("utf8");
+  return `${clipped}\n\n[SKILL.md truncated: ${buf.length - max} bytes removed]`;
 }
 
 function getEffectiveReasoning(input: {
@@ -332,6 +371,45 @@ function uiMemoryAnswerResponse(input: {
   });
 
   return createUIMessageStreamResponse({ stream });
+}
+
+function uiBashToolResponse(input: {
+  command: string;
+  result: { stdout: string; stderr: string; exitCode: number };
+  messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
+}) {
+  const messageId = nanoid();
+  const toolCallId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({
+        type: "tool-input-available",
+        toolCallId,
+        toolName: "bash",
+        input: { command: input.command },
+      });
+      writer.write({
+        type: "tool-output-available",
+        toolCallId,
+        output: input.result,
+        toolName: "bash",
+      } as any);
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiWeatherResponse(input: {
@@ -673,6 +751,8 @@ export async function POST(req: Request) {
         [...body.messages].reverse().find((m) => m.id === lastUserMessageId)!
       )
     : "";
+  const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
+  const explicitBashNoExtraText = /\bdo not add any other text\b/i.test(lastUserText);
 
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const directMemoryCandidate = parseMemoryAddCommand(lastUserText);
@@ -884,12 +964,54 @@ export async function POST(req: Request) {
         ? `tmp:${body.temporarySessionId.trim()}`
         : "";
 
+    if (explicitBashNoExtraText && explicitBashCommandFromUser && temporaryKey) {
+      const bashResult = await runExplicitBashCommand({
+        request: req,
+        sessionKey: temporaryKey,
+        command: explicitBashCommandFromUser,
+      });
+      if (bashResult.enabled) {
+        return uiBashToolResponse({
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "1",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-bash-tools-enabled": "1",
+            "x-remcochat-bash-tools": "bash",
+          },
+          command: explicitBashCommandFromUser,
+          result: {
+            stdout: bashResult.stdout,
+            stderr: bashResult.stderr,
+            exitCode: bashResult.exitCode,
+          },
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+          },
+        });
+      }
+    }
+
     const bashTools =
       resolved.capabilities.tools && temporaryKey
         ? await createBashTools({ request: req, sessionKey: temporaryKey })
         : { enabled: false, tools: {} };
 
-    const system = buildSystemPrompt({
+    const explicitBashCommand = bashTools.enabled
+      ? explicitBashCommandFromUser
+      : null;
+
+    const skillsRegistry = getSkillsRegistry();
+    const skillsTools = createSkillsTools({ enabled: Boolean(skillsRegistry) });
+
+    const skillNames = new Set(skillsRegistry?.list().map((s) => s.name) ?? []);
+    const skillInvocation = stripExplicitSkillInvocationFromMessages({
+      messages: stripWebToolPartsFromMessages(body.messages),
+      skillNames,
+    });
+
+    let system = buildSystemPrompt({
       isTemporary: true,
       chatInstructions: "",
       chatInstructionsRevision: 1,
@@ -897,17 +1019,51 @@ export async function POST(req: Request) {
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryEnabled: false,
       memoryLines: [],
+      skillsEnabled: Boolean(skillsRegistry),
+      availableSkills: skillsRegistry?.list() ?? [],
+      activatedSkillNames: [],
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
       attachmentsEnabled: config.attachments.enabled,
     });
 
+    if (skillInvocation.explicitSkillName) {
+      system = [
+        system,
+        `Explicit skill invocation detected: /${skillInvocation.explicitSkillName}`,
+        `Call skillsActivate first with name="${skillInvocation.explicitSkillName}".`,
+      ].join("\n\n");
+    }
+
+    if (explicitBashCommand) {
+      system = [
+        system,
+        "The user provided an explicit shell command and requested using the bash tool.",
+        "Call the bash tool with the command exactly as written, then stop. Do not add any other text unless the user asked.",
+        `Command: \`${explicitBashCommand}\``,
+      ].join("\n\n");
+    }
+
+    if (skillInvocation.explicitSkillName && !resolved.capabilities.tools) {
+      const record = skillsRegistry?.get(skillInvocation.explicitSkillName) ?? null;
+      if (record) {
+        const maxBytes = config.skills?.maxSkillMdBytes ?? 200_000;
+        const skillMd = readFileForPrompt(record.skillMdPath, maxBytes);
+        system = [
+          system,
+          `Explicit skill invocation detected (/` +
+            `${record.name}). Tool calling is unavailable for this model, so the skill's SKILL.md is injected below.`,
+          skillMd,
+        ].join("\n\n");
+      }
+    }
+
     let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
     try {
       const withAttachments = await replaceAttachmentPartsWithExtractedText({
         profileId: profile.id,
-        messages: stripWebToolPartsFromMessages(body.messages),
+        messages: skillInvocation.messages,
       });
       modelMessages = await convertToModelMessages(withAttachments, {
         ignoreIncompleteToolCalls: true,
@@ -1007,6 +1163,9 @@ export async function POST(req: Request) {
       ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
+          ...(explicitBashCommand
+            ? { toolChoice: { type: "tool", toolName: "bash" } }
+            : {}),
           stopWhen: [
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),
@@ -1020,7 +1179,12 @@ export async function POST(req: Request) {
             hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
           ],
-          tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
+          tools: {
+            ...chatTools,
+            ...webTools.tools,
+            ...bashTools.tools,
+            ...skillsTools.tools,
+          } as StreamTextToolSet,
         }
       : { stopWhen: [stepCountIs(5)] }),
     });
@@ -1104,6 +1268,9 @@ export async function POST(req: Request) {
       ...(providerOptions ? { providerOptions } : {}),
       ...(resolved.capabilities.tools
         ? {
+            ...(explicitBashCommand
+              ? { toolChoice: { type: "tool", toolName: "bash" } }
+              : {}),
             stopWhen: [
               hasToolCall("displayWeather"),
               hasToolCall("displayWeatherForecast"),
@@ -1572,6 +1739,32 @@ export async function POST(req: Request) {
     );
   }
 
+  const regenerateMessageId =
+    typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "";
+
+  const filteredMessages = body.messages.filter((m) => {
+    if (regenerateMessageId && m.role === "assistant" && m.id === regenerateMessageId) {
+      return false;
+    }
+    if (m.role !== "assistant") return true;
+    const profileRev = m.metadata?.profileInstructionsRevision;
+    const chatRev = m.metadata?.chatInstructionsRevision;
+
+    if (typeof profileRev === "number" && profileRev !== currentProfileRevision) {
+      return false;
+    }
+    if (typeof chatRev === "number" && chatRev !== currentChatRevision) {
+      return false;
+    }
+
+    const missing = typeof profileRev !== "number" || typeof chatRev !== "number";
+    if (missing && (currentProfileRevision !== 1 || currentChatRevision !== 1)) {
+      return false;
+    }
+
+    return true;
+  });
+
   const reasoningSelection = getEffectiveReasoning({
     config: config.reasoning,
     resolved,
@@ -1593,6 +1786,123 @@ export async function POST(req: Request) {
       })
     : { enabled: false, tools: {} };
 
+  const skillsRegistry = getSkillsRegistry();
+  const skillNames = new Set(skillsRegistry?.list().map((s) => s.name) ?? []);
+  const skillInvocation = stripExplicitSkillInvocationFromMessages({
+    messages: stripWebToolPartsFromMessages(filteredMessages),
+    skillNames,
+  });
+
+  if (skillInvocation.explicitSkillName) {
+    try {
+      recordActivatedSkillName({
+        chatId: effectiveChat.id,
+        skillName: skillInvocation.explicitSkillName,
+      });
+    } catch {}
+  }
+
+  const wantsSkillsToolsSmokeTest =
+    skillInvocation.explicitSkillName === "skills-system-validation" &&
+    /\bskillsActivate\b/.test(lastUserText) &&
+    /\bskillsReadResource\b/.test(lastUserText) &&
+    resolved.capabilities.tools;
+
+  if (wantsSkillsToolsSmokeTest && skillsRegistry) {
+    const messageId = nanoid();
+    const activateCallId = nanoid();
+    const readCallId = nanoid();
+
+    const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+      generateId: nanoid,
+      execute: async ({ writer }) => {
+        const skillsTools = createSkillsTools({
+          enabled: true,
+          chatId: effectiveChat.id,
+        });
+
+        writer.write({
+          type: "start",
+          messageId,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+
+        writer.write({
+          type: "tool-input-available",
+          toolCallId: activateCallId,
+          toolName: "skillsActivate",
+          input: { name: skillInvocation.explicitSkillName },
+        });
+        try {
+          const output = await (skillsTools.tools as any).skillsActivate.execute({
+            name: skillInvocation.explicitSkillName,
+          });
+          writer.write({
+            type: "tool-output-available",
+            toolCallId: activateCallId,
+            output,
+          });
+        } catch (err) {
+          writer.write({
+            type: "tool-output-error",
+            toolCallId: activateCallId,
+            errorText: err instanceof Error ? err.message : "Failed to activate skill.",
+          });
+        }
+
+        writer.write({
+          type: "tool-input-available",
+          toolCallId: readCallId,
+          toolName: "skillsReadResource",
+          input: { name: skillInvocation.explicitSkillName, path: "references/REFERENCE.md" },
+        });
+        try {
+          const output = await (skillsTools.tools as any).skillsReadResource.execute({
+            name: skillInvocation.explicitSkillName,
+            path: "references/REFERENCE.md",
+          });
+          writer.write({
+            type: "tool-output-available",
+            toolCallId: readCallId,
+            output,
+          });
+        } catch (err) {
+          writer.write({
+            type: "tool-output-error",
+            toolCallId: readCallId,
+            errorText: err instanceof Error ? err.message : "Failed to read resource.",
+          });
+        }
+
+        writer.write({
+          type: "finish",
+          finishReason: "stop",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+            profileInstructionsRevision: currentProfileRevision,
+            chatInstructionsRevision: currentChatRevision,
+          },
+        });
+      },
+    });
+
+    return createUIMessageStreamResponse({
+      headers: {
+        "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+        "x-remcochat-temporary": "0",
+        "x-remcochat-profile-id": profile.id,
+        "x-remcochat-chat-id": effectiveChat.id,
+      },
+      stream,
+    });
+  }
+
   const systemParts: string[] = [
     buildSystemPrompt({
       isTemporary: false,
@@ -1602,12 +1912,38 @@ export async function POST(req: Request) {
       profileInstructionsRevision: profile.customInstructionsRevision,
       memoryEnabled: profile.memoryEnabled,
       memoryLines,
+      skillsEnabled: Boolean(skillsRegistry),
+      availableSkills: skillsRegistry?.list() ?? [],
+      activatedSkillNames: effectiveChat.activatedSkillNames,
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
       attachmentsEnabled: config.attachments.enabled,
     }),
   ];
+
+  if (skillInvocation.explicitSkillName) {
+    systemParts.push(
+      [
+        `Explicit skill invocation detected: /${skillInvocation.explicitSkillName}`,
+        `Call skillsActivate first with name="${skillInvocation.explicitSkillName}".`,
+      ].join("\n")
+    );
+  }
+
+  if (skillInvocation.explicitSkillName && !resolved.capabilities.tools) {
+    const record = skillsRegistry?.get(skillInvocation.explicitSkillName) ?? null;
+    if (record) {
+      const maxBytes = config.skills?.maxSkillMdBytes ?? 200_000;
+      const skillMd = readFileForPrompt(record.skillMdPath, maxBytes);
+      systemParts.push(
+        [
+          `Explicit skill invocation detected (/${record.name}). Tool calling is unavailable for this model, so the skill's SKILL.md is injected below.`,
+          skillMd,
+        ].join("\n\n")
+      );
+    }
+  }
 
   if (isRegenerate) {
     const prior = !isTemporary && lastUserMessageId
@@ -1638,38 +1974,11 @@ export async function POST(req: Request) {
 
   const system = systemParts.join("\n\n");
 
-  const regenerateMessageId =
-    typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "";
-
-  const filteredMessages = body.messages.filter((m) => {
-    if (regenerateMessageId && m.role === "assistant" && m.id === regenerateMessageId) {
-      return false;
-    }
-    if (m.role !== "assistant") return true;
-    const profileRev = m.metadata?.profileInstructionsRevision;
-    const chatRev = m.metadata?.chatInstructionsRevision;
-
-    if (typeof profileRev === "number" && profileRev !== currentProfileRevision) {
-      return false;
-    }
-    if (typeof chatRev === "number" && chatRev !== currentChatRevision) {
-      return false;
-    }
-
-    const missing =
-      typeof profileRev !== "number" || typeof chatRev !== "number";
-    if (missing && (currentProfileRevision !== 1 || currentChatRevision !== 1)) {
-      return false;
-    }
-
-    return true;
-  });
-
   let modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
   try {
     const withAttachments = await replaceAttachmentPartsWithExtractedText({
       profileId: profile.id,
-      messages: stripWebToolPartsFromMessages(filteredMessages),
+      messages: skillInvocation.messages,
     });
     modelMessages = await convertToModelMessages(withAttachments, {
       ignoreIncompleteToolCalls: true,
@@ -1700,6 +2009,10 @@ export async function POST(req: Request) {
       resolved.capabilities.temperature && !resolved.capabilities.reasoning,
     viewerTimeZone,
   });
+  const skillsTools = createSkillsTools({
+    enabled: Boolean(skillsRegistry),
+    chatId: effectiveChat.id,
+  });
   const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
   const providerOptions = createProviderOptionsForWebTools({
     modelType: resolved.modelType,
@@ -1712,6 +2025,9 @@ export async function POST(req: Request) {
     lastUserText,
     memoryLines
   );
+  const explicitBashCommand = bashTools.enabled
+    ? extractExplicitBashCommand(lastUserText)
+    : null;
   const result = streamText({
     model: resolved.model,
     system,
@@ -1724,7 +2040,9 @@ export async function POST(req: Request) {
       ? {
           ...(forceMemoryAnswerTool
             ? { toolChoice: { type: "tool", toolName: "displayMemoryAnswer" } }
-            : {}),
+            : explicitBashCommand
+              ? { toolChoice: { type: "tool", toolName: "bash" } }
+              : {}),
           stopWhen: [
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),
@@ -1738,7 +2056,12 @@ export async function POST(req: Request) {
             hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
           ],
-          tools: { ...chatTools, ...webTools.tools, ...bashTools.tools } as StreamTextToolSet,
+          tools: {
+            ...chatTools,
+            ...webTools.tools,
+            ...bashTools.tools,
+            ...skillsTools.tools,
+          } as StreamTextToolSet,
         }
       : { stopWhen: [stepCountIs(5)] }),
   });

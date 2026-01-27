@@ -68,6 +68,34 @@ type ModelsCatalogResponse = {
   >;
 };
 
+type SkillsAdminResponse = {
+  enabled: boolean;
+  scannedAt?: number;
+  scanRoots?: string[];
+  skills?: Array<{
+    name: string;
+    description: string;
+    license?: string;
+    compatibility?: string;
+    allowedTools?: string;
+    sourceDir?: string;
+    skillDir?: string;
+    skillMdPath?: string;
+  }>;
+  invalid?: Array<{ skillDir: string; skillMdPath: string; error: string }>;
+  collisions?: Array<{
+    name: string;
+    winner: { sourceDir: string; skillDir: string; skillMdPath: string };
+    losers: Array<{ sourceDir: string; skillDir: string; skillMdPath: string }>;
+  }>;
+  warnings?: string[];
+  status?: { enabled: boolean; registryLoaded: boolean };
+  usage?: {
+    chatsWithAnyActivatedSkills: number;
+    activatedSkillCounts: Record<string, number>;
+  };
+};
+
 export function AdminClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,6 +107,10 @@ export function AdminClient() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ModelsCatalogResponse | null>(null);
+
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<SkillsAdminResponse | null>(null);
 
   const load = async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
@@ -99,6 +131,16 @@ export function AdminClient() {
     }
     const data = (await res.json()) as ModelsCatalogResponse;
     setCatalog(data);
+  };
+
+  const loadSkills = async () => {
+    const res = await fetch("/api/skills", { cache: "no-store" });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(json?.error || "Failed to load skills.");
+    }
+    const data = (await res.json()) as SkillsAdminResponse;
+    setSkills(data);
   };
 
   useEffect(() => {
@@ -134,6 +176,24 @@ export function AdminClient() {
       .finally(() => {
         if (canceled) return;
         setCatalogLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    setSkillsLoading(true);
+    setSkillsError(null);
+    loadSkills()
+      .catch((err) => {
+        if (canceled) return;
+        setSkillsError(err instanceof Error ? err.message : "Failed to load skills.");
+      })
+      .finally(() => {
+        if (canceled) return;
+        setSkillsLoading(false);
       });
     return () => {
       canceled = true;
@@ -227,6 +287,43 @@ export function AdminClient() {
       setSaving(false);
     }
   };
+
+  const refreshSkills = async () => {
+    if (skillsLoading) return;
+    setSkillsLoading(true);
+    setSkillsError(null);
+    try {
+      await loadSkills();
+    } catch (err) {
+      setSkillsError(err instanceof Error ? err.message : "Failed to load skills.");
+    } finally {
+      setSkillsLoading(false);
+    }
+  };
+
+  const skillsSummary = useMemo(() => {
+    const data = skills;
+    if (!data) return null;
+    const enabled = Boolean(data.enabled);
+    const discovered = data.skills?.length ?? 0;
+    const invalid = data.invalid?.length ?? 0;
+    const collisions = data.collisions?.length ?? 0;
+    const warnings = data.warnings?.length ?? 0;
+    const activatedChats = data.usage?.chatsWithAnyActivatedSkills ?? 0;
+    const scannedAt =
+      typeof data.scannedAt === "number" ? new Date(data.scannedAt) : null;
+    return {
+      enabled,
+      discovered,
+      invalid,
+      collisions,
+      warnings,
+      activatedChats,
+      scannedAt,
+      scanRoots: data.scanRoots ?? [],
+      activatedCounts: data.usage?.activatedSkillCounts ?? {},
+    };
+  }, [skills]);
 
   return (
     <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
@@ -459,6 +556,178 @@ export function AdminClient() {
                 ) : (
                   <div className="text-sm text-muted-foreground">
                     No catalog loaded.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>Skills</CardTitle>
+                  <Button
+                    disabled={skillsLoading}
+                    onClick={() => refreshSkills()}
+                    size="sm"
+                    type="button"
+                    variant="secondary"
+                  >
+                    {skillsLoading ? "Refreshing…" : "Refresh"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {skillsError ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {skillsError}
+                  </div>
+                ) : null}
+
+                {skillsSummary ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={skillsSummary.enabled ? "secondary" : "outline"}>
+                        {skillsSummary.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                      <Badge variant="outline">
+                        Discovered: {skillsSummary.discovered}
+                      </Badge>
+                      <Badge variant="outline">Invalid: {skillsSummary.invalid}</Badge>
+                      <Badge variant="outline">
+                        Collisions: {skillsSummary.collisions}
+                      </Badge>
+                      <Badge variant="outline">
+                        Warnings: {skillsSummary.warnings}
+                      </Badge>
+                      {skills?.usage ? (
+                        <Badge variant="outline">
+                          Chats with activated skills: {skillsSummary.activatedChats}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Usage: (admin only)</Badge>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">
+                      {skillsSummary.scannedAt ? (
+                        <span>
+                          Last scan:{" "}
+                          <span className="font-medium text-foreground">
+                            {skillsSummary.scannedAt.toLocaleString()}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>Last scan: (unknown)</span>
+                      )}
+                    </div>
+
+                    {skillsSummary.scanRoots.length > 0 ? (
+                      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <div className="mb-1 font-medium text-muted-foreground">
+                          Scan roots
+                        </div>
+                        <div className="space-y-1 font-mono">
+                          {skillsSummary.scanRoots.map((r) => (
+                            <div key={r} className="truncate">
+                              {r}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(skills?.warnings?.length ?? 0) > 0 ? (
+                      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <div className="mb-1 font-medium text-muted-foreground">
+                          Warnings
+                        </div>
+                        <div className="space-y-1">
+                          {(skills?.warnings ?? []).map((w, idx) => (
+                            <div key={`${idx}-${w}`} className="break-words font-mono">
+                              {w}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(skills?.invalid?.length ?? 0) > 0 ? (
+                      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <div className="mb-1 font-medium text-muted-foreground">
+                          Invalid skills
+                        </div>
+                        <div className="space-y-2">
+                          {(skills?.invalid ?? []).map((inv, idx) => (
+                            <div key={`${idx}-${inv.skillMdPath}`} className="space-y-1">
+                              <div className="font-mono">{inv.skillMdPath}</div>
+                              <div className="text-muted-foreground">{inv.error}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(skills?.collisions?.length ?? 0) > 0 ? (
+                      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
+                        <div className="mb-1 font-medium text-muted-foreground">
+                          Name collisions
+                        </div>
+                        <div className="space-y-2">
+                          {(skills?.collisions ?? []).map((c) => (
+                            <div key={c.name} className="space-y-1">
+                              <div className="font-mono">{c.name}</div>
+                              <div className="text-muted-foreground">
+                                Winner: <span className="font-mono">{c.winner.sourceDir}</span>
+                              </div>
+                              <div className="text-muted-foreground">
+                                Losers:{" "}
+                                <span className="font-mono">
+                                  {c.losers.map((l) => l.sourceDir).join(", ")}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-md border bg-muted/20">
+                      <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+                        Available skills
+                      </div>
+                      <div className="divide-y">
+                        {(skills?.skills ?? []).map((s) => {
+                          const activatedCount = skillsSummary.activatedCounts[s.name] ?? 0;
+                          return (
+                            <div key={s.name} className="px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="truncate font-mono text-sm">{s.name}</div>
+                                  <div className="mt-0.5 text-xs text-muted-foreground">
+                                    {s.description}
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  {skills?.usage ? (
+                                    <Badge variant={activatedCount > 0 ? "secondary" : "outline"}>
+                                      {activatedCount > 0
+                                        ? `Activated in ${activatedCount} chat${activatedCount === 1 ? "" : "s"}`
+                                        : "Not activated"}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline">Activation: (admin only)</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    {skillsLoading ? "Loading skills…" : "No skills data."}
                   </div>
                 )}
               </CardContent>

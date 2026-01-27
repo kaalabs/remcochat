@@ -1,0 +1,479 @@
+{
+  "name": "remcochat-skills-implementation",
+  "source": "skills-task.md",
+  "statusValues": ["waiting", "doing", "completed"],
+  "phases": [
+    {
+      "id": "phase-0",
+      "title": "Baseline wiring (no behavior change)",
+      "gate": { "nextPhaseStartsAfterTaskId": "0.3" },
+      "tasks": [
+        {
+          "id": "0.1",
+          "title": "Create skills server module skeleton",
+          "details": [
+            "Create `src/server/skills/` folder structure",
+            "Add minimal exports/types for: SkillRecord, SkillRegistry (interface only), common error types (invalid skill, collision, access denied)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "0.2",
+          "title": "Add unused index file",
+          "details": ["Add a minimal index file that is imported nowhere (no runtime usage)."],
+          "status": "completed"
+        },
+        {
+          "id": "0.3",
+          "title": "Validate DoD (Phase 0)",
+          "details": [
+            "Run `npm run build`",
+            "Confirm no runtime behavior changes with `app.skills` absent/disabled"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-1",
+      "title": "Config schema + parsing",
+      "gate": { "nextPhaseStartsAfterTaskId": "1.4" },
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Add `app.skills` to config schema",
+          "details": [
+            "Extend `src/server/config.ts` schema to include `app.skills`",
+            "Fields: enabled, directories, max_skills, max_skill_md_bytes, max_resource_bytes"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "1.2",
+          "title": "Implement config normalization",
+          "details": [
+            "Implement `~` expansion",
+            "Resolve repo-relative paths from repo base dir",
+            "Apply defaults per `skills-spec.md`"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "1.3",
+          "title": "Add unit tests for skills config",
+          "details": [
+            "Add `tests/config-skills.test.ts`",
+            "Cover defaults, path expansion, invalid values fail-fast (no mocks)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "1.4",
+          "title": "Validate DoD (Phase 1)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Confirm `getConfig()` returns `skills: null | { ... }` as specified"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "title": "Discovery + in-memory registry",
+      "gate": { "nextPhaseStartsAfterTaskId": "2.5" },
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Implement discovery and validation",
+          "details": [
+            "Implement discovery in `src/server/skills/registry.ts`",
+            "Scan directories in order and find child dirs containing `SKILL.md`",
+            "Parse YAML frontmatter only (metadata-only discovery)",
+            "Validate name/description and directory-name match",
+            "Detect collisions (first wins; record losers)",
+            "Apply `max_skills` soft limit (stop adding; record warning)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "2.2",
+          "title": "Add registry singleton lifecycle",
+          "details": [
+            "Add a boot-time cached registry (restart-only semantics)",
+            "Expose via a function like `getSkillsRegistry()` returning cached registry or null if disabled"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "2.3",
+          "title": "Add admin-only listing endpoint",
+          "details": [
+            "Add `GET /api/skills`",
+            "Return: valid skills, invalid skills, collisions, scan roots, warnings",
+            "Enforce localhost-only or admin-token gating consistent with existing policy"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "2.4",
+          "title": "Add unit tests for registry",
+          "details": [
+            "Add `tests/skills-registry.test.ts`",
+            "Cover discovery of `.skills/skills-system-validation`, invalid skill exclusion, collision precedence (no mocks)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "2.5",
+          "title": "Validate DoD (Phase 2)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Start app with `app.skills.enabled=true` and confirm `GET /api/skills` lists `skills-system-validation` and surfaces invalid/collisions correctly"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "title": "Prompt injection (`available_skills`)",
+      "gate": { "nextPhaseStartsAfterTaskId": "3.3" },
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Inject JSON `available_skills` into system prompt",
+          "details": [
+            "Update `src/ai/system-prompt.ts` to inject JSON `available_skills` when skills enabled",
+            "Include only `name` + `description` per skill",
+            "Add concise behavioral rules (activate via tool, progressive disclosure, `/skill-name` convention)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "3.2",
+          "title": "Extend system prompt unit tests",
+          "details": [
+            "Update `tests/system-prompt.test.ts`",
+            "Assert: skills disabled → no `available_skills`",
+            "Assert: skills enabled → includes `available_skills` with `skills-system-validation`",
+            "Assert: does not include filesystem paths"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "3.3",
+          "title": "Validate DoD (Phase 3)",
+          "details": ["Run `npm run test:unit`."],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "title": "Explicit invocation parsing + tools-disabled fallback",
+      "gate": { "nextPhaseStartsAfterTaskId": "4.4" },
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Implement explicit invocation parsing",
+          "details": [
+            "Detect `/<skill-name>` prefix in latest user message",
+            "Strip prefix before sending to model",
+            "Ignore unknown skill names (treat message as normal)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "4.2",
+          "title": "Implement tools-disabled fallback for explicit invocation",
+          "details": [
+            "When explicit invocation is present but tools are disabled, server loads the skill’s `SKILL.md` and injects it for that request only"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "4.3",
+          "title": "Add unit tests for explicit invocation parsing",
+          "details": [
+            "Add `tests/skills-explicit-invocation.test.ts`",
+            "Cover: whitespace vs end-of-line, unknown skill, multiline message behavior (no mocks)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "4.4",
+          "title": "Validate DoD (Phase 4)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Manual smoke: use a tools-disabled model/config and confirm `/skills-system-validation ...` still applies the skill instructions"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "title": "Skills tools: `skills.activate` + `skills.readResource`",
+      "gate": { "nextPhaseStartsAfterTaskId": "5.6" },
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Implement skills tools",
+          "details": [
+            "Implement (recommended) `src/ai/skills-tools.ts` and integrate with existing tools plumbing",
+            "Add `skills.activate({ name }) -> { name, frontmatter, body }`",
+            "Add `skills.readResource({ name, path }) -> { name, path, content }`"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "5.2",
+          "title": "Add truncation + notices (soft limits)",
+          "details": [
+            "Implement truncation for `skills.activate` using `max_skill_md_bytes`",
+            "Implement truncation for `skills.readResource` using `max_resource_bytes`"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "5.3",
+          "title": "Enforce `skills.readResource` path security",
+          "details": [
+            "Reject absolute paths",
+            "Reject traversal after normalization",
+            "Prevent symlink escape (realpath guard)",
+            "Enforce resolved paths remain under the skill root"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "5.4",
+          "title": "Wire tools into `/api/chat` behind skills enablement",
+          "details": [
+            "Expose tools only when `app.skills.enabled=true`",
+            "Also require tools enabled for the selected model"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "5.5",
+          "title": "Add unit tests for skills tools",
+          "details": [
+            "Add `tests/skills-tools.test.ts`",
+            "Cover: truncation notices, traversal rejection, absolute-path rejection, symlink escape prevention (no mocks)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "5.6",
+          "title": "Validate DoD (Phase 5)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Manual conformance: follow `.skills/skills-system-validation/SKILL.md` Steps 2–4 using the tools and confirm expected markers and blocked paths"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "title": "Persistence of activated skill names",
+      "gate": { "nextPhaseStartsAfterTaskId": "6.5" },
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Add DB/schema support for activated skill names",
+          "details": ["Add DB/schema support for `activated_skill_names` on chats (names only)."],
+          "status": "completed"
+        },
+        {
+          "id": "6.2",
+          "title": "Record activated names on activation paths",
+          "details": [
+            "Record activated names when explicit invocation is used",
+            "Record activated names when `skills.activate` succeeds"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "6.3",
+          "title": "Include activated names in lightweight context",
+          "details": [
+            "Update prompt/context assembly to include activated skill names (names only)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "6.4",
+          "title": "Add unit tests for skills persistence",
+          "details": [
+            "Add `tests/skills-persistence.test.ts`",
+            "Cover: persisted names survive reload, no bodies persisted, migration behavior (if schema changes) (no mocks)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "6.5",
+          "title": "Validate DoD (Phase 6)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Manual smoke: activate a skill, reload page, confirm activated names persist and behavior remains correct"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "title": "UI tool cards for skills tools",
+      "gate": { "nextPhaseStartsAfterTaskId": "7.3" },
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Render skills tool cards in chat UI",
+          "details": [
+            "Add UI rendering for `skills.activate` and `skills.readResource` tool parts",
+            "Include collapsible content, copy actions, truncation notices"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "7.2",
+          "title": "Add Playwright E2E coverage for skills tools",
+          "details": [
+            "Add `e2e/skills-tools.spec.ts`",
+            "Scenario: send `/skills-system-validation validate that skills.activate and skills.readResource work`",
+            "Assert: tool cards appear (activate + at least one readResource for `references/REFERENCE.md`)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "7.3",
+          "title": "Validate DoD (Phase 7)",
+          "details": [
+            "Run `npm run test:e2e -- -g \"skills\"`",
+            "Run `npm run test:agent-browser` (required for UI changes)"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "title": "Optional: sandboxed script execution integration",
+      "optional": true,
+      "gate": { "nextPhaseStartsAfterTaskId": "8.3", "onlyIfPhaseExecuted": true },
+      "tasks": [
+        {
+          "id": "8.1",
+          "title": "Allow sandboxed execution of skill scripts (never on host)",
+          "details": [
+            "Allow executing skill scripts only when bash tools are enabled and sandboxed (existing gates)",
+            "Require the skill’s `allowed-tools` permits Bash (enforce or enforce-after-log per implementation choice)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "8.2",
+          "title": "Add deterministic E2E script execution coverage behind env flag",
+          "details": [
+            "Execute `.skills/skills-system-validation/scripts/echo.sh`",
+            "Assert stdout marker `REMCOCHAT_SKILLS_SCRIPT_OK`"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "8.3",
+          "title": "Validate DoD (Phase 8)",
+          "details": [
+            "Run `npm run test:e2e -- -g \"skills\"` with required env flags for sandbox bash tooling",
+            "Run `.skills/skills-system-validation/SKILL.md` Step 5 and confirm output marker"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-9",
+      "title": "Hardening + observability",
+      "gate": { "nextPhaseStartsAfterTaskId": "9.4" },
+      "tasks": [
+        {
+          "id": "9.1",
+          "title": "Improve `/api/skills` output and redaction",
+          "details": [
+            "Include scan roots, collisions, invalid skills, warnings",
+            "Redact sensitive filesystem details for non-admin callers"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "9.2",
+          "title": "Improve tool errors",
+          "details": [
+            "Return safe error messages (no path leaks)",
+            "Use consistent error shapes"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "9.3",
+          "title": "Add structured logs",
+          "details": [
+            "Discovery summary at boot",
+            "Skill activations",
+            "Blocked reads (policy rejections)"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "9.4",
+          "title": "Validate DoD (Phase 9)",
+          "details": [
+            "Run `npm run test:unit`",
+            "Run `npm run test:e2e -- -g \"skills\"`",
+            "Manual check: `/api/skills` + logs are sufficient to diagnose missing/invalid skills without code changes"
+          ],
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "id": "phase-10",
+      "title": "Hue Gateway sandbox connectivity",
+      "gate": { "nextPhaseStartsAfterTaskId": "10.3" },
+      "tasks": [
+        {
+          "id": "10.1",
+          "title": "Fix Hue skill base URL usage (no localhost traps)",
+          "details": [
+            "Update `.skills/hue-instant-control/SKILL.md` to use a `BASE_URL` variable in all curl examples",
+            "Prefer base URLs in this order: `http://hue-gateway:8000`, `http://host.docker.internal:8000`, `http://localhost:8000`",
+            "Add a single bash snippet that auto-selects a reachable BASE_URL via `/healthz` and checks `/readyz` before actions"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "10.2",
+          "title": "Document Hue Gateway reachability from sandboxes",
+          "details": [
+            "Update `docs/integrations/hue/hue.md` to clearly distinguish host vs sandbox networking",
+            "Document how to make `http://hue-gateway:8000` work (container attached to `remcochat-sandbox-net` with alias `hue-gateway`)",
+            "Mention `host.docker.internal` as a pragmatic fallback when ports are published on the host"
+          ],
+          "status": "completed"
+        },
+        {
+          "id": "10.3",
+          "title": "Validate DoD (Phase 10)",
+          "details": [
+            "From a docker sandbox container on `remcochat-sandbox-net`, confirm `curl -sS http://hue-gateway:8000/healthz` returns `{ \"ok\": true }` (or document that host.docker.internal is used when alias is unavailable)",
+            "Manual smoke in chat UI: `/hue-instant-control` + a simple action does not attempt `localhost:8000` from the sandbox"
+          ],
+          "status": "completed"
+        }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,13 @@ test("includes explicit web tool guidance when enabled", () => {
     memoryEnabled: false,
     memoryLines: [],
     isTemporary: false,
+    skillsEnabled: true,
+    availableSkills: [
+      {
+        name: "skills-system-validation",
+        description: "Validates a skills system.",
+      },
+    ],
     toolsEnabled: true,
     webToolsEnabled: true,
     bashToolsEnabled: false,
@@ -23,6 +30,55 @@ test("includes explicit web tool guidance when enabled", () => {
   assert.match(prompt, /\bweb_fetch\b/);
   assert.match(prompt, /\bgoogle_search\b/);
   assert.match(prompt, /\burl_context\b/);
+});
+
+test("omits skills metadata when skills are disabled", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryEnabled: false,
+    memoryLines: [],
+    isTemporary: false,
+    skillsEnabled: false,
+    toolsEnabled: false,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+  });
+
+  assert.doesNotMatch(prompt, /\bavailable_skills\b/);
+  assert.doesNotMatch(prompt, /Agent Skills are enabled on this server\./);
+});
+
+test("includes available_skills JSON without filesystem paths when skills are enabled", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryEnabled: false,
+    memoryLines: [],
+    isTemporary: false,
+    skillsEnabled: true,
+    availableSkills: [
+      {
+        name: "skills-system-validation",
+        description: "Validates a skills system.",
+      },
+    ],
+    toolsEnabled: false,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+  });
+
+  assert.match(prompt, /\bavailable_skills\b/);
+  assert.match(prompt, /skills-system-validation/);
+  assert.doesNotMatch(prompt, /SKILL\.md/);
+  assert.doesNotMatch(prompt, /\/Users\//);
+  assert.doesNotMatch(prompt, /\.skills\//);
 });
 
 test("includes list overview tool guidance when tools are enabled", () => {

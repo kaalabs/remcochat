@@ -17,6 +17,7 @@ export type Chat = {
   modelId: string;
   chatInstructions: string;
   chatInstructionsRevision: number;
+  activatedSkillNames: string[];
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;

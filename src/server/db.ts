@@ -42,6 +42,7 @@ function initSchema(database: Database.Database) {
       model_id TEXT NOT NULL,
       chat_instructions TEXT NOT NULL DEFAULT '',
       chat_instructions_revision INTEGER NOT NULL DEFAULT 1,
+      activated_skill_names_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       archived_at TEXT,
@@ -201,6 +202,19 @@ function initSchema(database: Database.Database) {
       ON message_variants(chat_id, turn_user_message_id, created_at ASC);
   `);
 
+  const chatColumns = database
+    .prepare(`PRAGMA table_info(chats)`)
+    .all() as Array<{ name: string }>;
+
+  const hasActivatedSkillNamesJson = chatColumns.some(
+    (c) => c.name === "activated_skill_names_json"
+  );
+  if (!hasActivatedSkillNamesJson) {
+    database.exec(
+      `ALTER TABLE chats ADD COLUMN activated_skill_names_json TEXT NOT NULL DEFAULT '[]';`
+    );
+  }
+
   const columns = database
     .prepare(`PRAGMA table_info(messages)`)
     .all() as Array<{ name: string }>;
@@ -238,10 +252,6 @@ function initSchema(database: Database.Database) {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_messages_chat_position ON messages(chat_id, position ASC);`
   );
-
-  const chatColumns = database
-    .prepare(`PRAGMA table_info(chats)`)
-    .all() as Array<{ name: string }>;
 
   const profileColumns = database
     .prepare(`PRAGMA table_info(profiles)`)
@@ -299,4 +309,12 @@ export function getDb() {
   initSchema(db);
 
   return db;
+}
+
+export function _resetDbForTests() {
+  if (!db) return;
+  try {
+    db.close();
+  } catch {}
+  db = null;
 }

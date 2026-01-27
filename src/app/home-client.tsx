@@ -98,6 +98,7 @@ import {
 import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
+import { SkillsToolCard } from "@/components/skills-tool-card";
 import { ConversationScrollButton } from "@/components/ai-elements/conversation";
 import type { WeatherToolOutput } from "@/ai/weather";
 import type { WeatherForecastToolOutput } from "@/ai/weather";
@@ -2943,6 +2944,145 @@ export function HomeClient({
                                         errorText={part.errorText}
                                         kind="writeFile"
                                         path={filePath}
+                                        state="error"
+                                      />
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-skillsActivate") {
+                              const input = part.input as { name?: unknown } | undefined;
+                              const inputName =
+                                typeof input?.name === "string" ? input.name : "";
+                              const output = part.output as
+                                | { name?: unknown; frontmatter?: unknown; body?: unknown }
+                                | undefined;
+                              const outputName =
+                                typeof output?.name === "string" ? output.name : "";
+                              const skillName = outputName || inputName;
+                              const body =
+                                typeof output?.body === "string" ? output.body : "";
+
+                              switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
+                                case "input-available":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        body=""
+                                        frontmatter={{}}
+                                        kind="activate"
+                                        skillName={skillName}
+                                        state="running"
+                                      />
+                                    </div>
+                                  );
+                                case "output-available":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        body={body}
+                                        frontmatter={output?.frontmatter}
+                                        kind="activate"
+                                        skillName={skillName}
+                                        state="ok"
+                                      />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        errorText={part.errorText}
+                                        kind="activate"
+                                        skillName={skillName}
+                                        state="error"
+                                      />
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-skillsReadResource") {
+                              const input = part.input as
+                                | { name?: unknown; path?: unknown }
+                                | undefined;
+                              const inputName =
+                                typeof input?.name === "string" ? input.name : "";
+                              const inputPath =
+                                typeof input?.path === "string" ? input.path : "";
+                              const output = part.output as
+                                | { name?: unknown; path?: unknown; content?: unknown }
+                                | undefined;
+                              const outputName =
+                                typeof output?.name === "string" ? output.name : "";
+                              const outputPath =
+                                typeof output?.path === "string" ? output.path : "";
+                              const content =
+                                typeof output?.content === "string" ? output.content : "";
+
+                              const skillName = outputName || inputName;
+                              const resourcePath = outputPath || inputPath;
+
+                              switch (part.state) {
+                                case "input-streaming":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
+                                case "input-available":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        content=""
+                                        kind="readResource"
+                                        resourcePath={resourcePath}
+                                        skillName={skillName}
+                                        state="running"
+                                      />
+                                    </div>
+                                  );
+                                case "output-available":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        content={content}
+                                        kind="readResource"
+                                        resourcePath={resourcePath}
+                                        skillName={skillName}
+                                        state="ok"
+                                      />
+                                    </div>
+                                  );
+                                case "output-error":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <SkillsToolCard
+                                        errorText={part.errorText}
+                                        kind="readResource"
+                                        resourcePath={resourcePath}
+                                        skillName={skillName}
                                         state="error"
                                       />
                                     </div>

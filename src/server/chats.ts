@@ -7,6 +7,7 @@ import { getProfile } from "./profiles";
 import { getActiveProviderConfig } from "@/server/model-registry";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { deleteAttachmentsForChat } from "@/server/attachments";
+import { logEvent } from "@/server/log";
 
 type ChatRow = {
   id: string;
@@ -15,6 +16,7 @@ type ChatRow = {
   model_id: string;
   chat_instructions: string;
   chat_instructions_revision: number;
+  activated_skill_names_json: string;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -60,6 +62,25 @@ function textFromParts(parts: UIMessage["parts"]): string {
     .map((p) => (p.type === "text" ? p.text : ""))
     .join("\n")
     .trim();
+}
+
+function activatedSkillNamesFromJson(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(value ?? "[]"));
+    if (!Array.isArray(parsed)) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of parsed) {
+      const name = String(entry ?? "").trim();
+      if (!name) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 export function listTurnAssistantTexts(input: {
@@ -128,6 +149,7 @@ function rowToChat(row: ChatRow): Chat {
     modelId,
     chatInstructions: row.chat_instructions,
     chatInstructionsRevision: Number(row.chat_instructions_revision ?? 1),
+    activatedSkillNames: activatedSkillNamesFromJson(row.activated_skill_names_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at,
@@ -141,7 +163,7 @@ export function listChats(profileId: string): Chat[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
+      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
        FROM chats
        WHERE profile_id = ? AND deleted_at IS NULL
        ORDER BY updated_at DESC`
@@ -155,7 +177,7 @@ export function getChat(chatId: string): Chat {
   const db = getDb();
   const row = db
     .prepare(
-      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
+      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
        FROM chats
        WHERE id = ?`
     )
@@ -163,6 +185,46 @@ export function getChat(chatId: string): Chat {
 
   if (!row) throw new Error("Chat not found.");
   return rowToChat(row);
+}
+
+export function recordActivatedSkillName(input: {
+  chatId: string;
+  skillName: string;
+}): string[] {
+  const chatId = String(input.chatId ?? "").trim();
+  if (!chatId) throw new Error("Missing chat id.");
+
+  const skillName = String(input.skillName ?? "").trim();
+  if (!skillName) throw new Error("Missing skill name.");
+
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT activated_skill_names_json FROM chats WHERE id = ?`)
+    .get(chatId) as { activated_skill_names_json: string } | undefined;
+  if (!row) throw new Error("Chat not found.");
+
+  const existing = activatedSkillNamesFromJson(row.activated_skill_names_json);
+  if (existing.includes(skillName)) return existing;
+
+  const next = existing.concat(skillName);
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE chats
+     SET activated_skill_names_json = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(JSON.stringify(next), now, chatId);
+
+  try {
+    logEvent("info", "skills.activated", {
+      chatId,
+      skillName,
+      activatedSkillNamesCount: next.length,
+    });
+  } catch {
+    // ignore
+  }
+
+  return next;
 }
 
 export function createChat(input: {
