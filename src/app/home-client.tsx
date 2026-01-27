@@ -3328,11 +3328,11 @@ export function HomeClient({
           </StickToBottom>
 
 			          <div className="shrink-0 border-t bg-sidebar pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-4">
-			            <div className="mx-auto w-full max-w-5xl">
-			              <PromptInput
-			                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
-			                className={
-			                  "bg-sidebar " +
+		            <div className="mx-auto w-full max-w-5xl">
+		              <PromptInput
+		                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
+		                className={
+		                  "composer-scale bg-sidebar " +
 		                  (isTemporaryChat
 		                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
 		                    : "")
@@ -3472,6 +3472,7 @@ export function HomeClient({
                   {(status === "submitted" || status === "streaming") && (
                     <button
                       className="rounded-md border px-3 py-2 text-sm hover:bg-accent"
+                      data-testid="composer:stop"
                       onClick={() => stop()}
                       type="button"
                     >

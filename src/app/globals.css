@@ -132,3 +132,18 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .composer-scale,
+  .composer-scale * {
+    font-size: calc(1em + 1pt) !important;
+  }
+
+  .composer-scale [data-testid^="reasoning-option:"] {
+    font-size: 11px !important;
+  }
+
+  .composer-scale [data-testid="composer:stop"] {
+    font-size: 0.875rem !important;
+  }
+}
