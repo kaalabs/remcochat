@@ -140,6 +140,15 @@ const DEFAULT_ZONES = [
   "Sydney",
 ];
 
+const CURRENT_TIME_TOKENS = new Set([
+  "now",
+  "right now",
+  "current",
+  "current time",
+  "present",
+  "today",
+]);
+
 type GeocodingResult = {
   name: string;
   admin1?: string;
@@ -159,6 +168,19 @@ for (const entry of TIMEZONE_ALIASES) {
 
 function normalizeSpaces(value: string) {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeReferenceTime(value?: string) {
+  const normalized = normalizeSpaces(String(value ?? ""));
+  if (!normalized) return undefined;
+  const key = normalized.toLowerCase();
+  if (CURRENT_TIME_TOKENS.has(key)) return undefined;
+  return normalized;
+}
+
+function normalizeReferenceZone(value?: string) {
+  const normalized = normalizeSpaces(String(value ?? ""));
+  return normalized || undefined;
 }
 
 function normalizeKey(value: string) {
@@ -409,6 +431,8 @@ export async function getTimezones(input: {
   referenceZone?: string;
   referenceTime?: string;
 }): Promise<TimezonesToolOutput> {
+  const referenceTime = normalizeReferenceTime(input.referenceTime);
+  const referenceZoneInput = normalizeReferenceZone(input.referenceZone);
   const rawZones = Array.isArray(input.zones) ? input.zones : [];
   const zoneInputs = rawZones
     .map((zone) => normalizeSpaces(String(zone ?? "")))
@@ -429,21 +453,21 @@ export async function getTimezones(input: {
     throw new Error("No timezones provided.");
   }
 
-  if (input.referenceTime && !input.referenceZone && resolved.length > 1) {
+  if (referenceTime && !referenceZoneInput && resolved.length > 1) {
     throw new Error("Reference zone is required for specific times.");
   }
 
-  const reference = input.referenceZone
-    ? await resolveZone(input.referenceZone)
+  const reference = referenceZoneInput
+    ? await resolveZone(referenceZoneInput)
     : resolved[0];
 
   if (!seen.has(reference.timeZone)) {
     resolved.unshift(reference);
   }
 
-  const referenceInstant = input.referenceTime
+  const referenceInstant = referenceTime
     ? zonedTimeToUtc(
-        parseTimeInput(input.referenceTime, reference.timeZone),
+        parseTimeInput(referenceTime, reference.timeZone),
         reference.timeZone
       )
     : new Date();
@@ -476,9 +500,9 @@ export async function getTimezones(input: {
   });
 
   return {
-    mode: input.referenceTime ? "converted" : "now",
+    mode: referenceTime ? "converted" : "now",
     reference: {
-      label: input.referenceTime ? "Reference" : "Now",
+      label: referenceTime ? "Reference" : "Now",
       timeZone: reference.timeZone,
       localTime: referenceFormatted.time,
       dateLabel: referenceFormatted.dateLabel,
