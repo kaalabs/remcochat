@@ -164,7 +164,7 @@ If you capture JSON into a shell variable (e.g. `ROOMS_JSON="$(...)"`), that var
 Recommended (robust): pass the JSON via stdin using a here-string.
 
 Important: do **not** use `python3 -` for this. `python3 -` reads the *Python program* from stdin, so you cannot also
-use stdin for JSON input.
+use stdin for JSON input. Also, only one stdin redirection wins; `<<<"$A" <<<"$B"` will drop the first value.
 
 ```bash
 ROOMS_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
@@ -194,6 +194,28 @@ python3 - <<'PY'
 import os
 rooms_json=os.environ.get('ROOMS_JSON','')
 PY
+```
+
+### Verification parsing (safe stdin)
+
+If you need to parse multiple JSON blobs in one Python run, use `python3 -c` and pipe them in order:
+
+```bash
+PY_VERIFY="$(cat <<'PY'
+import json,sys
+set_resp=json.loads(sys.stdin.readline())
+ver_resp=json.loads(sys.stdin.readline())
+print('SET ok=', set_resp.get('ok'))
+vbody=((ver_resp.get('result') or {}).get('body') or {})
+data=vbody.get('data') or []
+if data:
+    gl=data[0]
+    print('VERIFY on.on=', (gl.get('on') or {}).get('on'))
+    print('VERIFY brightness=', (gl.get('dimming') or {}).get('brightness'))
+PY
+)"
+
+printf '%s\n%s\n' "$SET_JSON" "$VERIFY_JSON" | python3 -c "$PY_VERIFY"
 ```
 
 ## Discovery flow (how you map fuzzy names → entities)
