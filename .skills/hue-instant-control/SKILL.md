@@ -11,7 +11,7 @@ compatibility: |
 allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.1.0"
+  version: "0.1.1"
   purpose: hue-gateway-instant-control
 ---
 
@@ -89,6 +89,42 @@ All actions are:
 
 Success returns `"ok": true` and a `"result"` payload.
 
+### Response shape gotcha (avoid empty parsing)
+
+The gateway always wraps responses in the action envelope.
+
+- For calls that return a Hue Bridge response (`action=clipv2.request`, `light.set`, `grouped_light.set`, `scene.activate`), the **Hue Bridge JSON is nested under** `result.body`.
+  - Hue resources are typically at `result.body.data`
+  - Hue errors (if any) are typically at `result.body.errors`
+
+Example (shape):
+
+```json
+{
+  "ok": true,
+  "action": "clipv2.request",
+  "result": {
+    "status": 200,
+    "body": { "errors": [], "data": [ /* resources */ ] }
+  }
+}
+```
+
+So when parsing rooms/lights, **use `result.body.data`, not `result.data`.**
+
+Parsing examples (jq is optional):
+
+```bash
+# jq: get the Hue resource array
+jq '.result.body.data'
+```
+
+```python
+# python: get the Hue resource array
+body = (resp.get("result") or {}).get("body") or {}
+data = body.get("data", [])
+```
+
 ## How you execute actions (preferred)
 
 If the Bash tool is available, use it to run curl commands.
@@ -113,6 +149,17 @@ curl -sS -X POST "$BASE_URL/v1/actions" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
 ```
 
+Parsing tip (jq, if available):
+
+```bash
+# Prints: <room-name>\t<grouped_light_rid>
+curl -sS -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev-token' \
+  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}' \
+| jq -r '.result.body.data[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)"'
+```
+
 Then, for each room:
 - Find `services[]` where `rtype == "grouped_light"`
 - Use that `rid` as the controllable ID for the room’s lights.
@@ -130,11 +177,19 @@ Zones also typically have a `grouped_light` service.
 
 ### Step C — Resolve by name (fast path)
 
-If the user clearly provided an exact name (and you want a simpler flow), you may use:
+If the user clearly provided an exact name (and you want a simpler flow), you may resolve the *room/zone* first, then extract its `grouped_light` service rid.
 
 ```json
 { "action":"resolve.by_name", "args": { "rtype":"room", "name":"Woonkamer" } }
 ```
+
+Then fetch the room resource and extract the grouped light rid:
+
+```json
+{ "action":"clipv2.request", "args": { "method":"GET", "path":"/clip/v2/resource/room/<ROOM_RID>" } }
+```
+
+Important: `grouped_light` resources are often unnamed (no `metadata.name`), so **do not** rely on `resolve.by_name` with `rtype="grouped_light"`.
 
 If it returns ambiguous (409), ask the user to pick.
 
@@ -167,17 +222,19 @@ Use Kelvin:
 
 ### Simple colors (only if user asks for color)
 
-Prefer scenes if available. If not, you may set `xy` using rough presets:
+Prefer scenes if available. If not, you may set `xy` using rough presets.
 
-- red: `[0.700, 0.299]`
-- green: `[0.170, 0.700]`
-- blue: `[0.150, 0.060]`
-- purple: `[0.270, 0.110]`
+Important: `xy` is an object: `{ "x": <number>, "y": <number> }`.
+
+- red: `{ "x": 0.700, "y": 0.299 }`
+- green: `{ "x": 0.170, "y": 0.700 }`
+- blue: `{ "x": 0.150, "y": 0.060 }`
+- purple: `{ "x": 0.270, "y": 0.110 }`
 
 Example:
 
 ```json
-{ "action":"grouped_light.set", "args": { "rid":"...", "on": true, "brightness": 45, "xy": [0.150, 0.060] } }
+{ "action":"grouped_light.set", "args": { "rid":"...", "on": true, "brightness": 45, "xy": {"x": 0.150, "y": 0.060} } }
 ```
 
 If the user requests a nuanced color (“teal”, “sunset”), ask whether they want a **scene** (recommended) or accept a best-effort color.
@@ -233,3 +290,7 @@ If gateway returns:
 - `401`: ask user for correct token/key.
 - `409 ambiguous_name`: show choices and ask user to pick.
 - `424` / `502`: tell user bridge is unreachable and stop.
+
+If `action=clipv2.request` returns `"ok": true` but `result.status` is not 2xx:
+- treat it as a failed bridge operation
+- show the user `result.body.errors` (if present)

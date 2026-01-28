@@ -18,6 +18,8 @@ services:
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
+      # Bind-mount config for restart-only reloads (no rebuild needed).
+      - ./config.toml:/app/config.toml:ro
       # Host-side modelsdev installation directory (must contain `bin/modelsdev`).
       # Use a RemcoChat-specific env var to avoid collisions with globally-exported vars.
       - ${REMCOCHAT_MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
