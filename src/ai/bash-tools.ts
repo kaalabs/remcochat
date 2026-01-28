@@ -56,7 +56,6 @@ type SandboxEntry = {
   sandbox?: VercelSandbox;
   sandboxId?: string;
   dockerClient?: ReturnType<typeof createDockerSandboxClient>;
-  tools: Record<string, unknown>;
   createdAt: number;
   lastUsedAt: number;
   idleTimer: NodeJS.Timeout | null;
@@ -578,10 +577,7 @@ async function createSandboxEntry(
   key: string,
   cfg: NonNullable<RemcoChatConfig["bashTools"]>
 ): Promise<SandboxEntry> {
-  const [{ createBashTool }, vercel] = await Promise.all([
-    loadBashTool(),
-    cfg.provider === "vercel" ? loadVercelSandbox() : Promise.resolve(null),
-  ]);
+  const vercel = cfg.provider === "vercel" ? await loadVercelSandbox() : null;
 
   if (cfg.provider === "docker") {
     if (!cfg.docker) throw new Error("bash_tools.docker config is required.");
@@ -607,177 +603,11 @@ async function createSandboxEntry(
       }
     }
 
-    const destination = "/vercel/sandbox/workspace";
-    const maxOutputLength = Math.max(cfg.maxStdoutChars, cfg.maxStderrChars);
-    const adapter = makeDockerSandboxAdapter({
-      client,
-      sandboxId,
-      timeoutMs: cfg.timeoutMs,
-    });
-
-    const { tools } = await createBashTool({
-      sandbox: adapter,
-      destination,
-      maxOutputLength,
-      onAfterBashCall: ({ result }) => {
-        return {
-          result: {
-            ...result,
-            stdout: truncateWithNotice(
-              String(result.stdout ?? "").trimEnd(),
-              cfg.maxStdoutChars,
-              "stdout"
-            ),
-            stderr: truncateWithNotice(
-              String(result.stderr ?? "").trimEnd(),
-              cfg.maxStderrChars,
-              "stderr"
-            ),
-          },
-        };
-      },
-    });
-
-    const streamingBash = createTool({
-      description:
-        typeof tools.bash?.description === "string"
-          ? tools.bash.description
-          : "Execute bash commands in the sandbox environment.",
-      inputSchema: z.object({
-        command: z.string().describe("The bash command to execute"),
-      }),
-      execute: async function* (
-        { command: originalCommand },
-        options
-      ): AsyncGenerator<{
-        stdout: string;
-        stderr: string;
-        exitCode: number;
-        stdoutTruncatedChars?: number;
-        stderrTruncatedChars?: number;
-      }> {
-        const emitIntervalMs = 150;
-        const emitMinDeltaChars = 512;
-        let lastEmitAt = 0;
-        let lastEmitLen = 0;
-
-        const command = String(originalCommand ?? "");
-        const fullCommand = `cd "${destination}" && ${command}`;
-
-        const abortSignal = options.abortSignal;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
-        const onAbort = () => controller.abort();
-        abortSignal?.addEventListener("abort", onAbort, { once: true });
-
-        let stdoutTail = "";
-        let stderrTail = "";
-        let stdoutDropped = 0;
-        let stderrDropped = 0;
-        let commandId: string | null = null;
-
-        const makeOutput = (exitCode: number) => {
-          return {
-            stdout: stdoutTail,
-            stderr: stderrTail,
-            exitCode,
-            ...(stdoutDropped > 0 ? { stdoutTruncatedChars: stdoutDropped } : {}),
-            ...(stderrDropped > 0 ? { stderrTruncatedChars: stderrDropped } : {}),
-          };
-        };
-
-        try {
-          const started = await client.startCommand(sandboxId, {
-            cmd: "bash",
-            args: ["-lc", wrapSandboxCommand(fullCommand)],
-            timeoutMs: cfg.timeoutMs,
-            detached: true,
-          });
-          commandId = started.commandId;
-          yield makeOutput(-1);
-
-          for await (const log of client.streamLogs(sandboxId, commandId, {
-            abortSignal: controller.signal,
-          })) {
-            if (log.stream === "stdout") {
-              const appended = appendTailBuffer(stdoutTail, log.data, cfg.maxStdoutChars);
-              stdoutTail = appended.buffer;
-              stdoutDropped += appended.dropped;
-            } else {
-              const appended = appendTailBuffer(stderrTail, log.data, cfg.maxStderrChars);
-              stderrTail = appended.buffer;
-              stderrDropped += appended.dropped;
-            }
-
-            const now = Date.now();
-            const len = stdoutTail.length + stderrTail.length;
-            const changedEnough = Math.abs(len - lastEmitLen) >= emitMinDeltaChars;
-            const timeOk = now - lastEmitAt >= emitIntervalMs;
-            if (timeOk || changedEnough) {
-              lastEmitAt = now;
-              lastEmitLen = len;
-              yield makeOutput(-1);
-            }
-          }
-
-          const finished = await client.waitCommand(sandboxId, commandId);
-          yield makeOutput(finished.exitCode);
-        } catch (err) {
-          const isAbort =
-            err instanceof Error &&
-            (err.name === "AbortError" || /aborted/i.test(err.message));
-
-          if (commandId) {
-            try {
-              await client.killCommand(sandboxId, commandId);
-            } catch {
-              // ignore
-            }
-          }
-
-          if (isAbort) {
-            stderrTail = `Command timed out after ${cfg.timeoutMs}ms.`;
-            yield makeOutput(124);
-            return;
-          }
-
-          throw err;
-        } finally {
-          clearTimeout(timer);
-          abortSignal?.removeEventListener("abort", onAbort);
-        }
-      },
-    });
-
-    const sandboxUrl = createTool({
-      description:
-        "Get a URL for a port exposed from the current sandbox.",
-      inputSchema: z.object({
-        port: z
-          .number()
-          .int()
-          .min(1)
-          .max(65535)
-          .describe("Port number that the sandbox service is listening on.")
-          .default(3000),
-      }),
-      execute: async ({ port }): Promise<{ url: string }> => {
-        const resolved = await client.getPortUrl(sandboxId, port);
-        if (!resolved.found || !resolved.url) {
-          throw new Error(
-            `Port ${port} is not published for this sandbox. Set app.bash_tools.sandbox.ports = [${port}] and recreate the sandbox.`
-          );
-        }
-        return { url: resolved.url };
-      },
-    });
-
     return {
       provider: "docker",
       key,
       sandboxId,
       dockerClient: client,
-      tools: { ...tools, bash: streamingBash, sandboxUrl },
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       idleTimer: null,
@@ -813,194 +643,10 @@ async function createSandboxEntry(
     await seedSandboxFromUpload(sandbox, cfg);
   }
 
-  const destination = "/vercel/sandbox/workspace";
-
-  const maxOutputLength = Math.max(cfg.maxStdoutChars, cfg.maxStderrChars);
-  const adapter = makeSandboxAdapter(sandbox, cfg.timeoutMs);
-
-  const { tools } = await createBashTool({
-    sandbox: adapter,
-    destination,
-    maxOutputLength,
-    onAfterBashCall: ({ result }) => {
-      return {
-        result: {
-          ...result,
-          stdout: truncateWithNotice(
-            String(result.stdout ?? "").trimEnd(),
-            cfg.maxStdoutChars,
-            "stdout"
-          ),
-          stderr: truncateWithNotice(
-            String(result.stderr ?? "").trimEnd(),
-            cfg.maxStderrChars,
-            "stderr"
-          ),
-        },
-      };
-    },
-  });
-
-  const streamingBash = createTool({
-    description:
-      typeof tools.bash?.description === "string"
-        ? tools.bash.description
-        : "Execute bash commands in the sandbox environment.",
-    inputSchema: z.object({
-      command: z.string().describe("The bash command to execute"),
-    }),
-    execute: async function* (
-      { command: originalCommand },
-      options
-    ): AsyncGenerator<{
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-      stdoutTruncatedChars?: number;
-      stderrTruncatedChars?: number;
-    }> {
-      const emitIntervalMs = 150;
-      const emitMinDeltaChars = 512;
-      let lastEmitAt = 0;
-      let lastEmitLen = 0;
-
-      const command = String(originalCommand ?? "");
-      const fullCommand = `cd "${destination}" && ${command}`;
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
-      const abortSignal = options.abortSignal;
-      const onAbort = () => controller.abort();
-      abortSignal?.addEventListener("abort", onAbort, { once: true });
-
-      let runningCmd: VercelCommand | null = null;
-      let stdoutTail = "";
-      let stderrTail = "";
-      let stdoutDropped = 0;
-      let stderrDropped = 0;
-
-      const makeOutput = (exitCode: number) => {
-        return {
-          stdout: stdoutTail,
-          stderr: stderrTail,
-          exitCode,
-          ...(stdoutDropped > 0 ? { stdoutTruncatedChars: stdoutDropped } : {}),
-          ...(stderrDropped > 0 ? { stderrTruncatedChars: stderrDropped } : {}),
-        };
-      };
-
-      try {
-        runningCmd = await sandbox.runCommand({
-          cmd: "bash",
-          args: ["-lc", wrapSandboxCommand(fullCommand)],
-          detached: true,
-          signal: controller.signal,
-        });
-
-        yield makeOutput(-1);
-
-        const logs = runningCmd.logs({ signal: controller.signal });
-        try {
-          for await (const log of logs) {
-            if (log.stream === "stdout") {
-              const appended = appendTailBuffer(
-                stdoutTail,
-                log.data,
-                cfg.maxStdoutChars
-              );
-              stdoutTail = appended.buffer;
-              stdoutDropped += appended.dropped;
-            } else {
-              const appended = appendTailBuffer(
-                stderrTail,
-                log.data,
-                cfg.maxStderrChars
-              );
-              stderrTail = appended.buffer;
-              stderrDropped += appended.dropped;
-            }
-
-            const now = Date.now();
-            const len = stdoutTail.length + stderrTail.length;
-            const changedEnough = Math.abs(len - lastEmitLen) >= emitMinDeltaChars;
-            const timeOk = now - lastEmitAt >= emitIntervalMs;
-            if (timeOk || changedEnough) {
-              lastEmitAt = now;
-              lastEmitLen = len;
-              yield makeOutput(-1);
-            }
-          }
-        } finally {
-          logs.close();
-        }
-
-        const finished = await runningCmd.wait({ signal: controller.signal });
-        yield makeOutput(finished.exitCode);
-      } catch (err) {
-        const isAbort =
-          err instanceof Error &&
-          (err.name === "AbortError" || /aborted/i.test(err.message));
-
-        if (runningCmd) {
-          try {
-            await runningCmd.kill("SIGTERM");
-          } catch {
-            // ignore
-          }
-        }
-
-        if (isAbort) {
-          stderrTail = `Command timed out after ${cfg.timeoutMs}ms.`;
-          yield makeOutput(124);
-          return;
-        }
-
-        throw err;
-      } finally {
-        clearTimeout(timer);
-        abortSignal?.removeEventListener("abort", onAbort);
-      }
-    },
-  });
-
-  const sandboxUrl = createTool({
-    description:
-      "Get a publicly accessible URL for a port exposed from the current Vercel Sandbox.",
-    inputSchema: z.object({
-      port: z
-        .number()
-        .int()
-        .min(1)
-        .max(65535)
-        .describe("Port number that the sandbox service is listening on.")
-        .default(3000),
-    }),
-    execute: async ({ port }) => {
-      if (!Array.isArray(ports) || ports.length === 0) {
-        throw new Error(
-          "No public sandbox ports are configured. Set app.bash_tools.sandbox.ports = [3000] (max 4) to enable preview URLs."
-        );
-      }
-      if (!ports.includes(port)) {
-        throw new Error(
-          `Port ${port} is not exposed for this sandbox. Use one of: ${ports.join(", ")} (or update app.bash_tools.sandbox.ports).`
-        );
-      }
-      try {
-        return { url: sandbox.domain(port) };
-      } catch (err) {
-        throw new Error(
-          err instanceof Error ? err.message : "Failed to resolve sandbox URL."
-        );
-      }
-    },
-  });
-
   return {
     provider: "vercel",
     key,
     sandbox,
-    tools: { ...tools, bash: streamingBash, sandboxUrl },
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
     idleTimer: null,
@@ -1070,6 +716,276 @@ async function getOrCreateSandboxEntry(
   }
 }
 
+function prewarmSandboxEntry(key: string, cfg: NonNullable<RemcoChatConfig["bashTools"]>) {
+  if (sandboxesByKey.has(key)) return;
+  if (createLocks.has(key)) return;
+  void getOrCreateSandboxEntry(key, cfg).catch((err) => {
+    console.error(`[bash-tools] Failed to prewarm sandbox for session ${key}:`, err);
+  });
+}
+
+function makeLazySandboxAdapter(input: {
+  sessionKey: string;
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>;
+}): BashToolSandbox {
+  const { sessionKey, cfg } = input;
+  const resolveAdapter = async (): Promise<BashToolSandbox> => {
+    const entry = await getOrCreateSandboxEntry(sessionKey, cfg);
+    if (entry.provider === "docker") {
+      return makeDockerSandboxAdapter({
+        client: entry.dockerClient!,
+        sandboxId: entry.sandboxId!,
+        timeoutMs: cfg.timeoutMs,
+      });
+    }
+    return makeSandboxAdapter(entry.sandbox!, cfg.timeoutMs);
+  };
+
+  return {
+    async executeCommand(command: string) {
+      const adapter = await resolveAdapter();
+      return adapter.executeCommand(command);
+    },
+    async readFile(filePath: string) {
+      const adapter = await resolveAdapter();
+      return adapter.readFile(filePath);
+    },
+    async writeFiles(files: Array<{ path: string; content: string | Buffer }>) {
+      const adapter = await resolveAdapter();
+      return adapter.writeFiles(files);
+    },
+  };
+}
+
+function createStreamingBashTool(input: {
+  sessionKey: string;
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>;
+  destination: string;
+  description: string;
+}) {
+  const { sessionKey, cfg, destination, description } = input;
+  return createTool({
+    description,
+    inputSchema: z.object({
+      command: z.string().describe("The bash command to execute"),
+    }),
+    execute: async function* (
+      { command: originalCommand },
+      options
+    ): AsyncGenerator<{
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      stdoutTruncatedChars?: number;
+      stderrTruncatedChars?: number;
+    }> {
+      const emitIntervalMs = 150;
+      const emitMinDeltaChars = 512;
+      let lastEmitAt = 0;
+      let lastEmitLen = 0;
+
+      const command = String(originalCommand ?? "");
+      const fullCommand = `cd "${destination}" && ${command}`;
+
+      const abortSignal = options.abortSignal;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+      const onAbort = () => controller.abort();
+      abortSignal?.addEventListener("abort", onAbort, { once: true });
+
+      let stdoutTail = "";
+      let stderrTail = "";
+      let stdoutDropped = 0;
+      let stderrDropped = 0;
+
+      const makeOutput = (exitCode: number) => {
+        return {
+          stdout: stdoutTail,
+          stderr: stderrTail,
+          exitCode,
+          ...(stdoutDropped > 0 ? { stdoutTruncatedChars: stdoutDropped } : {}),
+          ...(stderrDropped > 0 ? { stderrTruncatedChars: stderrDropped } : {}),
+        };
+      };
+
+      const appendLog = (log: { stream: "stdout" | "stderr"; data: string }) => {
+        if (log.stream === "stdout") {
+          const appended = appendTailBuffer(stdoutTail, log.data, cfg.maxStdoutChars);
+          stdoutTail = appended.buffer;
+          stdoutDropped += appended.dropped;
+        } else {
+          const appended = appendTailBuffer(stderrTail, log.data, cfg.maxStderrChars);
+          stderrTail = appended.buffer;
+          stderrDropped += appended.dropped;
+        }
+
+        const now = Date.now();
+        const len = stdoutTail.length + stderrTail.length;
+        const changedEnough = Math.abs(len - lastEmitLen) >= emitMinDeltaChars;
+        const timeOk = now - lastEmitAt >= emitIntervalMs;
+        if (timeOk || changedEnough) {
+          lastEmitAt = now;
+          lastEmitLen = len;
+          return true;
+        }
+        return false;
+      };
+
+      try {
+        const entry = await getOrCreateSandboxEntry(sessionKey, cfg);
+        if (entry.provider === "docker") {
+          const client = entry.dockerClient!;
+          const sandboxId = entry.sandboxId!;
+          let commandId: string | null = null;
+
+          try {
+            const started = await client.startCommand(sandboxId, {
+              cmd: "bash",
+              args: ["-lc", wrapSandboxCommand(fullCommand)],
+              timeoutMs: cfg.timeoutMs,
+              detached: true,
+            });
+            commandId = started.commandId;
+            yield makeOutput(-1);
+
+            for await (const log of client.streamLogs(sandboxId, commandId, {
+              abortSignal: controller.signal,
+            })) {
+              if (appendLog(log)) yield makeOutput(-1);
+            }
+
+            const finished = await client.waitCommand(sandboxId, commandId);
+            yield makeOutput(finished.exitCode);
+          } catch (err) {
+            const isAbort =
+              err instanceof Error &&
+              (err.name === "AbortError" || /aborted/i.test(err.message));
+
+            if (commandId) {
+              try {
+                await client.killCommand(sandboxId, commandId);
+              } catch {
+                // ignore
+              }
+            }
+
+            if (isAbort) {
+              stderrTail = `Command timed out after ${cfg.timeoutMs}ms.`;
+              yield makeOutput(124);
+              return;
+            }
+
+            throw err;
+          }
+
+          return;
+        }
+
+        const sandbox = entry.sandbox!;
+        let runningCmd: VercelCommand | null = null;
+        try {
+          runningCmd = await sandbox.runCommand({
+            cmd: "bash",
+            args: ["-lc", wrapSandboxCommand(fullCommand)],
+            detached: true,
+            signal: controller.signal,
+          });
+
+          yield makeOutput(-1);
+
+          const logs = runningCmd.logs({ signal: controller.signal });
+          try {
+            for await (const log of logs) {
+              if (appendLog(log)) yield makeOutput(-1);
+            }
+          } finally {
+            logs.close();
+          }
+
+          const finished = await runningCmd.wait({ signal: controller.signal });
+          yield makeOutput(finished.exitCode);
+        } catch (err) {
+          const isAbort =
+            err instanceof Error &&
+            (err.name === "AbortError" || /aborted/i.test(err.message));
+
+          if (runningCmd) {
+            try {
+              await runningCmd.kill("SIGTERM");
+            } catch {
+              // ignore
+            }
+          }
+
+          if (isAbort) {
+            stderrTail = `Command timed out after ${cfg.timeoutMs}ms.`;
+            yield makeOutput(124);
+            return;
+          }
+
+          throw err;
+        }
+      } finally {
+        clearTimeout(timer);
+        abortSignal?.removeEventListener("abort", onAbort);
+      }
+    },
+  });
+}
+
+function createSandboxUrlTool(input: {
+  sessionKey: string;
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>;
+}) {
+  const { sessionKey, cfg } = input;
+  return createTool({
+    description:
+      cfg.provider === "docker"
+        ? "Get a URL for a port exposed from the current sandbox."
+        : "Get a publicly accessible URL for a port exposed from the current Vercel Sandbox.",
+    inputSchema: z.object({
+      port: z
+        .number()
+        .int()
+        .min(1)
+        .max(65535)
+        .describe("Port number that the sandbox service is listening on.")
+        .default(3000),
+    }),
+    execute: async ({ port }) => {
+      const entry = await getOrCreateSandboxEntry(sessionKey, cfg);
+      if (entry.provider === "docker") {
+        const resolved = await entry.dockerClient!.getPortUrl(entry.sandboxId!, port);
+        if (!resolved.found || !resolved.url) {
+          throw new Error(
+            `Port ${port} is not published for this sandbox. Set app.bash_tools.sandbox.ports = [${port}] and recreate the sandbox.`
+          );
+        }
+        return { url: resolved.url };
+      }
+
+      const ports = cfg.sandbox.ports;
+      if (!Array.isArray(ports) || ports.length === 0) {
+        throw new Error(
+          "No public sandbox ports are configured. Set app.bash_tools.sandbox.ports = [3000] (max 4) to enable preview URLs."
+        );
+      }
+      if (!ports.includes(port)) {
+        throw new Error(
+          `Port ${port} is not exposed for this sandbox. Use one of: ${ports.join(", ")} (or update app.bash_tools.sandbox.ports).`
+        );
+      }
+      try {
+        return { url: entry.sandbox!.domain(port) };
+      } catch (err) {
+        throw new Error(
+          err instanceof Error ? err.message : "Failed to resolve sandbox URL."
+        );
+      }
+    },
+  });
+}
+
 export async function createBashTools(input: {
   request: Request;
   sessionKey: string;
@@ -1082,11 +998,51 @@ export async function createBashTools(input: {
   }
 
   try {
-    const entry = await getOrCreateSandboxEntry(input.sessionKey, cfg);
-    return { enabled: true, tools: entry.tools };
+    prewarmSandboxEntry(input.sessionKey, cfg);
+    const { createBashTool } = await loadBashTool();
+
+    const destination = "/vercel/sandbox/workspace";
+    const maxOutputLength = Math.max(cfg.maxStdoutChars, cfg.maxStderrChars);
+    const adapter = makeLazySandboxAdapter({ sessionKey: input.sessionKey, cfg });
+
+    const { tools } = await createBashTool({
+      sandbox: adapter,
+      destination,
+      maxOutputLength,
+      onAfterBashCall: ({ result }) => {
+        return {
+          result: {
+            ...result,
+            stdout: truncateWithNotice(
+              String(result.stdout ?? "").trimEnd(),
+              cfg.maxStdoutChars,
+              "stdout"
+            ),
+            stderr: truncateWithNotice(
+              String(result.stderr ?? "").trimEnd(),
+              cfg.maxStderrChars,
+              "stderr"
+            ),
+          },
+        };
+      },
+    });
+
+    const streamingBash = createStreamingBashTool({
+      sessionKey: input.sessionKey,
+      cfg,
+      destination,
+      description:
+        typeof tools.bash?.description === "string"
+          ? tools.bash.description
+          : "Execute bash commands in the sandbox environment.",
+    });
+    const sandboxUrl = createSandboxUrlTool({ sessionKey: input.sessionKey, cfg });
+
+    return { enabled: true, tools: { ...tools, bash: streamingBash, sandboxUrl } };
   } catch (err) {
     console.error(
-      `[bash-tools] Failed to initialize sandbox for session ${input.sessionKey}:`,
+      `[bash-tools] Failed to initialize bash tools for session ${input.sessionKey}:`,
       err
     );
     return { enabled: false, tools: {} };

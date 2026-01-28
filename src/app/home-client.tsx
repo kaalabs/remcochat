@@ -3206,7 +3206,7 @@ export function HomeClient({
                           if (!reasoningTokens) return null;
                           return (
                             <div className="text-xs text-muted-foreground">
-                              Reasoning tokens: {reasoningTokens}
+                              {" "}Reasoning tokens: {reasoningTokens}
                             </div>
                           );
                         })() : null}
