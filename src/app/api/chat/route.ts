@@ -53,6 +53,7 @@ import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
 import { getSkillsRegistry } from "@/server/skills/runtime";
 import { stripExplicitSkillInvocationFromMessages } from "@/server/skills/explicit-invocation";
+import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
 
 export const maxDuration = 30;
 
@@ -227,87 +228,7 @@ function needsMemoryContext(content: string) {
   return /^[A-Za-z][A-Za-z'-]*$/.test(stripped);
 }
 
-function looksLikeTimeRequest(text: string) {
-  return (
-    /\b(time|timezone|timezones|current time|what time|time in|local time)\b/.test(
-      text
-    ) ||
-    /\b(utc|gmt)\b/.test(text)
-  );
-}
-
-function looksLikeWeatherRequest(text: string) {
-  return /\b(weather|forecast|temperature|rain|snow|wind)\b/.test(text);
-}
-
-function looksLikeUrlSummaryRequest(text: string) {
-  return /\b(summarize|summary)\b/.test(text) && /https?:\/\//.test(text);
-}
-
-function looksLikeNotesRequest(text: string) {
-  return /\b(note|notes|jot|remember this|save this)\b/.test(text);
-}
-
-function looksLikeListsRequest(text: string) {
-  return /\b(list|todo|to-do|shopping)\b/.test(text);
-}
-
-function looksLikeAgendaRequest(text: string) {
-  return /\b(agenda|schedule|calendar|meeting|appointment)\b/.test(text);
-}
-
-function shouldForceMemoryAnswerTool(userText: string, memoryLines: string[]) {
-  const text = String(userText ?? "").trim().toLowerCase();
-  if (!text) return false;
-  if (!Array.isArray(memoryLines) || memoryLines.length === 0) return false;
-
-  if (
-    looksLikeTimeRequest(text) ||
-    looksLikeWeatherRequest(text) ||
-    looksLikeUrlSummaryRequest(text) ||
-    looksLikeNotesRequest(text) ||
-    looksLikeListsRequest(text) ||
-    looksLikeAgendaRequest(text)
-  ) {
-    return false;
-  }
-
-  const explicitlyRequestsMemory =
-    /\b(profile memory|from memory|in memory|do you remember|did i tell you|what do you remember)\b/.test(
-      text
-    ) || /\bmemory\b/.test(text);
-
-  const rawTokens = text.match(/[a-z0-9]+/g) ?? [];
-  const queryTokens = new Set(rawTokens.filter((token) => token.length >= 4));
-  for (let i = 0; i + 1 < rawTokens.length; i += 1) {
-    const a = rawTokens[i];
-    const b = rawTokens[i + 1];
-    if (!a || !b) continue;
-    if (a.length < 3 || b.length < 3) continue;
-    queryTokens.add(`${a}${b}`);
-  }
-  if (queryTokens.size === 0) return false;
-
-  for (const line of memoryLines) {
-    const lineRawTokens =
-      String(line ?? "")
-        .toLowerCase()
-        .match(/[a-z0-9]+/g) ?? [];
-    const lineTokens = lineRawTokens.filter((token) => token.length >= 4);
-    for (const token of lineTokens) {
-      if (queryTokens.has(token)) return true;
-    }
-    for (let i = 0; i + 1 < lineRawTokens.length; i += 1) {
-      const a = lineRawTokens[i];
-      const b = lineRawTokens[i + 1];
-      if (!a || !b) continue;
-      if (a.length < 3 || b.length < 3) continue;
-      if (queryTokens.has(`${a}${b}`)) return true;
-    }
-  }
-
-  return explicitlyRequestsMemory;
-}
+// shouldForceMemoryAnswerTool moved to src/server/memory-answer-routing.ts
 
 function isAgendaMutation(action: AgendaActionInput["action"]) {
   return action !== "list";
@@ -1065,6 +986,8 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
+      bashToolsProvider: config.bashTools?.provider,
+      bashToolsRuntime: config.bashTools?.sandbox?.runtime,
       attachmentsEnabled: config.attachments.enabled,
     });
 
@@ -1958,6 +1881,8 @@ export async function POST(req: Request) {
       toolsEnabled: resolved.capabilities.tools,
       webToolsEnabled: webTools.enabled,
       bashToolsEnabled: bashTools.enabled,
+      bashToolsProvider: config.bashTools?.provider,
+      bashToolsRuntime: config.bashTools?.sandbox?.runtime,
       attachmentsEnabled: config.attachments.enabled,
     }),
   ];

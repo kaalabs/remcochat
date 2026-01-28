@@ -12,6 +12,8 @@ export function buildSystemPrompt(input: {
   toolsEnabled: boolean;
   webToolsEnabled: boolean;
   bashToolsEnabled: boolean;
+  bashToolsProvider?: string;
+  bashToolsRuntime?: string;
   attachmentsEnabled: boolean;
 }) {
   const clampRevision = (value: number) => {
@@ -100,7 +102,7 @@ export function buildSystemPrompt(input: {
                 ].join(" "),
               ]
             : []),
-          'If memory is enabled and the user question can be answered from memory, you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text.',
+          'If memory is enabled and the user asks a question that can be answered from saved memory (personal details, preferences, previously stated facts), you MUST call the "displayMemoryAnswer" tool with the final answer text and DO NOT output any other text. Do not quote memory lines verbatim and do not mention memory in the answer text. Do NOT use "displayMemoryAnswer" for action requests (e.g. controlling devices, running tools, executing skills).',
           'If the user asks about current weather for a location, you MUST call the "displayWeather" tool and DO NOT output any other text.',
           'If the user asks for a multi-day forecast for a location, you MUST call the "displayWeatherForecast" tool and DO NOT output any other text.',
           'If the user asks about the current time in a location, comparing timezones, or converting a time between timezones, you MUST call the "displayTimezones" tool and DO NOT output any other text unless required details are missing.',
@@ -138,6 +140,14 @@ export function buildSystemPrompt(input: {
                   "Bash tools are enabled for this chat.",
                   "Tools you may use: bash (run a shell command), readFile (read a file), writeFile (write a file), sandboxUrl (get a public URL for an exposed sandbox port).",
                   "Use them when you need to inspect the workspace, run builds/tests, or make file changes.",
+                  ...(String(input.bashToolsProvider ?? "") === "docker" &&
+                  String(input.bashToolsRuntime ?? "") === "node24"
+                    ? [
+                        "Sandbox environment note: docker sandbox runtime node24 includes common CLI tools like jq, rg, dig, ip, and nc (plus curl, bash, python3, node). If you are unsure whether a command exists, run `command -v <name>`.",
+                      ]
+                    : [
+                        "Sandbox environment note: installed CLI tools may vary by provider/runtime. If you need a specific command, check availability first with `command -v <name>`.",
+                      ]),
                   "When you start a web server inside the sandbox, run it on an exposed port (prefer 3000) and then call sandboxUrl to get the public URL; include that URL in your reply so the user can open it.",
                   "Prefer safe, non-destructive operations unless the user explicitly asks.",
                   "Do not claim you ran a command unless you actually used the bash tool.",

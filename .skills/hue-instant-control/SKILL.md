@@ -1,8 +1,8 @@
 ---
 name: hue-instant-control
 description: |
-  Instant Philips Hue control via the local Hue Gateway HTTP API. Translates fuzzy “vibes” and natural language
-  requests into concrete room/light actions (on/off, brightness, color temperature, simple colors).
+  Instant Philips Hue control via the local Hue Gateway HTTP API. Translates fuzzy requests ("vibes") and natural
+  language into concrete room/light actions (on/off, brightness, color temperature, simple colors).
 license: MIT
 compatibility: |
   Requires access to the Hue Gateway and ability to make HTTP requests. The base URL depends on where commands execute
@@ -11,7 +11,7 @@ compatibility: |
 allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.1.1"
+  version: "0.2.1"
   purpose: hue-gateway-instant-control
 ---
 
@@ -21,6 +21,13 @@ You control Philips Hue **only** via the already-running Hue Gateway service.
 
 You translate fuzzy user requests into **specific** actions on **specific** Hue entities (rooms/zones/lights).
 Keep the interaction short, confident, and “assistant-y”.
+
+## Performance goal (always)
+
+- **Goal:** operate the Hue Gateway with near-zero errors and minimal latency.
+- **Default:** 1 Bash tool call per user request (bundle multiple curl calls in the same Bash invocation).
+- **Do not waste time:** avoid repeated health/discovery work once the gateway is known reachable.
+- **Always use tight timeouts** on curl so fallbacks are instant.
 
 ## Safety + UX rules (always)
 
@@ -52,27 +59,34 @@ Important: if you are executing via the **Bash tool** in a sandbox (Vercel Sandb
    - `http://host.docker.internal:8000` (common for Docker Desktop on macOS/Windows; often works with docker sandboxd)
    - `http://localhost:8000` (only works when executing on the same host/network namespace as the gateway)
 3) If neither works, stop and ask the user for a base URL that is reachable **from the execution environment**.
-   - Tell them to verify from the same environment by running: `curl -sS <base>/healthz`
+   - Tell them to verify from the same environment by running: `curl -fsS --connect-timeout 1 --max-time 2 <base>/healthz`
 
-### Health check (must pass before controlling lights)
+### Health check (run once per chat; keep it fast)
 
 ```bash
-BASE_URL=""
-for base in "http://hue-gateway:8000" "http://host.docker.internal:8000" "http://localhost:8000"; do
-  if curl -fsS "$base/healthz" >/dev/null; then
-    BASE_URL="$base"
-    break
-  fi
-done
+set -euo pipefail
 
-test -n "$BASE_URL" || { echo "Hue Gateway not reachable from this environment."; exit 1; }
+CURL_HEALTH='curl -fsS --connect-timeout 1 --max-time 2'
+CURL_JSON='curl -sS --connect-timeout 1 --max-time 8'
+
+BASE_URL="${BASE_URL:-}" # optional: user/environment provided
+if [ -z "$BASE_URL" ]; then
+  for base in "http://hue-gateway:8000" "http://host.docker.internal:8000" "http://localhost:8000"; do
+    if $CURL_HEALTH "$base/healthz" >/dev/null; then
+      BASE_URL="$base"
+      break
+    fi
+  done
+fi
+
+[ -n "$BASE_URL" ] || { echo "Hue Gateway not reachable from this environment."; exit 1; }
 echo "Using BASE_URL=$BASE_URL"
 
-curl -fsS "$BASE_URL/readyz" | tee /tmp/hue-readyz.json
-grep -q '"ready"[[:space:]]*:[[:space:]]*true' /tmp/hue-readyz.json || {
-  echo "Hue Gateway is not ready (ready=false)."
-  exit 1
-}
+READY_JSON="$($CURL_HEALTH "$BASE_URL/readyz")"
+case "$READY_JSON" in
+  *'"ready":true'*|*'"ready": true'*) : ;;
+  *) echo "Hue Gateway is not ready (ready=false)."; exit 1 ;;
+esac
 ```
 
 If `ready=false`, do not proceed.
@@ -88,6 +102,8 @@ All actions are:
 ```
 
 Success returns `"ok": true` and a `"result"` payload.
+
+Failure returns `"ok": false` and an `"error"` payload. Some failures also use non-2xx HTTP status codes.
 
 ### Response shape gotcha (avoid empty parsing)
 
@@ -125,25 +141,71 @@ body = (resp.get("result") or {}).get("body") or {}
 data = body.get("data", [])
 ```
 
+Prefer `python3` over `python` in Bash (some environments do not ship a `python` alias).
+
 ## How you execute actions (preferred)
 
 If the Bash tool is available, use it to run curl commands.
 Otherwise, output the exact curl commands for the user.
 
 When using Bash + curl:
-- Add `-sS` and `Content-Type: application/json`
+- Add `Content-Type: application/json`
 - Use `Authorization: Bearer dev-token` unless the user provides another token/key.
+- Use `--connect-timeout 1 --max-time 8` so failures are fast.
+- Prefer one Bash tool call per user request: run a short bash script (`set -euo pipefail`) that does base URL selection and all needed `/v1/actions` calls.
+
+For `/v1/actions`, prefer `curl -sS` (not `-f`) so you still receive the JSON error body on 4xx/5xx.
+
+### Bash JSON parsing patterns (avoid env-var bugs)
+
+If you capture JSON into a shell variable (e.g. `ROOMS_JSON="$(...)"`), that variable is **not** visible to Python via
+`os.environ[...]` unless you explicitly export it.
+
+Recommended (robust): pass the JSON via stdin using a here-string.
+
+Important: do **not** use `python3 -` for this. `python3 -` reads the *Python program* from stdin, so you cannot also
+use stdin for JSON input.
+
+```bash
+ROOMS_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev-token' \
+  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
+
+PY_CODE="$(cat <<'PY'
+import json,sys
+resp=json.load(sys.stdin)
+rooms=((resp.get('result') or {}).get('body') or {}).get('data') or []
+for r in rooms:
+    if (r.get('metadata') or {}).get('name') == 'Woonkamer':
+        print(r.get('id',''))
+        break
+PY
+)"
+
+ROOM_RID="$(python3 -c "$PY_CODE" <<<"$ROOMS_JSON")"
+```
+
+Allowed (but easier to mess up): export then read from env:
+
+```bash
+export ROOMS_JSON
+python3 - <<'PY'
+import os
+rooms_json=os.environ.get('ROOMS_JSON','')
+PY
+```
 
 ## Discovery flow (how you map fuzzy names → entities)
 
 You need a stable mapping of room/zone names to controllable IDs.
 
-### Step A — List rooms
+### Step A — List rooms (fast default)
 
 Call:
 
 ```bash
-curl -sS -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer dev-token' \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
@@ -153,7 +215,7 @@ Parsing tip (jq, if available):
 
 ```bash
 # Prints: <room-name>\t<grouped_light_rid>
-curl -sS -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer dev-token' \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}' \
@@ -164,10 +226,12 @@ Then, for each room:
 - Find `services[]` where `rtype == "grouped_light"`
 - Use that `rid` as the controllable ID for the room’s lights.
 
+Speed tip: for a single-room command, this list-rooms call + one `grouped_light.set` is usually the fastest and most reliable path.
+
 ### Step B — Optional: list zones (if user asks “downstairs”, “upstairs”, etc.)
 
 ```bash
-curl -sS -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer dev-token' \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/zone"}}'
@@ -177,7 +241,7 @@ Zones also typically have a `grouped_light` service.
 
 ### Step C — Resolve by name (fast path)
 
-If the user clearly provided an exact name (and you want a simpler flow), you may resolve the *room/zone* first, then extract its `grouped_light` service rid.
+If listing rooms/zones is unexpectedly large, you may resolve the *room/zone* first, then extract its `grouped_light` service rid.
 
 ```json
 { "action":"resolve.by_name", "args": { "rtype":"room", "name":"Woonkamer" } }
@@ -191,7 +255,81 @@ Then fetch the room resource and extract the grouped light rid:
 
 Important: `grouped_light` resources are often unnamed (no `metadata.name`), so **do not** rely on `resolve.by_name` with `rtype="grouped_light"`.
 
+Also: `grouped_light.set` with `{ "name": "..." }` often fails with `not_found` for the same reason.
+
 If it returns ambiguous (409), ask the user to pick.
+
+### Step D — List individual lamps in a room (read-only)
+
+User prompts like “list all lamps in the woonkamer” are **read-only**.
+
+Recommended flow (no state changes):
+
+1) Get the room resource (either list rooms or `resolve.by_name` + fetch the room)
+2) Collect its `children[]` `device` rids
+3) List devices and keep only those that actually expose a `light` service
+4) Output `device.metadata.name` as the lamp list
+
+Example (room name known; uses stdin parsing so it cannot hit `os.environ[...]` KeyErrors):
+
+```bash
+# Resolve room rid (fast) and fetch the room resource
+RESOLVE_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev-token' \
+  -d '{"action":"resolve.by_name","args":{"rtype":"room","name":"Woonkamer"}}')"
+
+PY_RESOLVE="$(cat <<'PY'
+import json,sys
+resp=json.load(sys.stdin)
+matched=(resp.get('result') or {}).get('matched') or {}
+print(matched.get('rid',''))
+PY
+)"
+
+ROOM_RID="$(python3 -c "$PY_RESOLVE" <<<"$RESOLVE_JSON")"
+
+[ -n "$ROOM_RID" ] || { echo "Room not found" >&2; exit 1; }
+
+ROOM_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev-token' \
+  -d "{\"action\":\"clipv2.request\",\"args\":{\"method\":\"GET\",\"path\":\"/clip/v2/resource/room/$ROOM_RID\"}}")"
+
+DEVICE_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer dev-token' \
+  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/device"}}')"
+
+PY_LIST="$(cat <<'PY'
+import json,sys
+room_resp=json.loads(sys.stdin.readline())
+dev_resp=json.loads(sys.stdin.readline())
+
+room=((room_resp.get('result') or {}).get('body') or {}).get('data') or []
+devices=((dev_resp.get('result') or {}).get('body') or {}).get('data') or []
+
+room0=room[0] if room else {}
+child_device_ids={c.get('rid') for c in (room0.get('children') or []) if c.get('rtype')=='device' and c.get('rid')}
+
+names=[]
+for d in devices:
+    if d.get('id') not in child_device_ids:
+        continue
+    services=d.get('services') or []
+    if not any(s.get('rtype')=='light' for s in services):
+        continue
+    name=((d.get('metadata') or {}).get('name') or '').strip()
+    if name:
+        names.append(name)
+
+for name in sorted(set(names), key=lambda s: s.lower()):
+    print(name)
+PY
+)"
+
+printf '%s\n%s\n' "$ROOM_JSON" "$DEVICE_JSON" | python3 -c "$PY_LIST"
+```
 
 ## Instant control actions (what you should do)
 
@@ -200,7 +338,7 @@ If it returns ambiguous (409), ask the user to pick.
 Use `grouped_light.set` with the room’s `grouped_light` rid:
 
 ```bash
-curl -sS -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer dev-token' \
   -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":false}}'
@@ -261,7 +399,7 @@ If the user says “make it X” but also mentions “not too bright”, respect
 After setting a room, verify at least once:
 
 ```bash
-curl -sS -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer dev-token' \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/grouped_light/<RID>"}}'
@@ -289,7 +427,9 @@ If gateway returns:
 - `ready=false`: stop and tell user the gateway is not paired/configured.
 - `401`: ask user for correct token/key.
 - `409 ambiguous_name`: show choices and ask user to pick.
+- `404 not_found`: usually means you tried to address a resource by name where it has no name (common with `grouped_light`). Switch to RID-based control.
 - `424` / `502`: tell user bridge is unreachable and stop.
+- `429`: tell user it is rate-limited; wait briefly and retry once, otherwise stop.
 
 If `action=clipv2.request` returns `"ok": true` but `result.status` is not 2xx:
 - treat it as a failed bridge operation

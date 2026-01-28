@@ -8,12 +8,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
+  dnsutils \
   gnupg \
   git \
   bash \
   coreutils \
+  iproute2 \
+  jq \
+  netcat-openbsd \
   openssh-client \
   procps \
+  ripgrep \
   socat \
   tini \
   && rm -rf /var/lib/apt/lists/*
