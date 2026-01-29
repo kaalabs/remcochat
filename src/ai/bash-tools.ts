@@ -1,4 +1,7 @@
-import type { Command as VercelCommand, Sandbox as VercelSandbox } from "@vercel/sandbox";
+import type {
+  Command as VercelCommand,
+  Sandbox as VercelSandbox,
+} from "@vercel/sandbox";
 import type { Sandbox as BashToolSandbox } from "bash-tool";
 import { createDockerSandboxClient } from "@/ai/docker-sandbox-client";
 import type { RemcoChatConfig } from "@/server/config";
@@ -8,22 +11,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
-let cachedBashToolModule:
-  | Promise<{
-      createBashTool: typeof import("bash-tool")["createBashTool"];
-    }>
-  | null = null;
+let cachedBashToolModule: Promise<{
+  createBashTool: (typeof import("bash-tool"))["createBashTool"];
+}> | null = null;
 
-let cachedVercelSandboxModule:
-  | Promise<{
-      Sandbox: typeof import("@vercel/sandbox")["Sandbox"];
-    }>
-  | null = null;
+let cachedVercelSandboxModule: Promise<{
+  Sandbox: (typeof import("@vercel/sandbox"))["Sandbox"];
+}> | null = null;
 
 async function loadBashTool() {
   if (!cachedBashToolModule) {
     cachedBashToolModule = import("bash-tool") as Promise<{
-      createBashTool: typeof import("bash-tool")["createBashTool"];
+      createBashTool: (typeof import("bash-tool"))["createBashTool"];
     }>;
   }
   return await cachedBashToolModule;
@@ -32,7 +31,7 @@ async function loadBashTool() {
 async function loadVercelSandbox() {
   if (!cachedVercelSandboxModule) {
     cachedVercelSandboxModule = import("@vercel/sandbox") as Promise<{
-      Sandbox: typeof import("@vercel/sandbox")["Sandbox"];
+      Sandbox: (typeof import("@vercel/sandbox"))["Sandbox"];
     }>;
   }
   return await cachedVercelSandboxModule;
@@ -65,18 +64,22 @@ const sandboxesByKey = new Map<string, SandboxEntry>();
 const createLocks = new Map<string, Promise<SandboxEntry>>();
 
 function isTruthyEnv(value: unknown): boolean {
-  const v = String(value ?? "").trim().toLowerCase();
+  const v = String(value ?? "")
+    .trim()
+    .toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-function sandboxCredentialsFromEnv():
-  | { token: string; teamId: string; projectId: string }
-  | null {
+function sandboxCredentialsFromEnv(): {
+  token: string;
+  teamId: string;
+  projectId: string;
+} | null {
   const token = String(
-    process.env.VERCEL_TOKEN ?? process.env.VERCEL_API_KEY ?? ""
+    process.env.VERCEL_TOKEN ?? process.env.VERCEL_API_KEY ?? "",
   ).trim();
   const teamId = String(
-    process.env.VERCEL_TEAM_ID ?? process.env.VERCEL_ORG_ID ?? ""
+    process.env.VERCEL_TEAM_ID ?? process.env.VERCEL_ORG_ID ?? "",
   ).trim();
   const projectId = String(process.env.VERCEL_PROJECT_ID ?? "").trim();
 
@@ -101,7 +104,8 @@ function hostnameFromHostHeader(host: string): string {
 function isLocalhostRequest(req: Request): boolean {
   const hostHeader = req.headers.get("host") ?? "";
   const host = hostnameFromHostHeader(hostHeader).toLowerCase();
-  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]")
+    return true;
 
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -126,7 +130,7 @@ function adminTokenFromRequest(req: Request): string | null {
 
 function isRequestAllowedByAccessPolicy(
   req: Request,
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ): boolean {
   if (cfg.access === "localhost") return isLocalhostRequest(req);
 
@@ -139,7 +143,7 @@ function isRequestAllowedByAccessPolicy(
 function truncateWithNotice(
   value: string,
   maxChars: number,
-  streamName: "stdout" | "stderr"
+  streamName: "stdout" | "stderr",
 ): string {
   const text = String(value ?? "");
   if (text.length <= maxChars) return text;
@@ -188,7 +192,7 @@ function wrapSandboxCommand(userCommand: string): string {
 function appendTailBuffer(
   buffer: string,
   delta: string,
-  maxChars: number
+  maxChars: number,
 ): { buffer: string; dropped: number } {
   const chunk = String(delta ?? "");
   if (!chunk) return { buffer, dropped: 0 };
@@ -203,16 +207,20 @@ function appendTailBuffer(
 
 function makeSandboxAdapter(
   sandbox: VercelSandbox,
-  timeoutMs: number
+  timeoutMs: number,
 ): BashToolSandbox {
   return {
     async executeCommand(command: string) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const result = await sandbox.runCommand("bash", ["-lc", wrapSandboxCommand(command)], {
-          signal: controller.signal,
-        });
+        const result = await sandbox.runCommand(
+          "bash",
+          ["-lc", wrapSandboxCommand(command)],
+          {
+            signal: controller.signal,
+          },
+        );
         const [stdout, stderr] = await Promise.all([
           result.stdout({ signal: controller.signal }),
           result.stderr({ signal: controller.signal }),
@@ -247,8 +255,10 @@ function makeSandboxAdapter(
       await sandbox.writeFiles(
         files.map((f) => ({
           path: f.path,
-          content: Buffer.isBuffer(f.content) ? f.content : Buffer.from(f.content),
-        }))
+          content: Buffer.isBuffer(f.content)
+            ? f.content
+            : Buffer.from(f.content),
+        })),
       );
     },
   };
@@ -273,7 +283,10 @@ async function runDockerBashCommand(input: {
     if (log.stream === "stdout") stdout += log.data;
     else stderr += log.data;
   }
-  const { exitCode } = await input.client.waitCommand(input.sandboxId, commandId);
+  const { exitCode } = await input.client.waitCommand(
+    input.sandboxId,
+    commandId,
+  );
   return { stdout, stderr, exitCode };
 }
 
@@ -305,7 +318,7 @@ function makeDockerSandboxAdapter(input: {
           contentBase64: Buffer.isBuffer(f.content)
             ? f.content.toString("base64")
             : Buffer.from(f.content).toString("base64"),
-        }))
+        })),
       );
     },
   };
@@ -313,24 +326,25 @@ function makeDockerSandboxAdapter(input: {
 
 async function ensureSandboxDirectory(
   sandbox: VercelSandbox,
-  absolutePath: string
+  absolutePath: string,
 ) {
   await sandbox.runCommand("bash", ["-lc", `mkdir -p "${absolutePath}"`]);
 }
 
 async function seedSandboxFromUpload(
   sandbox: VercelSandbox,
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ) {
   const root = cfg.projectRoot;
-  if (!root) throw new Error("bash_tools.project_root is required for upload seed.");
+  if (!root)
+    throw new Error("bash_tools.project_root is required for upload seed.");
 
   let stat: { isDirectory(): boolean };
   try {
     stat = await fs.stat(root);
   } catch (err) {
     throw new Error(
-      `bash_tools.project_root does not exist: ${root} (${err instanceof Error ? err.message : "unknown error"})`
+      `bash_tools.project_root does not exist: ${root} (${err instanceof Error ? err.message : "unknown error"})`,
     );
   }
   if (!stat.isDirectory()) {
@@ -366,11 +380,15 @@ async function seedSandboxFromUpload(
         .map((s) => s.trim())
         .filter(Boolean)
         .map((s) => (s.startsWith(".") ? s : `.${s}`));
-      return exts.some((ext) => relativePosix.toLowerCase().endsWith(ext.toLowerCase()));
+      return exts.some((ext) =>
+        relativePosix.toLowerCase().endsWith(ext.toLowerCase()),
+      );
     }
     const singleExt = include.match(/^\*\*\/\*\.([A-Za-z0-9]+)$/);
     if (singleExt?.[1]) {
-      return relativePosix.toLowerCase().endsWith(`.${singleExt[1].toLowerCase()}`);
+      return relativePosix
+        .toLowerCase()
+        .endsWith(`.${singleExt[1].toLowerCase()}`);
     }
     return true;
   };
@@ -407,7 +425,7 @@ async function seedSandboxFromUpload(
       uploaded += 1;
       if (uploaded > maxFiles) {
         throw new Error(
-          `Too many files to upload from project_root (>${maxFiles}). Reduce app.bash_tools.seed.upload_include or use git seeding.`
+          `Too many files to upload from project_root (>${maxFiles}). Reduce app.bash_tools.seed.upload_include or use git seeding.`,
         );
       }
 
@@ -429,17 +447,18 @@ async function seedDockerSandboxFromUpload(
     client: ReturnType<typeof createDockerSandboxClient>;
     sandboxId: string;
   },
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ) {
   const root = cfg.projectRoot;
-  if (!root) throw new Error("bash_tools.project_root is required for upload seed.");
+  if (!root)
+    throw new Error("bash_tools.project_root is required for upload seed.");
 
   let stat: { isDirectory(): boolean };
   try {
     stat = await fs.stat(root);
   } catch (err) {
     throw new Error(
-      `bash_tools.project_root does not exist: ${root} (${err instanceof Error ? err.message : "unknown error"})`
+      `bash_tools.project_root does not exist: ${root} (${err instanceof Error ? err.message : "unknown error"})`,
     );
   }
   if (!stat.isDirectory()) {
@@ -474,11 +493,15 @@ async function seedDockerSandboxFromUpload(
         .map((s) => s.trim())
         .filter(Boolean)
         .map((s) => (s.startsWith(".") ? s : `.${s}`));
-      return exts.some((ext) => relativePosix.toLowerCase().endsWith(ext.toLowerCase()));
+      return exts.some((ext) =>
+        relativePosix.toLowerCase().endsWith(ext.toLowerCase()),
+      );
     }
     const singleExt = include.match(/^\*\*\/\*\.([A-Za-z0-9]+)$/);
     if (singleExt?.[1]) {
-      return relativePosix.toLowerCase().endsWith(`.${singleExt[1].toLowerCase()}`);
+      return relativePosix
+        .toLowerCase()
+        .endsWith(`.${singleExt[1].toLowerCase()}`);
     }
     return true;
   };
@@ -521,7 +544,7 @@ async function seedDockerSandboxFromUpload(
       uploaded += 1;
       if (uploaded > maxFiles) {
         throw new Error(
-          `Too many files to upload from project_root (>${maxFiles}). Reduce app.bash_tools.seed.upload_include or use git seeding.`
+          `Too many files to upload from project_root (>${maxFiles}). Reduce app.bash_tools.seed.upload_include or use git seeding.`,
         );
       }
 
@@ -534,10 +557,14 @@ async function seedDockerSandboxFromUpload(
 }
 
 async function seedDockerSandboxFromGit(
-  input: { client: ReturnType<typeof createDockerSandboxClient>; sandboxId: string },
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  input: {
+    client: ReturnType<typeof createDockerSandboxClient>;
+    sandboxId: string;
+  },
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ) {
-  if (!cfg.seed.gitUrl) throw new Error("bash_tools.seed.git_url is required for git seed.");
+  if (!cfg.seed.gitUrl)
+    throw new Error("bash_tools.seed.git_url is required for git seed.");
 
   const marker = "/vercel/sandbox/workspace/.remcochat/seeded_git";
   const revision = cfg.seed.gitRevision ? String(cfg.seed.gitRevision) : "";
@@ -552,11 +579,7 @@ async function seedDockerSandboxFromGit(
     `  exit 0`,
     `fi`,
     `git clone "${cfg.seed.gitUrl}" .`,
-    ...(revision
-      ? [
-          `git checkout "${revision}"`,
-        ]
-      : []),
+    ...(revision ? [`git checkout "${revision}"`] : []),
     `touch "${marker}"`,
   ].join("\n");
 
@@ -568,14 +591,14 @@ async function seedDockerSandboxFromGit(
   });
   if (res.exitCode !== 0) {
     throw new Error(
-      `Failed to seed sandbox from git (exit ${res.exitCode}). stderr:\n${String(res.stderr ?? "").trim()}`
+      `Failed to seed sandbox from git (exit ${res.exitCode}). stderr:\n${String(res.stderr ?? "").trim()}`,
     );
   }
 }
 
 async function createSandboxEntry(
   key: string,
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ): Promise<SandboxEntry> {
   const vercel = cfg.provider === "vercel" ? await loadVercelSandbox() : null;
 
@@ -678,7 +701,10 @@ async function evictIfNeeded(cfg: NonNullable<RemcoChatConfig["bashTools"]>) {
   }
 }
 
-function touchSandbox(entry: SandboxEntry, cfg: NonNullable<RemcoChatConfig["bashTools"]>) {
+function touchSandbox(
+  entry: SandboxEntry,
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
+) {
   entry.lastUsedAt = Date.now();
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
   entry.idleTimer = setTimeout(() => {
@@ -689,7 +715,7 @@ function touchSandbox(entry: SandboxEntry, cfg: NonNullable<RemcoChatConfig["bas
 
 async function getOrCreateSandboxEntry(
   key: string,
-  cfg: NonNullable<RemcoChatConfig["bashTools"]>
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
 ): Promise<SandboxEntry> {
   const existing = sandboxesByKey.get(key);
   if (existing) {
@@ -716,11 +742,17 @@ async function getOrCreateSandboxEntry(
   }
 }
 
-function prewarmSandboxEntry(key: string, cfg: NonNullable<RemcoChatConfig["bashTools"]>) {
+function prewarmSandboxEntry(
+  key: string,
+  cfg: NonNullable<RemcoChatConfig["bashTools"]>,
+) {
   if (sandboxesByKey.has(key)) return;
   if (createLocks.has(key)) return;
   void getOrCreateSandboxEntry(key, cfg).catch((err) => {
-    console.error(`[bash-tools] Failed to prewarm sandbox for session ${key}:`, err);
+    console.error(
+      `[bash-tools] Failed to prewarm sandbox for session ${key}:`,
+      err,
+    );
   });
 }
 
@@ -771,7 +803,7 @@ function createStreamingBashTool(input: {
     }),
     execute: async function* (
       { command: originalCommand },
-      options
+      options,
     ): AsyncGenerator<{
       stdout: string;
       stderr: string;
@@ -808,13 +840,24 @@ function createStreamingBashTool(input: {
         };
       };
 
-      const appendLog = (log: { stream: "stdout" | "stderr"; data: string }) => {
+      const appendLog = (log: {
+        stream: "stdout" | "stderr";
+        data: string;
+      }) => {
         if (log.stream === "stdout") {
-          const appended = appendTailBuffer(stdoutTail, log.data, cfg.maxStdoutChars);
+          const appended = appendTailBuffer(
+            stdoutTail,
+            log.data,
+            cfg.maxStdoutChars,
+          );
           stdoutTail = appended.buffer;
           stdoutDropped += appended.dropped;
         } else {
-          const appended = appendTailBuffer(stderrTail, log.data, cfg.maxStderrChars);
+          const appended = appendTailBuffer(
+            stderrTail,
+            log.data,
+            cfg.maxStderrChars,
+          );
           stderrTail = appended.buffer;
           stderrDropped += appended.dropped;
         }
@@ -955,10 +998,13 @@ function createSandboxUrlTool(input: {
     execute: async ({ port }) => {
       const entry = await getOrCreateSandboxEntry(sessionKey, cfg);
       if (entry.provider === "docker") {
-        const resolved = await entry.dockerClient!.getPortUrl(entry.sandboxId!, port);
+        const resolved = await entry.dockerClient!.getPortUrl(
+          entry.sandboxId!,
+          port,
+        );
         if (!resolved.found || !resolved.url) {
           throw new Error(
-            `Port ${port} is not published for this sandbox. Set app.bash_tools.sandbox.ports = [${port}] and recreate the sandbox.`
+            `Port ${port} is not published for this sandbox. Set app.bash_tools.sandbox.ports = [${port}] and recreate the sandbox.`,
           );
         }
         return { url: resolved.url };
@@ -967,19 +1013,19 @@ function createSandboxUrlTool(input: {
       const ports = cfg.sandbox.ports;
       if (!Array.isArray(ports) || ports.length === 0) {
         throw new Error(
-          "No public sandbox ports are configured. Set app.bash_tools.sandbox.ports = [3000] (max 4) to enable preview URLs."
+          "No public sandbox ports are configured. Set app.bash_tools.sandbox.ports = [3000] (max 4) to enable preview URLs.",
         );
       }
       if (!ports.includes(port)) {
         throw new Error(
-          `Port ${port} is not exposed for this sandbox. Use one of: ${ports.join(", ")} (or update app.bash_tools.sandbox.ports).`
+          `Port ${port} is not exposed for this sandbox. Use one of: ${ports.join(", ")} (or update app.bash_tools.sandbox.ports).`,
         );
       }
       try {
         return { url: entry.sandbox!.domain(port) };
       } catch (err) {
         throw new Error(
-          err instanceof Error ? err.message : "Failed to resolve sandbox URL."
+          err instanceof Error ? err.message : "Failed to resolve sandbox URL.",
         );
       }
     },
@@ -1003,7 +1049,10 @@ export async function createBashTools(input: {
 
     const destination = "/vercel/sandbox/workspace";
     const maxOutputLength = Math.max(cfg.maxStdoutChars, cfg.maxStderrChars);
-    const adapter = makeLazySandboxAdapter({ sessionKey: input.sessionKey, cfg });
+    const adapter = makeLazySandboxAdapter({
+      sessionKey: input.sessionKey,
+      cfg,
+    });
 
     const { tools } = await createBashTool({
       sandbox: adapter,
@@ -1016,12 +1065,12 @@ export async function createBashTools(input: {
             stdout: truncateWithNotice(
               String(result.stdout ?? "").trimEnd(),
               cfg.maxStdoutChars,
-              "stdout"
+              "stdout",
             ),
             stderr: truncateWithNotice(
               String(result.stderr ?? "").trimEnd(),
               cfg.maxStderrChars,
-              "stderr"
+              "stderr",
             ),
           },
         };
@@ -1037,13 +1086,19 @@ export async function createBashTools(input: {
           ? tools.bash.description
           : "Execute bash commands in the sandbox environment.",
     });
-    const sandboxUrl = createSandboxUrlTool({ sessionKey: input.sessionKey, cfg });
+    const sandboxUrl = createSandboxUrlTool({
+      sessionKey: input.sessionKey,
+      cfg,
+    });
 
-    return { enabled: true, tools: { ...tools, bash: streamingBash, sandboxUrl } };
+    return {
+      enabled: true,
+      tools: { ...tools, bash: streamingBash, sandboxUrl },
+    };
   } catch (err) {
     console.error(
       `[bash-tools] Failed to initialize bash tools for session ${input.sessionKey}:`,
-      err
+      err,
     );
     return { enabled: false, tools: {} };
   }
@@ -1056,13 +1111,28 @@ export async function runExplicitBashCommand(input: {
 }): Promise<ExplicitBashCommandResult> {
   const cfg = getConfig().bashTools;
   if (!cfg || !cfg.enabled) {
-    return { enabled: false, stdout: "", stderr: "Bash tools are disabled.", exitCode: 1 };
+    return {
+      enabled: false,
+      stdout: "",
+      stderr: "Bash tools are disabled.",
+      exitCode: 1,
+    };
   }
   if (!bashToolsKillSwitchEnabled()) {
-    return { enabled: false, stdout: "", stderr: "Bash tools are disabled.", exitCode: 1 };
+    return {
+      enabled: false,
+      stdout: "",
+      stderr: "Bash tools are disabled.",
+      exitCode: 1,
+    };
   }
   if (!isRequestAllowedByAccessPolicy(input.request, cfg)) {
-    return { enabled: false, stdout: "", stderr: "Bash tools are not enabled for this request.", exitCode: 1 };
+    return {
+      enabled: false,
+      stdout: "",
+      stderr: "Bash tools are not enabled for this request.",
+      exitCode: 1,
+    };
   }
 
   const entry = await getOrCreateSandboxEntry(input.sessionKey, cfg);
@@ -1082,12 +1152,12 @@ export async function runExplicitBashCommand(input: {
       stdout: truncateWithNotice(
         String(res.stdout ?? "").trimEnd(),
         cfg.maxStdoutChars,
-        "stdout"
+        "stdout",
       ),
       stderr: truncateWithNotice(
         String(res.stderr ?? "").trimEnd(),
         cfg.maxStderrChars,
-        "stderr"
+        "stderr",
       ),
       exitCode: res.exitCode,
     };
@@ -1099,7 +1169,7 @@ export async function runExplicitBashCommand(input: {
     const result = await entry.sandbox!.runCommand(
       "bash",
       ["-lc", wrapSandboxCommand(fullCommand)],
-      { signal: controller.signal }
+      { signal: controller.signal },
     );
     const [stdoutStream, stderrStream] = await Promise.all([
       result.stdout({ signal: controller.signal }),
@@ -1115,18 +1185,19 @@ export async function runExplicitBashCommand(input: {
       stdout: truncateWithNotice(
         String(stdout ?? "").trimEnd(),
         cfg.maxStdoutChars,
-        "stdout"
+        "stdout",
       ),
       stderr: truncateWithNotice(
         String(stderr ?? "").trimEnd(),
         cfg.maxStderrChars,
-        "stderr"
+        "stderr",
       ),
       exitCode: result.exitCode,
     };
   } catch (err) {
     const isAbort =
-      err instanceof Error && (err.name === "AbortError" || /aborted/i.test(err.message));
+      err instanceof Error &&
+      (err.name === "AbortError" || /aborted/i.test(err.message));
     if (isAbort) {
       return {
         enabled: true,
