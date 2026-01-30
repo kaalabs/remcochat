@@ -55,6 +55,10 @@ PROGRESS.toml
 # vercel
 .vercel
 
+# letsencrypt
+/letsencrypt/
+letsencrypt-renew.log
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
