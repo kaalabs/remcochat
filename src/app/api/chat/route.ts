@@ -1046,6 +1046,8 @@ export async function POST(req: Request) {
       isTemporary: true,
       memoryEnabled: false,
       viewerTimeZone,
+      model: resolved.capabilities.tools ? resolved.model : undefined,
+      supportsTemperature: resolved.capabilities.temperature,
     });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
@@ -1136,6 +1138,7 @@ export async function POST(req: Request) {
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
+            hasToolCall("summarizeURL"),
             stepCountIs(maxSteps),
           ],
           tools: {
@@ -1230,17 +1233,19 @@ export async function POST(req: Request) {
             ...(explicitBashCommand
               ? { toolChoice: { type: "tool", toolName: "bash" } }
               : {}),
-            stopWhen: [
-              hasToolCall("displayWeather"),
-              hasToolCall("displayWeatherForecast"),
-              hasToolCall("displayTimezones"),
-              hasToolCall("displayNotes"),
-              hasToolCall("displayMemoryAnswer"),
-              hasToolCall("displayList"),
-              hasToolCall("displayListsOverview"),
-              hasToolCall("displayAgenda"),
-              stepCountIs(maxSteps),
-            ],
+          stopWhen: [
+            hasToolCall("displayWeather"),
+            hasToolCall("displayWeatherForecast"),
+            hasToolCall("displayTimezones"),
+            hasToolCall("displayNotes"),
+            hasToolCall("displayMemoryPrompt"),
+            hasToolCall("displayMemoryAnswer"),
+            hasToolCall("displayList"),
+            hasToolCall("displayListsOverview"),
+            hasToolCall("displayAgenda"),
+            hasToolCall("summarizeURL"),
+            stepCountIs(maxSteps),
+          ],
             tools,
           }
         : { stopWhen: [stepCountIs(5)] }),
@@ -1965,6 +1970,8 @@ export async function POST(req: Request) {
     isTemporary: false,
     memoryEnabled: profile.memoryEnabled,
     viewerTimeZone,
+    model: resolved.capabilities.tools ? resolved.model : undefined,
+    supportsTemperature: resolved.capabilities.temperature,
   });
   const skillsTools = createSkillsTools({
     enabled: Boolean(skillsRegistry),
@@ -2175,6 +2182,7 @@ export async function POST(req: Request) {
             hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
+            hasToolCall("summarizeURL"),
             stepCountIs(maxSteps),
           ],
           tools,

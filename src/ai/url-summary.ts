@@ -1,5 +1,8 @@
 import { generateObject, type LanguageModel } from "ai";
 import { z } from "zod";
+import { Readability } from "@mozilla/readability";
+import { JSDOM } from "jsdom";
+import he from "he";
 
 export type UrlSummaryLength = "short" | "medium" | "long";
 
@@ -15,12 +18,9 @@ export type UrlSummaryToolOutput = {
   readingTimeMinutes?: number;
   language: string;
   fetchedAt: string;
-};
-
-type SummaryResult = {
-  summary: string;
-  bullets: string[];
-  language: string;
+  author?: string;
+  publishedDate?: string;
+  description?: string;
 };
 
 const SUMMARY_SCHEMA = z.object({
@@ -41,15 +41,15 @@ const LENGTH_PRESETS: Record<
 const MAX_HTML_CHARS = 2_000_000;
 const MAX_SOURCE_CHARS = 12_000;
 const MIN_SOURCE_WORDS = 20;
+const FETCH_TIMEOUT_MS = 10000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 1000;
 
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: "\"",
-  apos: "'",
-  nbsp: " ",
-};
+const BROWSER_USER_AGENTS = [
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+];
 
 function normalizeSpaces(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -63,124 +63,310 @@ function normalizeSummary(value: string) {
     .trim();
 }
 
-function decodeHtmlEntities(input: string) {
-  return input.replace(
-    /&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g,
-    (match, entity) => {
-      if (entity.startsWith("#x")) {
-        const codePoint = Number.parseInt(entity.slice(2), 16);
-        if (!Number.isFinite(codePoint)) return match;
-        return String.fromCodePoint(codePoint);
-      }
-      if (entity.startsWith("#")) {
-        const codePoint = Number.parseInt(entity.slice(1), 10);
-        if (!Number.isFinite(codePoint)) return match;
-        return String.fromCodePoint(codePoint);
-      }
-      const named = NAMED_ENTITIES[entity.toLowerCase()];
-      return named ?? match;
-    }
-  );
+function decodeHtmlEntities(input: string): string {
+  return he.decode(input);
 }
 
-function extractMetaContent(html: string, attr: "name" | "property", value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const patterns = [
-    new RegExp(
-      `<meta[^>]*${attr}\\s*=\\s*["']${escaped}["'][^>]*content\\s*=\\s*["']([^"']+)["'][^>]*>`,
-      "i"
-    ),
-    new RegExp(
-      `<meta[^>]*content\\s*=\\s*["']([^"']+)["'][^>]*${attr}\\s*=\\s*["']${escaped}["'][^>]*>`,
-      "i"
-    ),
-  ];
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      return decodeHtmlEntities(match[1]).trim();
-    }
+function extractMetaContent(
+  doc: Document,
+  attr: "name" | "property",
+  value: string
+): string {
+  const selector = `meta[${attr}="${value}"], meta[${attr}='${value}']`;
+  const element = doc.querySelector(selector);
+  if (element) {
+    const content = element.getAttribute("content") || element.getAttribute("value");
+    return content ? decodeHtmlEntities(content).trim() : "";
   }
   return "";
 }
 
-function extractTitle(html: string) {
+function extractTitle(doc: Document, url: string): string {
   const ogTitle =
-    extractMetaContent(html, "property", "og:title") ||
-    extractMetaContent(html, "name", "twitter:title");
+    extractMetaContent(doc, "property", "og:title") ||
+    extractMetaContent(doc, "name", "twitter:title");
   if (ogTitle) return normalizeSpaces(ogTitle);
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!titleMatch) return "";
-  return normalizeSpaces(decodeHtmlEntities(titleMatch[1]));
-}
-
-function extractSiteName(html: string) {
-  const ogSite =
-    extractMetaContent(html, "property", "og:site_name") ||
-    extractMetaContent(html, "name", "application-name");
-  return ogSite ? normalizeSpaces(ogSite) : "";
-}
-
-function stripTagContent(html: string, tag: string) {
-  const regex = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi");
-  return html.replace(regex, "");
-}
-
-function extractFirstTagBlock(html: string, tag: string) {
-  const regex = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "i");
-  const match = html.match(regex);
-  return match ? match[0] : "";
-}
-
-function htmlToText(html: string) {
-  let text = html;
-  const replacements: Array<[RegExp, string]> = [
-    [new RegExp("<\\s*br\\s*\\/?>", "gi"), "\n"],
-    [new RegExp("<\\s*\\/p\\s*>", "gi"), "\n"],
-    [new RegExp("<\\s*\\/li\\s*>", "gi"), "\n"],
-    [new RegExp("<\\s*\\/h[1-6]\\s*>", "gi"), "\n"],
-  ];
-  for (const [regex, value] of replacements) {
-    text = text.replace(regex, value);
+  
+  const titleElement = doc.querySelector("title");
+  if (titleElement) {
+    return normalizeSpaces(decodeHtmlEntities(titleElement.textContent || ""));
   }
-  text = text.replace(new RegExp("<[^>]+>", "g"), " ");
+  
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return "";
+  }
+}
+
+function extractSiteName(doc: Document): string {
+  return (
+    extractMetaContent(doc, "property", "og:site_name") ||
+    extractMetaContent(doc, "name", "application-name")
+  );
+}
+
+function extractDescription(doc: Document): string {
+  return (
+    extractMetaContent(doc, "property", "og:description") ||
+    extractMetaContent(doc, "name", "twitter:description") ||
+    extractMetaContent(doc, "name", "description")
+  );
+}
+
+function extractAuthor(doc: Document): string {
+  return (
+    extractMetaContent(doc, "property", "og:author") ||
+    extractMetaContent(doc, "name", "author") ||
+    extractMetaContent(doc, "name", "article:author")
+  );
+}
+
+function extractPublishedDate(doc: Document): string {
+  return (
+    extractMetaContent(doc, "property", "og:article:published_time") ||
+    extractMetaContent(doc, "property", "article:published_time") ||
+    extractMetaContent(doc, "name", "publishedDate") ||
+    extractMetaContent(doc, "name", "datePublished")
+  );
+}
+
+function parseJsonLd(doc: Document): Record<string, string> {
+  const scripts = doc.querySelectorAll('script[type="application/ld+json"]');
+  const result: Record<string, string> = {};
+  
+  for (const script of scripts) {
+    try {
+      const data = JSON.parse(script.textContent || "{}");
+      
+      if (data["@type"] === "NewsArticle" || data["@type"] === "Article") {
+        if (data.headline && !result.title) result.title = data.headline;
+        if (data.author?.name && !result.author) result.author = data.author.name;
+        if (data.datePublished && !result.publishedDate) result.publishedDate = data.datePublished;
+        if (data.description && !result.description) result.description = data.description;
+      }
+      
+      if (Array.isArray(data["@graph"])) {
+        for (const item of data["@graph"]) {
+          if (item["@type"] === "NewsArticle" || item["@type"] === "Article") {
+            if (item.headline && !result.title) result.title = item.headline;
+            if (item.author?.name && !result.author) result.author = item.author.name;
+            if (item.datePublished && !result.publishedDate) result.publishedDate = item.datePublished;
+            if (item.description && !result.description) result.description = item.description;
+          }
+        }
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+  }
+  
+  return result;
+}
+
+function htmlToText(html: string): string {
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+  
+  // Remove script and style elements
+  const scripts = document.querySelectorAll("script, style, noscript, iframe, svg");
+  scripts.forEach((el) => el.remove());
+  
+  // Get text content
+  let text = document.body?.textContent || "";
+  
+  // Decode entities
   text = decodeHtmlEntities(text);
+  
+  // Normalize whitespace
   text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   text = text.replace(/[ \t]+/g, " ");
   text = text.replace(/\n{3,}/g, "\n\n");
+  
   return text.trim();
 }
 
-function countWords(text: string) {
+function countWords(text: string): number {
   if (!text) return 0;
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-function pickBestContent(html: string) {
-  const cleaned = stripTagContent(
-    stripTagContent(stripTagContent(html, "script"), "style"),
-    "noscript"
-  );
-  const candidates = [
-    extractFirstTagBlock(cleaned, "article"),
-    extractFirstTagBlock(cleaned, "main"),
-    extractFirstTagBlock(cleaned, "body"),
-    cleaned,
-  ].filter(Boolean);
+type ExtractionResult = {
+  text: string;
+  wordCount: number;
+  title: string;
+  siteName: string;
+  author: string;
+  publishedDate: string;
+  description: string;
+  language: string;
+  extractionMethod: "readability" | "fallback" | "meta-only";
+};
 
-  let best = "";
-  let bestWords = 0;
-  for (const candidate of candidates) {
-    const text = htmlToText(candidate);
-    const words = countWords(text);
-    if (words > bestWords) {
-      bestWords = words;
-      best = text;
+function extractContentWithReadability(html: string, url: string): ExtractionResult | null {
+  try {
+    const dom = new JSDOM(html, { url });
+    const document = dom.window.document;
+    
+    // Parse JSON-LD for metadata
+    const jsonLd = parseJsonLd(document);
+    
+    // Extract metadata from meta tags
+    const metaTitle = extractTitle(document, url);
+    const siteName = extractSiteName(document);
+    const metaAuthor = extractAuthor(document);
+    const metaPublishedDate = extractPublishedDate(document);
+    const metaDescription = extractDescription(document);
+    
+    // Try Readability
+    const reader = new Readability(document, {
+      charThreshold: 20,
+      classesToPreserve: ["caption", "image", "figure"],
+    });
+    
+    const article = reader.parse();
+    
+    if (article && article.textContent && article.textContent.length > 100) {
+      return {
+        text: article.textContent,
+        wordCount: countWords(article.textContent),
+        title: article.title || metaTitle || jsonLd.title || "",
+        siteName: siteName || "",
+        author: jsonLd.author || metaAuthor || "",
+        publishedDate: jsonLd.publishedDate || metaPublishedDate || "",
+        description: jsonLd.description || metaDescription || "",
+        language: article.lang || "",
+        extractionMethod: "readability",
+      };
+    }
+    
+    // Fallback: try to get text from body if Readability fails
+    const bodyText = htmlToText(html);
+    if (bodyText && bodyText.length > 100) {
+      return {
+        text: bodyText,
+        wordCount: countWords(bodyText),
+        title: metaTitle || jsonLd.title || "",
+        siteName: siteName || "",
+        author: jsonLd.author || metaAuthor || "",
+        publishedDate: jsonLd.publishedDate || metaPublishedDate || "",
+        description: jsonLd.description || metaDescription || "",
+        language: "",
+        extractionMethod: "fallback",
+      };
+    }
+    
+    // Meta-only fallback for very sparse pages
+    if (metaTitle || metaDescription) {
+      const text = [metaTitle, metaDescription].filter(Boolean).join(". ");
+      return {
+        text,
+        wordCount: countWords(text),
+        title: metaTitle || "",
+        siteName: siteName || "",
+        author: jsonLd.author || metaAuthor || "",
+        publishedDate: jsonLd.publishedDate || metaPublishedDate || "",
+        description: metaDescription || "",
+        language: "",
+        extractionMethod: "meta-only",
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Readability extraction failed:", error);
+    return null;
+  }
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries: number = MAX_RETRIES,
+  delayMs: number = RETRY_DELAY_MS
+): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const response = await fetchWithTimeout(url, options, FETCH_TIMEOUT_MS);
+      
+      // Handle rate limiting with exponential backoff
+      if (response.status === 429 && i < retries) {
+        const retryAfter = response.headers.get("retry-after");
+        const waitTime = retryAfter 
+          ? parseInt(retryAfter, 10) * 1000 
+          : delayMs * Math.pow(2, i);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+        continue;
+      }
+      
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (i < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * Math.pow(2, i)));
+      }
     }
   }
-  return { text: best, wordCount: bestWords };
+  
+  throw lastError || new Error(`Failed to fetch after ${retries} retries`);
+}
+
+function isPrivateIP(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    
+    // Check for localhost variants
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+      return true;
+    }
+    
+    // Check for private IP ranges
+    const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipMatch) {
+      const [, a, b] = ipMatch.map(Number);
+      
+      // 10.0.0.0/8
+      if (a === 10) return true;
+      // 172.16.0.0/12
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      // 192.168.0.0/16
+      if (a === 192 && b === 168) return true;
+      // 127.0.0.0/8 (loopback)
+      if (a === 127) return true;
+      // 169.254.0.0/16 (link-local)
+      if (a === 169 && b === 254) return true;
+    }
+    
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function clampFocus(value: string) {
@@ -223,7 +409,7 @@ function buildSummaryPrompt(input: {
     truncationLine,
     "Return JSON with: summary, bullets, language.",
     "Extracted text:",
-    `\"\"\"${input.text}\"\"\"`,
+    `"""${input.text}"""`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -250,17 +436,38 @@ export async function getUrlSummary(input: {
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
     throw new Error("URL must start with http or https.");
   }
+  
+  // Security check: block private IPs
+  if (isPrivateIP(rawUrl)) {
+    throw new Error("Cannot summarize private or internal URLs.");
+  }
 
-  const response = await fetch(parsedUrl, {
-    redirect: "follow",
-    headers: {
-      accept: "text/html,application/xhtml+xml,text/plain",
-    },
-    cache: "no-store",
-  });
+  // Select a random User-Agent
+  const userAgent = BROWSER_USER_AGENTS[Math.floor(Math.random() * BROWSER_USER_AGENTS.length)];
+  
+  let response: Response;
+  try {
+    response = await fetchWithRetry(parsedUrl.toString(), {
+      redirect: "follow",
+      headers: {
+        accept: "text/html,application/xhtml+xml,text/plain",
+        "user-agent": userAgent,
+        "accept-language": "en-US,en;q=0.9",
+        "accept-encoding": "gzip, deflate, br",
+        "cache-control": "no-cache",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    if (message.includes("abort")) {
+      throw new Error(`Failed to fetch URL: Request timed out after ${FETCH_TIMEOUT_MS}ms.`);
+    }
+    throw new Error(`Failed to fetch URL: ${message}`);
+  }
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch URL (${response.status}).`);
+    const statusText = response.statusText || "Unknown error";
+    throw new Error(`Failed to fetch URL (${response.status} ${statusText}).`);
   }
 
   const contentLength = response.headers.get("content-length");
@@ -272,29 +479,43 @@ export async function getUrlSummary(input: {
   const isHtml =
     contentType.includes("text/html") || contentType.includes("application/xhtml");
   const isText = contentType.startsWith("text/");
+  
   if (!isHtml && !isText) {
-    throw new Error("URL does not appear to contain readable text.");
+    throw new Error("URL does not appear to contain readable text (not HTML or text content).");
   }
 
-  const html = await response.text();
+  let html: string;
+  try {
+    html = await response.text();
+  } catch (error) {
+    throw new Error(`Failed to read response body: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
+  
   if (html.length > MAX_HTML_CHARS) {
     throw new Error("URL content is too large to summarize.");
   }
 
   const resolvedUrl = response.url || parsedUrl.toString();
-  const title = extractTitle(html) || parsedUrl.hostname;
-  const siteName = extractSiteName(html);
-
-  const { text, wordCount } = pickBestContent(html);
-  if (wordCount < MIN_SOURCE_WORDS) {
-    throw new Error("Not enough readable text to summarize.");
+  
+  // Extract content using Readability
+  const extraction = extractContentWithReadability(html, resolvedUrl);
+  
+  if (!extraction) {
+    throw new Error("Could not extract readable content from this URL. The page may require JavaScript or have no article content.");
+  }
+  
+  if (extraction.wordCount < MIN_SOURCE_WORDS && extraction.extractionMethod !== "meta-only") {
+    throw new Error(`Not enough readable text to summarize (found ${extraction.wordCount} words, need at least ${MIN_SOURCE_WORDS}).`);
   }
 
-  const truncated = text.length > MAX_SOURCE_CHARS;
-  const clippedText = text.slice(0, MAX_SOURCE_CHARS);
+  const title = extraction.title || parsedUrl.hostname;
+  const siteName = extraction.siteName;
+  
+  const truncated = extraction.text.length > MAX_SOURCE_CHARS;
+  const clippedText = extraction.text.slice(0, MAX_SOURCE_CHARS);
   const length = input.length ?? "medium";
   const focus = clampFocus(String(input.focus ?? ""));
-  const language = clampLanguage(String(input.language ?? ""));
+  const language = clampLanguage(String(input.language ?? extraction.language ?? ""));
 
   const prompt = buildSummaryPrompt({
     text: clippedText,
@@ -321,7 +542,7 @@ export async function getUrlSummary(input: {
     : [];
 
   const outputLanguage =
-    language !== "auto" ? language : normalizeSpaces(String(object.language ?? "auto"));
+    language !== "auto" ? language : normalizeSpaces(String(object.language ?? extraction.language ?? "auto"));
 
   return {
     url: rawUrl,
@@ -331,18 +552,35 @@ export async function getUrlSummary(input: {
     length,
     summary,
     bullets: bullets.slice(0, 6),
-    wordCount,
-    readingTimeMinutes: Math.max(1, Math.round(wordCount / 200)),
+    wordCount: extraction.wordCount,
+    readingTimeMinutes: Math.max(1, Math.round(extraction.wordCount / 200)),
     language: outputLanguage || "auto",
     fetchedAt: new Date().toISOString(),
+    author: extraction.author || undefined,
+    publishedDate: extraction.publishedDate || undefined,
+    description: extraction.description || undefined,
   };
 }
 
 export const __test__ = {
   decodeHtmlEntities,
-  extractMetaContent,
-  extractTitle,
-  extractSiteName,
+  extractMetaContent: (html: string, attr: "name" | "property", value: string) => {
+    const dom = new JSDOM(html);
+    return extractMetaContent(dom.window.document, attr, value);
+  },
+  extractTitle: (html: string, url: string) => {
+    const dom = new JSDOM(html, { url });
+    return extractTitle(dom.window.document, url);
+  },
+  extractSiteName: (html: string) => {
+    const dom = new JSDOM(html);
+    return extractSiteName(dom.window.document);
+  },
   htmlToText,
-  pickBestContent,
+  pickBestContent: (html: string, url: string) => {
+    const extraction = extractContentWithReadability(html, url);
+    if (!extraction) return { text: "", wordCount: 0 };
+    return { text: extraction.text, wordCount: extraction.wordCount };
+  },
+  isPrivateIP,
 };

@@ -6,6 +6,7 @@ import { listProfileListOverviews, runListAction } from "@/server/lists";
 import { runNoteAction } from "@/server/notes";
 import { runAgendaAction } from "@/server/agenda";
 import { upsertPendingMemory } from "@/server/pending-memory";
+import { getUrlSummary, type UrlSummaryLength } from "@/ai/url-summary";
 
 export const displayWeather = createTool({
   description:
@@ -71,6 +72,8 @@ export function createTools(input: {
   memoryEnabled?: boolean;
   isTemporary?: boolean;
   viewerTimeZone?: string;
+  model?: import("ai").LanguageModel;
+  supportsTemperature?: boolean;
 }) {
   const memoryEnabled = Boolean(input.memoryEnabled);
   const isTemporary = Boolean(input.isTemporary);
@@ -366,6 +369,40 @@ export function createTools(input: {
     },
   });
 
+  const summarizeURL = input.model
+    ? createTool({
+        description:
+          "Fetch and summarize the content of a web URL. Returns a structured summary with title, key points, and metadata. Useful when the user asks to summarize a link or webpage.",
+        inputSchema: z.object({
+          url: z
+            .string()
+            .describe("The URL to fetch and summarize. Must be a valid http or https URL."),
+          length: z
+            .enum(["short", "medium", "long"])
+            .describe("Desired summary length: short (1 paragraph), medium (2 paragraphs), or long (3 paragraphs).")
+            .default("medium"),
+          focus: z
+            .string()
+            .describe("Optional topic to focus on in the summary. If the content doesn't cover this topic, the summary will say so.")
+            .optional(),
+          language: z
+            .string()
+            .describe("Language code for the output summary (e.g., 'en', 'es', 'fr'). Use 'auto' to match the source language.")
+            .default("auto"),
+        }),
+        execute: async (inputData) => {
+          return getUrlSummary({
+            url: inputData.url,
+            length: inputData.length as UrlSummaryLength,
+            focus: inputData.focus,
+            language: inputData.language,
+            model: input.model!,
+            supportsTemperature: input.supportsTemperature,
+          });
+        },
+      })
+    : null;
+
   return {
     displayWeather,
     displayWeatherForecast,
@@ -376,5 +413,6 @@ export function createTools(input: {
     displayList,
     displayListsOverview,
     displayAgenda,
+    ...(summarizeURL ? { summarizeURL } : {}),
   };
 }
