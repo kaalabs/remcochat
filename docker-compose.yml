@@ -16,6 +16,7 @@ services:
       REMCOCHAT_ADMIN_TOKEN: ${REMCOCHAT_ADMIN_TOKEN:-}
       VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY:-}
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
       # Bind-mount config for restart-only reloads (no rebuild needed).
