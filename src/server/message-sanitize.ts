@@ -7,6 +7,7 @@ const WEB_TOOL_NAMES = new Set([
   "web_fetch",
   "google_search",
   "url_context",
+  "exa_search",
 ]);
 
 function toolNameFromPart(part: unknown): string | null {

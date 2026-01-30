@@ -1045,9 +1045,6 @@ export async function POST(req: Request) {
       profileId: profile.id,
       isTemporary: true,
       memoryEnabled: false,
-      summaryModel: resolved.model,
-      summarySupportsTemperature:
-        resolved.capabilities.temperature && !resolved.capabilities.reasoning,
       viewerTimeZone,
     });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
@@ -1133,7 +1130,6 @@ export async function POST(req: Request) {
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),
             hasToolCall("displayTimezones"),
-            hasToolCall("displayUrlSummary"),
             hasToolCall("displayNotes"),
             hasToolCall("displayMemoryPrompt"),
             hasToolCall("displayMemoryAnswer"),
@@ -1238,7 +1234,6 @@ export async function POST(req: Request) {
               hasToolCall("displayWeather"),
               hasToolCall("displayWeatherForecast"),
               hasToolCall("displayTimezones"),
-              hasToolCall("displayUrlSummary"),
               hasToolCall("displayNotes"),
               hasToolCall("displayMemoryAnswer"),
               hasToolCall("displayList"),
@@ -1969,9 +1964,6 @@ export async function POST(req: Request) {
     profileId: profile.id,
     isTemporary: false,
     memoryEnabled: profile.memoryEnabled,
-    summaryModel: resolved.model,
-    summarySupportsTemperature:
-      resolved.capabilities.temperature && !resolved.capabilities.reasoning,
     viewerTimeZone,
   });
   const skillsTools = createSkillsTools({
@@ -2012,7 +2004,6 @@ export async function POST(req: Request) {
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),
             hasToolCall("displayTimezones"),
-            hasToolCall("displayUrlSummary"),
             hasToolCall("displayNotes"),
             hasToolCall("displayMemoryPrompt"),
             hasToolCall("displayMemoryAnswer"),
@@ -2179,7 +2170,6 @@ export async function POST(req: Request) {
             hasToolCall("displayWeather"),
             hasToolCall("displayWeatherForecast"),
             hasToolCall("displayTimezones"),
-            hasToolCall("displayUrlSummary"),
             hasToolCall("displayNotes"),
             hasToolCall("displayMemoryAnswer"),
             hasToolCall("displayList"),

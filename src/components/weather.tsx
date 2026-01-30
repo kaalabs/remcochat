@@ -31,6 +31,15 @@ function formatNumber(value: number) {
   return String(Math.round(value));
 }
 
+function getStaticMapUrl(latitude: number, longitude: number): string {
+  // Stadia Maps static map URL - no API key needed for localhost
+  const zoom = 12;
+  const width = 400;
+  const height = 150;
+  const marker = `${latitude},${longitude},,ff0000`;
+  return `https://tiles.stadiamaps.com/static/alidade_smooth.png?center=${latitude},${longitude}&zoom=${zoom}&size=${width}x${height}@2x&markers=${marker}`;
+}
+
 export function Weather(props: WeatherToolOutput) {
   const daily = (props.daily ?? []).slice(0, 3);
   const currentIcon = iconForWeatherCode(props.current.weatherCode);
@@ -40,7 +49,7 @@ export function Weather(props: WeatherToolOutput) {
       className="w-full max-w-md overflow-hidden border-border/60 bg-sky-100/80 shadow-xs dark:bg-sky-950/20"
       data-testid="tool:displayWeather"
     >
-      <CardHeader className="border-b border-border/60 bg-transparent pb-4">
+      <CardHeader className="border-b border-border/60 bg-transparent pb-0">
         <div className="grid gap-1">
           <CardTitle className="flex items-center gap-2">
             Weather <Badge variant="secondary">Now</Badge>
@@ -50,8 +59,21 @@ export function Weather(props: WeatherToolOutput) {
             <span className="min-w-0 truncate">{props.resolvedLocation}</span>
           </CardDescription>
         </div>
+        <a
+          href={`https://www.openstreetmap.org/?mlat=${props.latitude}&mlon=${props.longitude}&zoom=15`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block overflow-hidden rounded-md border border-border/40"
+        >
+          <img
+            src={getStaticMapUrl(props.latitude, props.longitude)}
+            alt={`Map of ${props.resolvedLocation}`}
+            className="h-[150px] w-full object-cover"
+            loading="lazy"
+          />
+        </a>
       </CardHeader>
-      <CardContent className="grid gap-4">
+      <CardContent className="grid gap-4 pt-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="grid gap-1">
             <div className="flex items-end gap-3">
