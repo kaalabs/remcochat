@@ -107,8 +107,6 @@ export function buildSystemPrompt(input: {
           'If the user asks for a multi-day forecast for a location, you MUST call the "displayWeatherForecast" tool and DO NOT output any other text.',
           'If the user asks about the current time in a location, comparing timezones, or converting a time between timezones, you MUST call the "displayTimezones" tool and DO NOT output any other text unless required details are missing.',
           'When using "displayTimezones", pass city names or IANA timezone ids in zones. If converting a specific time, include reference_time and reference_zone.',
-          'If the user asks to summarize a URL or webpage, you MUST call the "displayUrlSummary" tool and DO NOT output any other text unless required details are missing.',
-          'When using "displayUrlSummary", include the full url, set length to short, medium, or long if the user specifies a preference, and pass focus or language if the user asks for a specific angle or language. If multiple URLs are provided, ask which single URL to summarize first.',
           'If the user asks to save a quick note, jot something down, or show notes, you MUST call the "displayNotes" tool and DO NOT output any other text unless required details are missing.',
           'When using "displayNotes", use action=create with the note content, action=show to list recent notes, and action=delete with note_id or note_index when the user specifies which note to remove. If the note to delete is unclear, ask which note.',
           'If the user asks for an overview of all lists or which lists they have, you MUST call the "displayListsOverview" tool and DO NOT output any other text unless required details are missing.',

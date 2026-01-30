@@ -1,8 +1,7 @@
-import { tool as createTool, type LanguageModel } from "ai";
+import { tool as createTool } from "ai";
 import { z } from "zod";
 import { getWeatherForLocation, getWeatherForecastForLocation } from "@/ai/weather";
 import { getTimezones } from "@/ai/timezones";
-import { getUrlSummary } from "@/ai/url-summary";
 import { listProfileListOverviews, runListAction } from "@/server/lists";
 import { runNoteAction } from "@/server/notes";
 import { runAgendaAction } from "@/server/agenda";
@@ -66,59 +65,15 @@ export const displayTimezones = createTool({
   },
 });
 
-function createUrlSummaryTool(options: {
-  model?: LanguageModel;
-  supportsTemperature?: boolean;
-}) {
-  return createTool({
-    description: "Summarize a single URL and display it in a summary card.",
-    inputSchema: z.object({
-      url: z.string().describe("The URL to summarize."),
-      length: z
-        .enum(["short", "medium", "long"])
-        .describe("Summary length preset.")
-        .default("medium"),
-      focus: z
-        .string()
-        .describe("Optional focus area, like pricing or risks.")
-        .default(""),
-      language: z
-        .string()
-        .describe("Optional output language, or 'auto'.")
-        .default("auto"),
-    }),
-    execute: async ({ url, length, focus, language }) => {
-      if (!options.model) {
-        throw new Error("URL summaries are unavailable for this model.");
-      }
-      return getUrlSummary({
-        url,
-        length,
-        focus,
-        language,
-        model: options.model,
-        supportsTemperature: options.supportsTemperature,
-      });
-    },
-  });
-}
-
 export function createTools(input: {
   chatId?: string;
   profileId: string;
   memoryEnabled?: boolean;
   isTemporary?: boolean;
-  summaryModel?: LanguageModel;
-  summarySupportsTemperature?: boolean;
   viewerTimeZone?: string;
 }) {
   const memoryEnabled = Boolean(input.memoryEnabled);
   const isTemporary = Boolean(input.isTemporary);
-
-  const displayUrlSummary = createUrlSummaryTool({
-    model: input.summaryModel,
-    supportsTemperature: input.summarySupportsTemperature,
-  });
 
   const displayMemoryPrompt = createTool({
     description:
@@ -417,7 +372,6 @@ export function createTools(input: {
     displayMemoryPrompt,
     displayMemoryAnswer,
     displayTimezones,
-    displayUrlSummary,
     displayNotes,
     displayList,
     displayListsOverview,

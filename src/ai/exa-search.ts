@@ -5,6 +5,7 @@ import { getConfig } from "@/server/config";
 type ExaSearchResult = {
   title?: string;
   url: string;
+  id?: string;
   publishedDate?: string;
   author?: string;
   text?: string;
@@ -29,6 +30,13 @@ type ExaSearchInput = {
   highlightsPerUrl?: number;
   includeDomains?: string[];
   excludeDomains?: string[];
+};
+
+type ExaContentsResponse = {
+  requestId?: string;
+  results?: ExaSearchResult[];
+  statuses?: Array<{ id?: string; status?: string; error?: unknown }>;
+  costDollars?: unknown;
 };
 
 function getExaApiKey() {
@@ -88,6 +96,58 @@ async function runExaSearch(input: ExaSearchInput): Promise<ExaSearchResponse> {
   }
 
   return (await res.json()) as ExaSearchResponse;
+}
+
+async function runExaContents(input: {
+  urls: string[];
+  livecrawl?: "never" | "fallback" | "preferred" | "always";
+  livecrawlTimeout?: number;
+  textMaxCharacters?: number;
+  highlightsNumSentences?: number;
+  highlightsPerUrl?: number;
+}): Promise<ExaContentsResponse> {
+  const key = getExaApiKey();
+  const textMaxCharacters = Math.max(
+    1000,
+    Math.min(100_000, Math.floor(input.textMaxCharacters ?? 15000))
+  );
+  const highlightsNumSentences = Math.max(
+    1,
+    Math.min(10, Math.floor(input.highlightsNumSentences ?? 3))
+  );
+  const highlightsPerUrl = Math.max(
+    1,
+    Math.min(10, Math.floor(input.highlightsPerUrl ?? 3))
+  );
+
+  const res = await fetch("https://api.exa.ai/contents", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+    },
+    body: JSON.stringify({
+      urls: input.urls,
+      livecrawl: input.livecrawl ?? "preferred",
+      ...(input.livecrawlTimeout
+        ? { livecrawlTimeout: input.livecrawlTimeout }
+        : {}),
+      text: { maxCharacters: textMaxCharacters },
+      highlights: {
+        numSentences: highlightsNumSentences,
+        highlightsPerUrl,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const message = await res.text();
+    throw new Error(
+      `Exa contents failed: ${res.status} ${res.statusText} ${message}`.trim()
+    );
+  }
+
+  return (await res.json()) as ExaContentsResponse;
 }
 
 export function createExaSearchTool() {
@@ -180,17 +240,61 @@ export function createExaSearchTool() {
         excludeDomains,
       });
 
+      const results = (response.results ?? []).map((result) => ({
+        title: result.title ?? "",
+        url: result.url,
+        id: result.id ?? "",
+        publishedDate: result.publishedDate ?? "",
+        author: result.author ?? "",
+        text: result.text ?? "",
+        highlights: Array.isArray(result.highlights) ? result.highlights : [],
+      }));
+
+      const missingUrls = results
+        .filter(
+          (result) =>
+            result.url &&
+            !result.text &&
+            (!result.highlights || result.highlights.length === 0)
+        )
+        .map((result) => result.url);
+
+      if (missingUrls.length > 0) {
+        try {
+          const contents = await runExaContents({
+            urls: missingUrls,
+            livecrawl,
+            livecrawlTimeout: livecrawl_timeout_ms,
+            textMaxCharacters: text_max_characters,
+            highlightsNumSentences: highlights_num_sentences,
+            highlightsPerUrl: highlights_per_url,
+          });
+          const contentByUrl = new Map(
+            (contents.results ?? []).map((item) => [item.url, item])
+          );
+          for (const result of results) {
+            if (result.text || result.highlights?.length) continue;
+            const fallback = contentByUrl.get(result.url);
+            if (!fallback) continue;
+            result.text = fallback.text ?? result.text;
+            result.highlights = Array.isArray(fallback.highlights)
+              ? fallback.highlights
+              : result.highlights;
+            if (!result.title) result.title = fallback.title ?? "";
+            if (!result.author) result.author = fallback.author ?? "";
+            if (!result.publishedDate) {
+              result.publishedDate = fallback.publishedDate ?? "";
+            }
+          }
+        } catch {
+          // Best-effort: if contents fetch fails, keep search results as-is.
+        }
+      }
+
       return {
         requestId: response.requestId ?? "",
         searchType: response.searchType ?? "",
-        results: (response.results ?? []).map((result) => ({
-          title: result.title ?? "",
-          url: result.url,
-          publishedDate: result.publishedDate ?? "",
-          author: result.author ?? "",
-          text: result.text ?? "",
-          highlights: Array.isArray(result.highlights) ? result.highlights : [],
-        })),
+        results,
         costDollars: response.costDollars ?? null,
       };
     },
