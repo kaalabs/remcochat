@@ -8,6 +8,7 @@ import {
   getGoogleProviderForProviderId,
   getOpenAIProviderForProviderId,
 } from "@/server/llm-provider";
+import { createExaSearchTool } from "@/ai/exa-search";
 
 export type WebToolsResult = {
   enabled: boolean;
@@ -85,6 +86,14 @@ export function createWebTools(input: {
           web_search: openai.tools.webSearch({
             ...(allowedDomains ? { filters: { allowedDomains } } : {}),
           }),
+        },
+      };
+    }
+    case "openai_compatible": {
+      return {
+        enabled: true,
+        tools: {
+          exa_search: createExaSearchTool(),
         },
       };
     }
