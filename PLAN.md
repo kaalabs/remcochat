@@ -208,12 +208,13 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - Make `modelsdev` the source of truth for model metadata (label/capabilities/adapter type), with `config.toml` only providing provider connection info + an allowlist.
 - Resolve model catalog via `modelsdev` CLI at runtime and cache it in-memory until server restart (no persisted `api.json` snapshots).
 - Fail-fast on: missing `modelsdev`, unknown `modelsdev` provider id, unknown allowlisted model id, or unsupported adapter mapping.
-- Expose the in-memory catalog via an admin API route and surface it in the admin UI for observability/debugging.
+- Expose a full per-provider model inventory (from `modelsdev`) via an admin API route and surface it in the admin UI for observability + editing.
+- Allow admins to edit per-provider `allowed_model_ids`, `default_model_id`, and `app.router.model_id` from `/admin`, writing changes back to `config.toml` (atomic write) so changes persist across restarts.
 
 **Definition of Done**
 - `GET /api/providers` returns model metadata derived from `modelsdev` for each allowlisted model.
 - Switching active provider changes the active model list without requiring a rebuild (server restart still required for updated `modelsdev` metadata).
-- Admin can inspect the in-memory catalog snapshot (loadedAt + models + capabilities) via `/admin`.
+- Admin can browse all models per provider and edit which ones are allowed (and the router model) via `/admin` (persists to `config.toml`).
 
 **Testcase**
 - `npm run test:e2e`

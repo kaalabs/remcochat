@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { skipUnlessOpencodeApiKey } from "./requirements";
 import {
   getUIMessageStreamErrors,
   getUIMessageStreamText,
   parseUIMessageStreamChunks,
 } from "./ui-message-stream";
+
+skipUnlessOpencodeApiKey(test);
 
 test("Providers include anthropic model type", async ({ request }) => {
   const base = await request.get("/api/providers");

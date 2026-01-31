@@ -1,9 +1,12 @@
 import { expect, test } from "@playwright/test";
+import { skipUnlessOpencodeApiKey } from "./requirements";
 import {
   getUIMessageStreamErrors,
   getUIMessageStreamText,
   parseUIMessageStreamChunks,
 } from "./ui-message-stream";
+
+skipUnlessOpencodeApiKey(test);
 
 async function switchProvider(
   request: import("@playwright/test").APIRequestContext,

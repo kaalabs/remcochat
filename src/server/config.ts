@@ -708,6 +708,10 @@ function configPath() {
   return path.join(process.cwd(), "config.toml");
 }
 
+export function getConfigFilePath(): string {
+  return configPath();
+}
+
 function tomlToPlainObject(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => tomlToPlainObject(item));
@@ -720,6 +724,12 @@ function tomlToPlainObject(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+export function parseConfigToml(content: string): RemcoChatConfig {
+  const parsed = TOML.parse(content);
+  const raw = RawConfigSchema.parse(tomlToPlainObject(parsed));
+  return normalizeConfig(raw);
 }
 
 export function getConfig(): RemcoChatConfig {
@@ -743,12 +753,14 @@ export function getConfig(): RemcoChatConfig {
   }
 
   const content = fs.readFileSync(filePath, "utf8");
-  const parsed = TOML.parse(content);
-  const raw = RawConfigSchema.parse(tomlToPlainObject(parsed));
-  cachedConfig = normalizeConfig(raw);
+  cachedConfig = parseConfigToml(content);
   return cachedConfig;
 }
 
 export function _resetConfigCacheForTests() {
+  cachedConfig = null;
+}
+
+export function resetConfigCache() {
   cachedConfig = null;
 }

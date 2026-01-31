@@ -2,10 +2,13 @@ import { expect, test } from "@playwright/test";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
+import { skipUnlessOpencodeApiKey } from "./requirements";
 import {
   getUIMessageStreamErrors,
   parseUIMessageStreamChunks,
 } from "./ui-message-stream";
+
+skipUnlessOpencodeApiKey(test);
 
 async function createProfile(request: import("@playwright/test").APIRequestContext) {
   const profileRes = await request.post("/api/profiles", {

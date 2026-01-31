@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { skipUnlessOpencodeApiKey } from "./requirements";
+
+skipUnlessOpencodeApiKey(test);
 
 async function createProfile(page: import("@playwright/test").Page, name: string) {
   await page.getByTestId("profile:new").click();
@@ -114,4 +117,3 @@ test("Document attachments upload/download and are available to the model (WebKi
 
   await expect(lastAssistant).toContainText(token);
 });
-
