@@ -10,10 +10,9 @@ export type WeatherToolOutput = {
     windKph: number;
     condition: string;
   };
-  daily: Array<{
-    date: string;
-    minC: number;
-    maxC: number;
+  hourly: Array<{
+    time: string;
+    temperatureC: number;
     weatherCode: number;
     condition: string;
   }>;
@@ -130,6 +129,70 @@ async function geocodeLocation(location: string): Promise<GeocodingResult> {
   throw new Error(`No matches for location: "${location}".`);
 }
 
+async function fetchCurrentWeather(input: {
+  latitude: number;
+  longitude: number;
+  forecastHours: number;
+}) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", String(input.latitude));
+  url.searchParams.set("longitude", String(input.longitude));
+  url.searchParams.set(
+    "current",
+    "temperature_2m,weather_code,wind_speed_10m"
+  );
+  url.searchParams.set(
+    "hourly",
+    "temperature_2m,weather_code"
+  );
+  url.searchParams.set("forecast_hours", String(input.forecastHours));
+  url.searchParams.set("timezone", "auto");
+
+  const response = await fetch(url, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Forecast failed (${response.status}).`);
+  }
+
+  const json = (await response.json()) as {
+    timezone?: string;
+    current?: {
+      temperature_2m?: number;
+      weather_code?: number;
+      wind_speed_10m?: number;
+    };
+    hourly?: {
+      time?: string[];
+      temperature_2m?: number[];
+      weather_code?: number[];
+    };
+  };
+
+  const current = json.current;
+  const hourly = json.hourly;
+  if (!current || typeof current.temperature_2m !== "number") {
+    throw new Error("Weather provider returned no current conditions.");
+  }
+
+  return {
+    timezone: json.timezone || "UTC",
+    current: {
+      temperatureC: current.temperature_2m,
+      weatherCode: Number(current.weather_code ?? NaN),
+      condition: weatherCodeToLabel(Number(current.weather_code ?? NaN)),
+      windKph: Number(current.wind_speed_10m ?? 0),
+    },
+    hourly: (hourly?.time ?? []).map((time, idx) => ({
+      time,
+      temperatureC: Number(hourly?.temperature_2m?.[idx] ?? NaN),
+      weatherCode: Number(hourly?.weather_code?.[idx] ?? NaN),
+      condition: weatherCodeToLabel(Number(hourly?.weather_code?.[idx] ?? NaN)),
+    })),
+  };
+}
+
 async function fetchForecast(input: {
   latitude: number;
   longitude: number;
@@ -198,20 +261,20 @@ async function fetchForecast(input: {
 
 export async function getWeatherForLocation(input: {
   location: string;
-  forecastDays?: number;
+  forecastHours?: number;
 }): Promise<WeatherToolOutput> {
   const location = (input.location ?? "").trim();
   if (!location) throw new Error("Missing location.");
 
   const geo = await geocodeLocation(location);
-  const forecastDays = Math.min(
-    7,
-    Math.max(1, Math.floor(input.forecastDays ?? 3))
+  const forecastHours = Math.min(
+    24,
+    Math.max(1, Math.floor(input.forecastHours ?? 12))
   );
-  const forecast = await fetchForecast({
+  const forecast = await fetchCurrentWeather({
     latitude: geo.latitude,
     longitude: geo.longitude,
-    forecastDays,
+    forecastHours,
   });
 
   return {
@@ -221,7 +284,7 @@ export async function getWeatherForLocation(input: {
     longitude: geo.longitude,
     timezone: forecast.timezone,
     current: forecast.current,
-    daily: forecast.daily,
+    hourly: forecast.hourly,
   };
 }
 

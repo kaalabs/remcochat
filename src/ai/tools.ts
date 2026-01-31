@@ -10,12 +10,12 @@ import { getUrlSummary, type UrlSummaryLength } from "@/ai/url-summary";
 
 export const displayWeather = createTool({
   description:
-    "Display the current weather and a short forecast for a location.",
+    "Display the current weather and the next 12 hours forecast for a location.",
   inputSchema: z.object({
     location: z.string().describe("The location to get the weather for"),
   }),
   execute: async ({ location }) => {
-    return getWeatherForLocation({ location, forecastDays: 3 });
+    return getWeatherForLocation({ location, forecastHours: 12 });
   },
 });
 

@@ -396,7 +396,7 @@ function uiWeatherResponse(input: {
       try {
         const output = await getWeatherForLocation({
           location: input.location,
-          forecastDays: 3,
+          forecastHours: 12,
         });
         writer.write({
           type: "tool-output-available",

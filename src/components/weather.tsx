@@ -13,16 +13,14 @@ import {
 import { MapPin, Wind } from "lucide-react";
 import { createElement } from "react";
 
-function formatDay(date: string, timezone: string) {
+function formatHour(time: string, timezone: string) {
   try {
     return new Intl.DateTimeFormat(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
+      hour: "numeric",
       timeZone: timezone || "UTC",
-    }).format(new Date(date));
+    }).format(new Date(time));
   } catch {
-    return date;
+    return time;
   }
 }
 
@@ -41,7 +39,7 @@ function getStaticMapUrl(latitude: number, longitude: number): string {
 }
 
 export function Weather(props: WeatherToolOutput) {
-  const daily = (props.daily ?? []).slice(0, 3);
+  const hourly = (props.hourly ?? []).slice(0, 12);
   const currentIcon = iconForWeatherCode(props.current.weatherCode);
 
   return (
@@ -95,29 +93,25 @@ export function Weather(props: WeatherToolOutput) {
             </Badge>
           </div>
         </div>
-        {daily.length > 0 ? (
+        {hourly.length > 0 ? (
           <div className="grid gap-2">
-            {daily.map((day) => {
-              const dayIcon = iconForWeatherCode(day.weatherCode);
+            {hourly.map((hour) => {
+              const hourIcon = iconForWeatherCode(hour.weatherCode);
               return (
                 <div
-                  className="grid grid-cols-[minmax(7.25rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm hover:bg-muted/30"
-                  key={day.date}
+                  className="grid grid-cols-[minmax(4rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm hover:bg-muted/30"
+                  key={hour.time}
                 >
                   <div className="min-w-0 truncate text-muted-foreground">
-                    {formatDay(day.date, props.timezone)}
+                    {formatHour(hour.time, props.timezone)}
                   </div>
-                  {createElement(dayIcon, { className: "size-4 text-muted-foreground" })}
+                  {createElement(hourIcon, { className: "size-4 text-muted-foreground" })}
                   <div className="min-w-0 truncate text-muted-foreground">
-                    {day.condition}
+                    {hour.condition}
                   </div>
                   <div className="tabular-nums text-right">
                     <span className="text-foreground">
-                      {formatNumber(day.maxC)}°
-                    </span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      / {formatNumber(day.minC)}°
+                      {formatNumber(hour.temperatureC)}°
                     </span>
                   </div>
                 </div>
