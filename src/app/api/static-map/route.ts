@@ -236,7 +236,7 @@ export async function GET(req: Request) {
   //
   // Ref: OSM tile usage policy requires a unique User-Agent identifying the application.
   // https://operations.osmfoundation.org/policies/tiles/
-  const userAgent = "remcochat/0.18.7 (static-map-proxy)";
+  const userAgent = "remcochat/0.18.8 (static-map-proxy)";
   const requestHeaders = {
     accept: "image/*",
     "user-agent": userAgent,
