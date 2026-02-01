@@ -1,0 +1,69 @@
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.skills]
+enabled = true
+directories = ["./.skills", "~/.remcochat/skills"]
+
+[app.router]
+enabled = true
+provider_id = "opencode"
+model_id = "kimi-k2.5-free"
+min_confidence = 0.7
+max_input_chars = 2400
+
+[app.web_tools]
+enabled = true
+max_results = 8
+recency = "week"
+allowed_domains = []
+blocked_domains = []
+
+[app.reasoning]
+enabled = true
+effort = "high"
+expose_to_client = true
+openai_summary = "auto"
+anthropic_budget_tokens = 0
+google_thinking_budget = 0
+
+# Docker deployment config.
+#
+# `sandboxd` is private to the compose network (no host port publish), so the
+# orchestrator URL must use the compose service name.
+[app.bash_tools]
+enabled = true
+provider = "docker"
+access = "localhost"
+project_root = "/app"
+max_stdout_chars = 12000
+max_stderr_chars = 12000
+timeout_ms = 30000
+max_concurrent_sandboxes = 2
+idle_ttl_ms = 300000
+
+[app.bash_tools.docker]
+orchestrator_url = "http://sandboxd:8080"
+network_mode = "default"
+memory_mb = 2048
+
+[app.bash_tools.sandbox]
+runtime = "node24"
+ports = [3000]
+vcpus = 2
+timeout_ms = 900000
+
+[app.bash_tools.seed]
+mode = "upload"
+upload_include = "**/*"
+
+[providers.opencode]
+name = "OpenCode Zen"
+base_url = "https://opencode.ai/zen/v1"
+api_key_env = "OPENCODE_API_KEY"
+modelsdev_provider_id = "opencode"
+default_model_id = "kimi-k2.5-free"
+allowed_model_ids = ["kimi-k2.5-free"]
+

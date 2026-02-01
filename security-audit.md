@@ -136,6 +136,11 @@ Make `sandboxd` private to the Docker network:
 - Set `app.bash_tools.docker.orchestrator_url = "http://sandboxd:8080"` in `config.toml`.
 - This ensures only `remcochat` can call `sandboxd` (not every LAN/Tailnet client).
 
+Implementation notes (repo):
+- `docker-compose.yml` does not publish sandboxd by default.
+- Docker stack can mount a dedicated config via `REMCOCHAT_CONFIG_TOML=./config.docker.toml` (see `config.docker.toml.example`).
+- `scripts/start-remcochat.sh --publish-sandboxd` can temporarily publish sandboxd for diagnostics.
+
 ### Priority 2 (hardening + hygiene)
 
 - Multi-stage builds, non-root runtime users, and reduced runtime dependencies.

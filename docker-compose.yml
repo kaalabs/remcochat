@@ -20,10 +20,14 @@ services:
     volumes:
       - remcochat_data:/app/data
       # Bind-mount config for restart-only reloads (no rebuild needed).
-      - ./config.toml:/app/config.toml:ro
+      # Allow docker deployments to mount a different config without changing the repo file.
+      # Example: REMCOCHAT_CONFIG_TOML=./config.docker.toml
+      - ${REMCOCHAT_CONFIG_TOML:-./config.toml}:/app/config.toml:ro
       # Host-side modelsdev installation directory (must contain `bin/modelsdev`).
       # Use a RemcoChat-specific env var to avoid collisions with globally-exported vars.
       - ${REMCOCHAT_MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
+    depends_on:
+      - sandboxd
 
   sandboxd:
     build:
@@ -31,10 +35,6 @@ services:
       dockerfile: sandboxd/Dockerfile
     container_name: remcochat-sandboxd
     restart: unless-stopped
-    ports:
-      # Bind sandboxd to a restricted interface (localhost or Tailnet IP).
-      # Never bind to 0.0.0.0 unless you fully understand the risks.
-      - "${SANDBOXD_HOST_BIND_IP:-127.0.0.1}:8080:8080"
     environment:
       SANDBOXD_BIND_HOST: "0.0.0.0"
       # Publish sandbox ports (sandboxUrl) only on a restricted host interface.

@@ -41,6 +41,9 @@ yarn-error.log*
 
 # env files (commit only templates)
 .env*
+
+# Optional Docker deployment config (mounted via REMCOCHAT_CONFIG_TOML).
+/config.docker.toml
 !.env.example
 
 # local data

@@ -1,0 +1,7 @@
+services:
+  # Dev/diagnostic override: publish sandboxd back to the host.
+  # Use only when you explicitly need host access to the sandboxd API.
+  sandboxd:
+    ports:
+      - "${SANDBOXD_HOST_BIND_IP:-127.0.0.1}:8080:8080"
+

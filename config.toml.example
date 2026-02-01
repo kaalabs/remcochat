@@ -100,7 +100,9 @@ vcpus = 2
 timeout_ms = 900000
 
 [app.bash_tools.docker]
-orchestrator_url = "" # required when provider="docker" (e.g. "http://127.0.0.1:8080")
+orchestrator_url = "" # required when provider="docker"
+# Docker compose (recommended): "http://sandboxd:8080" (sandboxd private to compose network)
+# Host dev (running sandboxd locally): "http://127.0.0.1:8080"
 admin_token_env = "REMCOCHAT_ADMIN_TOKEN" # env var to use for sandboxd auth
 network_mode = "default" # "default" (egress allowed) | "none"
 memory_mb = 2048

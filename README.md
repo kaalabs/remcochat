@@ -26,6 +26,10 @@ Minimal ChatGPT-like chat UI for local network use (no auth).
 Notes:
 - The RemcoChat container port (`3100`) is bound to `127.0.0.1` on the server and is not reachable from LAN clients.
 - LAN clients should use the HTTPS reverse proxy on port `443`.
+- `sandboxd` is private to the Docker network by default; RemcoChat talks to it via `http://sandboxd:8080`.
+- Recommended Docker config split:
+  - `cp config.docker.toml.example config.docker.toml`
+  - set `.env`: `REMCOCHAT_CONFIG_TOML=./config.docker.toml`
 
 ### Reverse proxy (/remcochat)
 
@@ -70,7 +74,9 @@ If you suspect the token leaked (or as routine hygiene), rotate it:
    - `scripts/start-remcochat.sh --proxy` (or `--build --proxy` if needed)
 4. Update the token stored in the browser UI (so `/api/chat` includes `x-remcochat-admin-token`).
 5. Verify the old token no longer works:
-   - `curl -i http://127.0.0.1:8080/v1/health -H "x-remcochat-admin-token: <old>"` should return `401`
+   - sandboxd (private): run a token-protected call inside the container network; it should return `401`:
+     - `docker compose -f docker-compose.yml -f docker-compose.proxy.yml exec -T sandboxd node -e 'fetch(\"http://127.0.0.1:8080/v1/sandboxes\",{method:\"POST\",headers:{\"content-type\":\"application/json\",\"x-remcochat-admin-token\":\"<old>\"},body:\"{}\"}).then(r=>{console.log(r.status); process.exit(r.status===401?0:1)}).catch(()=>process.exit(1))'`
+     - (Optional) add `--publish-sandboxd` to `scripts/start-remcochat.sh` if you need host access to sandboxd for debugging.
    - A chat request with the old token should not advertise bash tools (no `x-remcochat-bash-tools-enabled: 1`).
 
 ### Verify token is not leaking into logs
