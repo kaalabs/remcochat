@@ -54,7 +54,7 @@ High-value assets:
 
 ### Critical: `sandboxd` exposure + Docker socket access
 
-**What:** `sandboxd` is published to `0.0.0.0:8080` (`ports: "8080:8080"`) and mounts `/var/run/docker.sock`. (`docker-compose.yml:34`, `docker-compose.yml:41`)
+**What:** `sandboxd` is published on host port `8080` (interface controlled by `SANDBOXD_HOST_BIND_IP`, default `127.0.0.1`) and mounts `/var/run/docker.sock`. (`docker-compose.yml`)
 
 **Why it matters:** If an attacker can reach `sandboxd` and bypass/leak the token, they can create containers, mount the host filesystem, or otherwise take over the host through Docker. In practice, “network access to docker.sock” is a top-tier risk.
 
@@ -68,7 +68,7 @@ High-value assets:
 
 ### Critical: Sandbox port publishing can expose arbitrary services
 
-**What:** With `SANDBOXD_PUBLISH_HOST_IP="0.0.0.0"` (`docker-compose.yml:38`) and sandboxd’s port-publishing feature, services started inside sandboxes can be published on the host on random high ports.
+**What:** With `SANDBOXD_PUBLISH_HOST_IP` set too broadly (e.g. `0.0.0.0`) and sandboxd’s port-publishing feature, services started inside sandboxes can be published on the host on random high ports.
 
 **Why it matters:** A sandbox can run arbitrary network services; publishing those to `0.0.0.0` can unintentionally expose them to LAN (or beyond, depending on host firewall).
 
@@ -78,14 +78,11 @@ High-value assets:
 
 ### High: nginx proxy mounts CA private key into container
 
-**What:** `docker-compose.proxy.yml` mounts `./nginx/certs:/etc/nginx/certs:ro`. (`docker-compose.proxy.yml:11-15`)
-
-`nginx/certs` includes `ca.key` and `tls.key` (private keys) and other key material. (`nginx/certs/*`)
+**What:** If the proxy container can read the CA private key used to mint TLS certs, an nginx compromise can escalate into “mint your own trusted certs” for any client that installed/trusted that CA.
 
 **Why it matters:** If nginx (or its container) is compromised, attackers can exfiltrate private keys. Exfiltration of `ca.key` is especially severe because any client that trusted this CA can be MITM’d using attacker-minted certificates.
 
 **Mitigations:**
-- Do not mount the whole `nginx/certs` directory.
 - Mount only what nginx needs at runtime: `tls.pem`, `tls.key`, and *public* CA artifacts (`ca.pem`, `ca.cer`, `remcochat-ca.mobileconfig`).
 - Keep `ca.key` on the host only (used only when generating new certs).
 
@@ -154,4 +151,3 @@ Quick checks to confirm the intended exposure:
   - optionally `http://<host>/remcochat/` (nginx 80 -> redirect)
 - `remcochat` should not be reachable directly (it’s bound to `127.0.0.1:3100`). (`docker-compose.yml:8`)
 - If `sandboxd` remains published, verify it is not reachable from LAN (or at least is restricted to Tailnet IP) and requires token.
-

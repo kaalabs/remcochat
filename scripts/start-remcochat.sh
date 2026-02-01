@@ -83,6 +83,17 @@ cd "$REPO_DIR"
     [[ -f nginx/remcochat.conf ]] || die "missing nginx/remcochat.conf in $REPO_DIR"
     [[ -f nginx/certs/tls.pem ]] || die "missing nginx/certs/tls.pem (run scripts/generate-proxy-cert.sh or provide your own cert)"
     [[ -f nginx/certs/tls.key ]] || die "missing nginx/certs/tls.key (run scripts/generate-proxy-cert.sh or provide your own cert)"
+
+    # docker-compose.proxy.yml now mounts these files explicitly. Ensure the host
+    # paths exist to avoid Docker creating directories with those names.
+    mkdir -p nginx/certs
+    for f in nginx/certs/ca.pem nginx/certs/ca.cer nginx/certs/remcochat-ca.mobileconfig; do
+      if [[ ! -f "$f" ]]; then
+        log "WARN: missing $f (CA download endpoint will 404). Run scripts/generate-proxy-cert.sh to generate it."
+        : >"$f"
+        chmod 644 "$f" || true
+      fi
+    done
   fi
 [[ -f config.toml ]] || die "missing config.toml in $REPO_DIR"
 [[ -f .env ]] || die "missing .env in $REPO_DIR (copy from .env.example and set required values)"
@@ -119,9 +130,16 @@ enable_bash="$(dotenv_get REMCOCHAT_ENABLE_BASH_TOOL)"
 opencode_key="$(dotenv_get OPENCODE_API_KEY)"
 vercel_key="$(dotenv_get VERCEL_AI_GATEWAY_API_KEY)"
 modelsdev_host_dir="$(dotenv_get REMCOCHAT_MODELSDEV_CLI_HOST_DIR)"
+sandboxd_host_bind_ip="$(dotenv_get SANDBOXD_HOST_BIND_IP)"
+sandboxd_publish_host_ip="$(dotenv_get SANDBOXD_PUBLISH_HOST_IP)"
+
+min_admin_token_chars=32
 
 if [[ -z "$admin_token" ]]; then
   die "REMCOCHAT_ADMIN_TOKEN missing/empty in .env (required for access=\"lan\" and sandboxd auth)"
+fi
+if [[ "${#admin_token}" -lt "$min_admin_token_chars" ]]; then
+  die "REMCOCHAT_ADMIN_TOKEN is too short (min ${min_admin_token_chars} chars). Recommended: openssl rand -hex 32"
 fi
 if ! is_truthy "$enable_bash"; then
   die "REMCOCHAT_ENABLE_BASH_TOOL must be truthy in .env (set REMCOCHAT_ENABLE_BASH_TOOL=1)"
@@ -136,6 +154,19 @@ if [[ -n "$modelsdev_host_dir" ]]; then
   if [[ ! -x "${modelsdev_host_dir}/bin/run.js" && ! -x "${modelsdev_host_dir}/bin/modelsdev" ]]; then
     log "WARN: REMCOCHAT_MODELSDEV_CLI_HOST_DIR does not look like a modelsdev install (expected bin/run.js or bin/modelsdev): ${modelsdev_host_dir}"
   fi
+fi
+
+if [[ -z "$sandboxd_host_bind_ip" ]]; then
+  sandboxd_host_bind_ip="127.0.0.1"
+fi
+if [[ -z "$sandboxd_publish_host_ip" ]]; then
+  sandboxd_publish_host_ip="127.0.0.1"
+fi
+if [[ "$sandboxd_host_bind_ip" == "0.0.0.0" ]]; then
+  die "SANDBOXD_HOST_BIND_IP must not be 0.0.0.0 (use 127.0.0.1 or your Tailscale IP)"
+fi
+if [[ "$sandboxd_publish_host_ip" == "0.0.0.0" ]]; then
+  die "SANDBOXD_PUBLISH_HOST_IP must not be 0.0.0.0 (use 127.0.0.1 or your Tailscale IP)"
 fi
 
 log "Ensuring sandbox runtime image exists: remcochat-sandbox:node24"
@@ -177,7 +208,7 @@ wait_http_ok() {
 }
 
 log "Health checks"
-wait_http_ok "http://127.0.0.1:8080/v1/health" "sandboxd" 40 1 || die "sandboxd not healthy on http://127.0.0.1:8080"
+wait_http_ok "http://${sandboxd_host_bind_ip}:8080/v1/health" "sandboxd" 40 1 || die "sandboxd not healthy on http://${sandboxd_host_bind_ip}:8080"
 wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not serving on http://127.0.0.1:3100"
   if [[ "$ENABLE_PROXY" -eq 1 ]]; then
     curl -fsSk --max-time 2 https://127.0.0.1/remcochat/ >/dev/null 2>&1 || die "proxy not serving on https://127.0.0.1/remcochat/"
@@ -189,7 +220,7 @@ wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not ser
     fi
   fi
 
-log "OK: remcochat on http://127.0.0.1:3100 (local only); sandboxd on http://0.0.0.0:8080"
+log "OK: remcochat on http://127.0.0.1:3100 (local only); sandboxd on http://${sandboxd_host_bind_ip}:8080 (published ports bind to ${sandboxd_publish_host_ip})"
 if [[ "$ENABLE_PROXY" -eq 1 ]]; then
   log "OK: proxy on https://<host>/remcochat/ (443)"
 fi

@@ -4,3 +4,6 @@
 - Include an `agent-browser` end-user smoke test when UI changes are made (run via `npm run test:agent-browser`).
 - Mocks are not allowed; they are considered useless and do not add quality.
 - Test scripts are run manually and at the agent's command to validate changes without exception.
+
+Related:
+- Phase 0 security dev test strategy: `docs/agents/security-phase0-testing.md`

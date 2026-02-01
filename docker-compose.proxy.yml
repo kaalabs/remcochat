@@ -10,6 +10,11 @@ services:
       - "443:443"
     volumes:
       - ./nginx/remcochat.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
+      # Mount only runtime cert artifacts; keep CA private key (ca.key) host-only.
+      - ./nginx/certs/tls.pem:/etc/nginx/certs/tls.pem:ro
+      - ./nginx/certs/tls.key:/etc/nginx/certs/tls.key:ro
+      - ./nginx/certs/ca.pem:/etc/nginx/certs/ca.pem:ro
+      - ./nginx/certs/ca.cer:/etc/nginx/certs/ca.cer:ro
+      - ./nginx/certs/remcochat-ca.mobileconfig:/etc/nginx/certs/remcochat-ca.mobileconfig:ro
       - ./nginx/acme-challenge:/var/www/certbot:ro
       - ./letsencrypt:/etc/letsencrypt:ro

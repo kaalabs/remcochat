@@ -288,6 +288,17 @@ if (routerEnabled) {
 const bashTools = parsedConfig?.app?.bash_tools;
 const bashToolsEnabled = bashTools?.enabled === true;
 
+function isProbablyWeakAdminToken(token) {
+  const t = String(token ?? "").trim();
+  // Heuristic: require at least 32 characters. Recommend: `openssl rand -hex 32`.
+  return t.length > 0 && t.length < 32;
+}
+
+function isLocalhostHostname(hostname) {
+  const h = String(hostname ?? "").trim().toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
+}
+
 if (bashToolsEnabled) {
   if (!isTruthyEnv(process.env.REMCOCHAT_ENABLE_BASH_TOOL)) {
     console.error(
@@ -320,6 +331,17 @@ if (bashToolsEnabled) {
       );
       process.exit(1);
     }
+    if (isProbablyWeakAdminToken(process.env.REMCOCHAT_ADMIN_TOKEN)) {
+      console.error(
+        [
+          "REMCOCHAT_ADMIN_TOKEN looks too short for a no-auth LAN app.",
+          "",
+          "Recommended:",
+          "  export REMCOCHAT_ADMIN_TOKEN=\"$(openssl rand -hex 32)\"",
+        ].join("\n")
+      );
+      process.exit(1);
+    }
   }
 
   const provider =
@@ -344,6 +366,51 @@ if (bashToolsEnabled) {
         ].join("\n")
       );
       process.exit(1);
+    }
+
+    // sandboxd auth is controlled by an env var (defaults to REMCOCHAT_ADMIN_TOKEN).
+    // In dev, sandboxd often runs on localhost and does not require a token; do not
+    // force a token in that case. If you point orchestrator_url at a non-local host,
+    // require a strong token since the blast radius is much larger.
+    let orchHost = "";
+    try {
+      orchHost = new URL(orchestratorUrl).hostname;
+    } catch {
+      // ignore; URL validity is validated elsewhere in the app, but this preflight is best-effort.
+      orchHost = "";
+    }
+
+    const requiresSandboxdToken = Boolean(orchHost && !isLocalhostHostname(orchHost));
+    if (requiresSandboxdToken) {
+      const adminTokenEnv =
+        typeof bashTools?.docker?.admin_token_env === "string" &&
+        bashTools.docker.admin_token_env.trim()
+          ? bashTools.docker.admin_token_env.trim()
+          : "REMCOCHAT_ADMIN_TOKEN";
+
+      const token = String(process.env[adminTokenEnv] ?? "").trim();
+      if (!token) {
+        console.error(
+          [
+            `Bash tools use a non-local Docker sandbox orchestrator (${orchestratorUrl}), but ${adminTokenEnv} is missing (required for sandboxd auth).`,
+            "",
+            "Set:",
+            `  export ${adminTokenEnv}='...'`,
+          ].join("\n")
+        );
+        process.exit(1);
+      }
+      if (isProbablyWeakAdminToken(token)) {
+        console.error(
+          [
+            `${adminTokenEnv} looks too short for a token that gates sandboxd.`,
+            "",
+            "Recommended:",
+            `  export ${adminTokenEnv}=\"$(openssl rand -hex 32)\"`,
+          ].join("\n")
+        );
+        process.exit(1);
+      }
     }
   } else if (provider === "vercel") {
   const hasOidc = Boolean(String(process.env.VERCEL_OIDC_TOKEN ?? "").trim());

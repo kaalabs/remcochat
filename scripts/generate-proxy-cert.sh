@@ -9,7 +9,7 @@ Generate a local CA + CA-signed TLS certificate for the nginx reverse proxy.
 
 Outputs (PEM):
   nginx/certs/ca.pem
-  nginx/certs/ca.key
+  nginx/ca/ca.key
   nginx/certs/tls.pem
   nginx/certs/tls.key
 
@@ -54,14 +54,16 @@ command -v openssl >/dev/null 2>&1 || die "openssl not found"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 CERT_DIR="$REPO_DIR/nginx/certs"
+CA_DIR="$REPO_DIR/nginx/ca"
 CA_PEM="$CERT_DIR/ca.pem"
-CA_KEY="$CERT_DIR/ca.key"
+CA_KEY="$CA_DIR/ca.key"
 CA_CER="$CERT_DIR/ca.cer"
 CERT_PEM="$CERT_DIR/tls.pem"
 CERT_KEY="$CERT_DIR/tls.key"
 MOBILECONFIG="$CERT_DIR/remcochat-ca.mobileconfig"
 
 mkdir -p "$CERT_DIR"
+mkdir -p "$CA_DIR"
 
 tmp_ca_conf="$(mktemp)"
 tmp_leaf_conf="$(mktemp)"

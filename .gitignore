@@ -30,6 +30,8 @@
 # nginx proxy certs (local only; never commit)
 /nginx/certs/*
 !/nginx/certs/.gitkeep
+/nginx/ca/*
+!/nginx/ca/.gitkeep
 
 # debug
 npm-debug.log*

@@ -87,7 +87,7 @@ Bash tools are disabled by default and require both:
 
 When `app.bash_tools.access = "lan"`, bash tools are enabled **per request** only if the request includes the correct admin token header.
 
-- Server: set `REMCOCHAT_ADMIN_TOKEN` (and `REMCOCHAT_ENABLE_BASH_TOOL=1`) in the runtime environment / `.env` used by Docker.
+- Server: set `REMCOCHAT_ADMIN_TOKEN` (and `REMCOCHAT_ENABLE_BASH_TOOL=1`) in the runtime environment / `.env` used by Docker. (Also required for Docker sandboxd auth in the compose stack.)
 - Browser: enter the same token in the RemcoChat UI so `/api/chat` requests include `x-remcochat-admin-token`.
 - Quick verify: run any chat request and check the response header `x-remcochat-bash-tools-enabled: 1` (otherwise tools will not be advertised to the model).
 
@@ -106,7 +106,7 @@ Two sandbox backends are supported:
    - `app.bash_tools.docker.orchestrator_url = "http://127.0.0.1:8080"`
 4. To access a web server running in the sandbox, set `app.bash_tools.sandbox.ports = [3000]` and use the `sandboxUrl` tool (it returns a host URL mapped to that sandbox port).
    - Works even if the app binds to `127.0.0.1` inside the sandbox (sandboxd runs an internal loopback proxy).
-   - LAN access: run sandboxd with `SANDBOXD_BIND_HOST=0.0.0.0` and `SANDBOXD_PUBLISH_HOST_IP=0.0.0.0`, set `SANDBOXD_ADMIN_TOKEN`, and point `orchestrator_url` at your server LAN IP (not `127.0.0.1`).
+   - LAN access (tailnet-only recommended): bind sandboxd and published ports to your Tailscale IP (not `0.0.0.0`), set `SANDBOXD_ADMIN_TOKEN`, and point `orchestrator_url` at that same IP.
 
 ## Admin (optional)
 
