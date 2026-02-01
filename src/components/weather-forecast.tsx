@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { StaticMapPreview } from "@/components/static-map-preview";
 import { CalendarDays, MapPin } from "lucide-react";
 
 function formatDay(date: string, timezone: string) {
@@ -28,15 +29,6 @@ function formatDay(date: string, timezone: string) {
 function formatNumber(value: number) {
   if (!Number.isFinite(value)) return "—";
   return String(Math.round(value));
-}
-
-function getStaticMapUrl(latitude: number, longitude: number): string {
-  // Stadia Maps static map URL - no API key needed for localhost
-  const zoom = 12;
-  const width = 400;
-  const height = 150;
-  const marker = `${latitude},${longitude},,ff0000`;
-  return `https://tiles.stadiamaps.com/static/alidade_smooth.png?center=${latitude},${longitude}&zoom=${zoom}&size=${width}x${height}@2x&markers=${marker}`;
 }
 
 export function WeatherForecast(props: WeatherForecastToolOutput) {
@@ -69,8 +61,9 @@ export function WeatherForecast(props: WeatherForecastToolOutput) {
           rel="noopener noreferrer"
           className="mt-3 block overflow-hidden rounded-md border border-border/40"
         >
-          <img
-            src={getStaticMapUrl(props.latitude, props.longitude)}
+          <StaticMapPreview
+            latitude={props.latitude}
+            longitude={props.longitude}
             alt={`Map of ${props.resolvedLocation}`}
             className="h-[150px] w-full object-cover"
             loading="lazy"
