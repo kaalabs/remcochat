@@ -48,7 +48,7 @@ High-value assets:
 
 - Host integrity (Docker socket == root-equivalent control of host via container escapes/privileged mounts).
 - Admin token (`REMCOCHAT_ADMIN_TOKEN`) and provider API keys.
-- Local CA private key (`nginx/certs/ca.key`) used to mint TLS certs trusted by client devices.
+- Local CA private key (`nginx/ca/ca.key`) used to mint TLS certs trusted by client devices.
 
 ## Findings
 

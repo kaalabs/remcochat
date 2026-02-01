@@ -32,12 +32,12 @@
           - ./nginx/certs/ca.cer:/etc/nginx/certs/ca.cer:ro
           - ./nginx/certs/remcochat-ca.mobileconfig:/etc/nginx/certs/remcochat-ca.mobileconfig:ro
             (This excludes nginx/certs/ca.key from the container by default.)
-  - [ ] Make proxy startup fail-fast in a helpful way:
-      - [ ] scripts/start-remcochat.sh: when --proxy, also check that the CA public artifacts exist if nginx/remcochat.conf serves them (currently it does) (currently warns + creates placeholders; not fail-fast)
+  - [x] Make proxy startup fail-fast in a helpful way:
+      - [x] scripts/start-remcochat.sh: when --proxy, also check that the CA public artifacts exist if nginx/remcochat.conf serves them (currently it does)
   - [x] Optional-but-clean (still small diff): move the CA private key out of the runtime cert dir
       - [x] Update scripts/generate-proxy-cert.sh to store ca.key under a host-only path that is never mounted (e.g. nginx/ca/ca.key) and copy only public
         CA artifacts into nginx/certs/
-      - [ ] Update the script output list + any docs/comments in nginx/remcochat.conf (script output updated; nginx/remcochat.conf unchanged)
+      - [x] Update the script output list + any docs/comments in nginx/remcochat.conf
   - [x] Verification: (verified in docker host testing)
       - [x] docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
       - [x] Confirm remcochat-proxy container filesystem does not contain ca.key
@@ -50,12 +50,12 @@
   - [x] Enforce/guide it in tooling:
       - [x] scripts/start-remcochat.sh: add a validation/warn-or-die if REMCOCHAT_ADMIN_TOKEN is too short
       - [x] scripts/check-env.mjs: if app.bash_tools.access="lan" (and/or whenever provider="docker"), warn/fail on short tokens
-  - [ ] Rotate token safely (operational checklist to add to README / ops docs):
-      - [ ] Generate new token; replace REMCOCHAT_ADMIN_TOKEN in .env
-      - [ ] Restart compose stack
-      - [ ] Update the token stored in the browser UI (so requests include the new x-remcochat-admin-token)
-      - [ ] Verify old token no longer works:
-          - [ ] sandboxd returns 401 for the old token
-          - [ ] RemcoChat no longer advertises bash tools when the old token is used (if access="lan")
-  - [ ] Confirm token is not leaking:
-      - [ ] Grep logs / startup output to ensure the token value is never printed (only “set/missing/too short” messaging)
+  - [x] Rotate token safely (operational checklist to add to README / ops docs):
+      - [x] Generate new token; replace REMCOCHAT_ADMIN_TOKEN in .env
+      - [x] Restart compose stack
+      - [x] Update the token stored in the browser UI (so requests include the new x-remcochat-admin-token)
+      - [x] Verify old token no longer works:
+          - [x] sandboxd returns 401 for the old token
+          - [x] RemcoChat no longer advertises bash tools when the old token is used (if access="lan")
+  - [x] Confirm token is not leaking:
+      - [x] Grep logs / startup output to ensure the token value is never printed (only “set/missing/too short” messaging)

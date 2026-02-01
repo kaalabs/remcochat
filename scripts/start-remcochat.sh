@@ -81,19 +81,8 @@ cd "$REPO_DIR"
   if [[ "$ENABLE_PROXY" -eq 1 ]]; then
     [[ -f docker-compose.proxy.yml ]] || die "missing docker-compose.proxy.yml in $REPO_DIR"
     [[ -f nginx/remcochat.conf ]] || die "missing nginx/remcochat.conf in $REPO_DIR"
-    [[ -f nginx/certs/tls.pem ]] || die "missing nginx/certs/tls.pem (run scripts/generate-proxy-cert.sh or provide your own cert)"
-    [[ -f nginx/certs/tls.key ]] || die "missing nginx/certs/tls.key (run scripts/generate-proxy-cert.sh or provide your own cert)"
-
-    # docker-compose.proxy.yml now mounts these files explicitly. Ensure the host
-    # paths exist to avoid Docker creating directories with those names.
-    mkdir -p nginx/certs
-    for f in nginx/certs/ca.pem nginx/certs/ca.cer nginx/certs/remcochat-ca.mobileconfig; do
-      if [[ ! -f "$f" ]]; then
-        log "WARN: missing $f (CA download endpoint will 404). Run scripts/generate-proxy-cert.sh to generate it."
-        : >"$f"
-        chmod 644 "$f" || true
-      fi
-    done
+    [[ -x scripts/check-proxy-certs.sh ]] || die "missing scripts/check-proxy-certs.sh"
+    scripts/check-proxy-certs.sh || die "proxy cert preflight failed"
   fi
 [[ -f config.toml ]] || die "missing config.toml in $REPO_DIR"
 [[ -f .env ]] || die "missing .env in $REPO_DIR (copy from .env.example and set required values)"

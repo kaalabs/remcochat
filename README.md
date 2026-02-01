@@ -58,6 +58,26 @@ To bring up the full stack (RemcoChat + sandboxd + proxy) automatically after re
 - Verify it’s present: `crontab -l | rg remcochat:startup`
 - Startup log: `/tmp/remcochat-startup.log`
 
+## Rotate REMCOCHAT_ADMIN_TOKEN (LAN bash tools / sandboxd)
+
+If you suspect the token leaked (or as routine hygiene), rotate it:
+
+1. Generate a new token (64 hex chars / 32 bytes):
+   - `openssl rand -hex 32`
+2. Update the Docker host `.env`:
+   - set `REMCOCHAT_ADMIN_TOKEN=<new token>`
+3. Restart the stack:
+   - `scripts/start-remcochat.sh --proxy` (or `--build --proxy` if needed)
+4. Update the token stored in the browser UI (so `/api/chat` includes `x-remcochat-admin-token`).
+5. Verify the old token no longer works:
+   - `curl -i http://127.0.0.1:8080/v1/health -H "x-remcochat-admin-token: <old>"` should return `401`
+   - A chat request with the old token should not advertise bash tools (no `x-remcochat-bash-tools-enabled: 1`).
+
+### Verify token is not leaking into logs
+
+After a restart/rotation, scan logs for accidental token prints:
+- `scripts/verify-no-admin-token-in-logs.sh --docker`
+
 To remove it: edit `crontab -e` and delete the lines containing `remcochat:startup`.
 
 ### Stop / restart
