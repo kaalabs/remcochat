@@ -4,6 +4,7 @@ import { URL } from "node:url";
 import Dockerode from "dockerode";
 import { nanoid } from "nanoid";
 import tar from "tar-stream";
+import { buildPublishedPortUrl } from "./public-url";
 
 type SandboxRuntime = "node24" | "python3.13";
 
@@ -166,6 +167,8 @@ type ServerState = {
   defaultIdleTtlMs: number;
   maxBodyBytes: number;
   publishedPortHostIp: string;
+  publicHost: string | null;
+  publicProto: "http" | "https";
   sandboxNetworkName: string;
   sandboxesById: Map<string, SandboxEntry>;
   sandboxIdBySessionKey: Map<string, string>;
@@ -900,6 +903,9 @@ async function main() {
   const publishedPortHostIp =
     String(process.env.SANDBOXD_PUBLISH_HOST_IP ?? "").trim() ||
     (isLocalhostHost(bindHost) ? "127.0.0.1" : "0.0.0.0");
+  const publicHost = String(process.env.SANDBOXD_PUBLIC_HOST ?? "").trim() || null;
+  const publicProtoEnv = String(process.env.SANDBOXD_PUBLIC_PROTO ?? "").trim().toLowerCase();
+  const publicProto: "http" | "https" = publicProtoEnv === "https" ? "https" : "http";
   const sandboxNetworkName =
     String(process.env.SANDBOXD_NETWORK_NAME ?? "").trim() || "remcochat-sandbox-net";
 
@@ -913,6 +919,8 @@ async function main() {
     defaultIdleTtlMs,
     maxBodyBytes,
     publishedPortHostIp,
+    publicHost,
+    publicProto,
     sandboxNetworkName,
     sandboxesById: new Map(),
     sandboxIdBySessionKey: new Map(),
@@ -1130,13 +1138,18 @@ async function main() {
         if (!sandbox.ports.includes(port)) return json(res, 200, { found: false });
         const hostPort = await ensurePortPublished(state, sandbox, port);
 
-        const host = req.headers.host ? hostnameFromHostHeader(String(req.headers.host)) : "";
-        const proto = "http";
-        const hostname = host || state.bindHost;
+        const url = buildPublishedPortUrl({
+          hostHeader: req.headers.host ? String(req.headers.host) : null,
+          bindHost: state.bindHost,
+          publishedPortHostIp: state.publishedPortHostIp,
+          hostPort,
+          publicHost: state.publicHost,
+          publicProto: state.publicProto,
+        });
         return json(res, 200, {
           found: true,
           hostPort,
-          url: `${proto}://${hostname}:${hostPort}`,
+          url,
         });
       }
 
