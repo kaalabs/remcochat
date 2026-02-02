@@ -8,6 +8,7 @@ import { runAgendaAction } from "@/server/agenda";
 import { upsertPendingMemory } from "@/server/pending-memory";
 import { getUrlSummary, type UrlSummaryLength } from "@/ai/url-summary";
 import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
+import { pickAgendaDescriptionFromRecord } from "@/ai/agenda-description";
 
 export const displayWeather = createTool({
   description:
@@ -278,6 +279,14 @@ export function createTools(input: {
 	        .string()
 	        .describe("Item description for create actions.")
 	        .default(""),
+	      beschrijving: z
+	        .string()
+	        .describe("Alias for description (Dutch: beschrijving).")
+	        .default(""),
+	      omschrijving: z
+	        .string()
+	        .describe("Alias for description (Dutch: omschrijving).")
+	        .default(""),
 	      title: z
 	        .string()
 	        .describe("Alias for description (some models use title).")
@@ -330,6 +339,8 @@ export function createTools(input: {
 	      match: z
 	        .object({
 	          description: z.string().optional(),
+	          beschrijving: z.string().optional(),
+	          omschrijving: z.string().optional(),
 	          title: z.string().optional(),
 	          titel: z.string().optional(),
 	          subject: z.string().optional(),
@@ -345,6 +356,8 @@ export function createTools(input: {
 	      patch: z
 	        .object({
 	          description: z.string().optional(),
+	          beschrijving: z.string().optional(),
+	          omschrijving: z.string().optional(),
 	          title: z.string().optional(),
 	          titel: z.string().optional(),
 	          subject: z.string().optional(),
@@ -356,9 +369,9 @@ export function createTools(input: {
 	          time: z.string().optional(),
 	          duration_minutes: z.number().int().optional(),
 	          timezone: z.string().optional(),
-        })
-        .describe("Fields to update for update actions.")
-        .optional(),
+	        })
+	        .describe("Fields to update for update actions.")
+	        .optional(),
       target_profile: z
         .string()
         .describe("Profile name or id to share or unshare with.")
@@ -378,20 +391,12 @@ export function createTools(input: {
         })
         .describe("List range definition for list actions.")
         .optional(),
-      include_overlaps: z
-        .boolean()
-        .describe("Include items that overlap the range window.")
-        .optional(),
-	    }),
+	      include_overlaps: z
+	        .boolean()
+	        .describe("Include items that overlap the range window.")
+	        .optional(),
+	    }).passthrough(),
 	    execute: async (inputData) => {
-	      const pickText = (...candidates: Array<unknown>) => {
-	        for (const c of candidates) {
-	          const v = String(c ?? "").trim();
-	          if (v) return v;
-	        }
-	        return "";
-	      };
-
 	      const action = inputData.action;
 	      if (isTemporary && action !== "list") {
 	        throw new Error(
@@ -399,17 +404,9 @@ export function createTools(input: {
 	        );
 	      }
 	      if (action === "create") {
-	        const description = pickText(
-	          inputData.description,
-	          inputData.title,
-	          inputData.titel,
-	          inputData.subject,
-	          inputData.onderwerp,
-	          inputData.name,
-	          inputData.content,
-	          inputData.summary,
-	          inputData.match?.description,
-	        );
+	        const description =
+	          pickAgendaDescriptionFromRecord(inputData) ||
+	          pickAgendaDescriptionFromRecord(inputData.match);
 	        return runAgendaAction(input.profileId, {
 	          action,
 	          description,
@@ -420,26 +417,8 @@ export function createTools(input: {
 	        }, { viewerTimeZone: input.viewerTimeZone });
 	      }
 	      if (action === "update") {
-	        const matchDescription = pickText(
-	          inputData.match?.description,
-	          inputData.match?.title,
-	          inputData.match?.titel,
-	          inputData.match?.subject,
-	          inputData.match?.onderwerp,
-	          inputData.match?.name,
-	          inputData.match?.content,
-	          inputData.match?.summary,
-	        );
-	        const patchDescription = pickText(
-	          inputData.patch?.description,
-	          inputData.patch?.title,
-	          inputData.patch?.titel,
-	          inputData.patch?.subject,
-	          inputData.patch?.onderwerp,
-	          inputData.patch?.name,
-	          inputData.patch?.content,
-	          inputData.patch?.summary,
-	        );
+	        const matchDescription = pickAgendaDescriptionFromRecord(inputData.match);
+	        const patchDescription = pickAgendaDescriptionFromRecord(inputData.patch);
 	        return runAgendaAction(input.profileId, {
 	          action,
 	          itemId: inputData.item_id || undefined,
