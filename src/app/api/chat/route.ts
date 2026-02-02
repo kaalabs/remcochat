@@ -684,6 +684,7 @@ export async function POST(req: Request) {
         [...body.messages].reverse().find((m) => m.id === lastUserMessageId)!
       )
     : "";
+  const previousUserText = previousUserMessageText(body.messages, lastUserMessageId);
   const stopAfterTimezones = isTimezonesUserQuery(lastUserText);
   const stopAfterCurrentDateTime = isCurrentDateTimeUserQuery(lastUserText);
   const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
@@ -1005,14 +1006,15 @@ export async function POST(req: Request) {
       });
     }
 
-    const chatTools = createTools({
-      profileId: profile.id,
-      isTemporary: true,
-      memoryEnabled: false,
-      viewerTimeZone,
-      model: resolved.capabilities.tools ? resolved.model : undefined,
-      supportsTemperature: resolved.capabilities.temperature,
-    });
+	    const chatTools = createTools({
+	      profileId: profile.id,
+	      isTemporary: true,
+	      memoryEnabled: false,
+	      viewerTimeZone,
+	      toolContext: { lastUserText, previousUserText },
+	      model: resolved.capabilities.tools ? resolved.model : undefined,
+	      supportsTemperature: resolved.capabilities.temperature,
+	    });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
       modelType: resolved.modelType,
@@ -2021,6 +2023,7 @@ export async function POST(req: Request) {
     isTemporary: false,
     memoryEnabled: profile.memoryEnabled,
     viewerTimeZone,
+    toolContext: { lastUserText, previousUserText },
     model: resolved.capabilities.tools ? resolved.model : undefined,
     supportsTemperature: resolved.capabilities.temperature,
   });

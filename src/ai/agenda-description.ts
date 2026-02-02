@@ -14,6 +14,10 @@ const DESCRIPTION_KEYS = new Set([
   "summary",
 ]);
 
+function normalizeSpaces(value: string) {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
 function normalizeKey(key: string) {
   const raw = String(key ?? "").trim();
   const withUnderscores = raw.replace(/([a-z0-9])([A-Z])/g, "$1_$2");
@@ -46,7 +50,7 @@ export function pickAgendaDescriptionFromRecord(value: unknown): string {
   ];
   for (const key of preferred) {
     const raw = record[key];
-    const text = String(raw ?? "").trim();
+    const text = normalizeSpaces(String(raw ?? ""));
     if (text) return text;
   }
 
@@ -54,8 +58,28 @@ export function pickAgendaDescriptionFromRecord(value: unknown): string {
   for (const [key, raw] of Object.entries(record)) {
     const normalized = normalizeKey(key);
     if (!DESCRIPTION_KEYS.has(normalized)) continue;
-    const text = String(raw ?? "").trim();
+    const text = normalizeSpaces(String(raw ?? ""));
     if (text) return text;
+  }
+
+  return "";
+}
+
+export function inferAgendaDescriptionFromUserText(text: string): string {
+  const value = normalizeSpaces(text);
+  if (!value) return "";
+
+  const patterns: RegExp[] = [
+    /\bzet\s+(?:"([^"]+)"|'([^']+)'|(.+?))\s+in\s+mijn\s+(?:agenda|kalender)\b/i,
+    /\bzet\s+(?:"([^"]+)"|'([^']+)'|(.+?))\s+op\s+mijn\s+(?:agenda|kalender)\b/i,
+    /\b(add|schedule|put)\s+(?:"([^"]+)"|'([^']+)'|(.+?))\s+(?:to|in)\s+my\s+(?:agenda|calendar)\b/i,
+  ];
+
+  for (const re of patterns) {
+    const m = value.match(re);
+    if (!m) continue;
+    const candidate = normalizeSpaces(String(m[1] ?? m[2] ?? m[3] ?? m[4] ?? ""));
+    if (candidate) return candidate;
   }
 
   return "";

@@ -8,7 +8,10 @@ import { runAgendaAction } from "@/server/agenda";
 import { upsertPendingMemory } from "@/server/pending-memory";
 import { getUrlSummary, type UrlSummaryLength } from "@/ai/url-summary";
 import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
-import { pickAgendaDescriptionFromRecord } from "@/ai/agenda-description";
+import {
+  inferAgendaDescriptionFromUserText,
+  pickAgendaDescriptionFromRecord,
+} from "@/ai/agenda-description";
 
 export const displayWeather = createTool({
   description:
@@ -74,6 +77,10 @@ export function createTools(input: {
   memoryEnabled?: boolean;
   isTemporary?: boolean;
   viewerTimeZone?: string;
+  toolContext?: {
+    lastUserText?: string;
+    previousUserText?: string;
+  };
   model?: import("ai").LanguageModel;
   supportsTemperature?: boolean;
 }) {
@@ -407,9 +414,17 @@ export function createTools(input: {
 	        const description =
 	          pickAgendaDescriptionFromRecord(inputData) ||
 	          pickAgendaDescriptionFromRecord(inputData.match);
+	        const repairedDescription =
+	          description ||
+	          inferAgendaDescriptionFromUserText(
+	            String(input.toolContext?.lastUserText ?? ""),
+	          ) ||
+	          inferAgendaDescriptionFromUserText(
+	            String(input.toolContext?.previousUserText ?? ""),
+	          );
 	        return runAgendaAction(input.profileId, {
 	          action,
-	          description,
+	          description: repairedDescription,
 	          date: inputData.date,
 	          time: inputData.time,
 	          durationMinutes: Number(inputData.duration_minutes ?? 0),
