@@ -262,27 +262,55 @@ export function createTools(input: {
       return { lists, counts };
     },
   });
-  const displayAgenda = createTool({
-    description:
-      "Create, update, delete, share, or list agenda items for the active profile.",
-    inputSchema: z.object({
-      action: z.enum([
-        "create",
-        "update",
-        "delete",
-        "share",
-        "unshare",
-        "list",
-      ]),
-      description: z
-        .string()
-        .describe("Item description for create actions.")
-        .default(""),
-      date: z
-        .string()
-        .describe("YYYY-MM-DD date for create/update actions.")
-        .default(""),
-      time: z
+	  const displayAgenda = createTool({
+	    description:
+	      "Create, update, delete, share, or list agenda items for the active profile.",
+	    inputSchema: z.object({
+	      action: z.enum([
+	        "create",
+	        "update",
+	        "delete",
+	        "share",
+	        "unshare",
+	        "list",
+	      ]),
+	      description: z
+	        .string()
+	        .describe("Item description for create actions.")
+	        .default(""),
+	      title: z
+	        .string()
+	        .describe("Alias for description (some models use title).")
+	        .default(""),
+	      titel: z
+	        .string()
+	        .describe("Alias for description (Dutch: titel).")
+	        .default(""),
+	      subject: z
+	        .string()
+	        .describe("Alias for description (some models use subject).")
+	        .default(""),
+	      onderwerp: z
+	        .string()
+	        .describe("Alias for description (Dutch: onderwerp).")
+	        .default(""),
+	      name: z
+	        .string()
+	        .describe("Alias for description (some models use name).")
+	        .default(""),
+	      content: z
+	        .string()
+	        .describe("Alias for description (some models use content).")
+	        .default(""),
+	      summary: z
+	        .string()
+	        .describe("Alias for description (some models use summary).")
+	        .default(""),
+	      date: z
+	        .string()
+	        .describe("YYYY-MM-DD date for create/update actions.")
+	        .default(""),
+	      time: z
         .string()
         .describe("HH:MM 24h time for create/update actions.")
         .default(""),
@@ -299,21 +327,35 @@ export function createTools(input: {
         .string()
         .describe("Optional agenda item id for update/delete/share actions.")
         .default(""),
-      match: z
-        .object({
-          description: z.string().optional(),
-          date: z.string().optional(),
-          time: z.string().optional(),
-        })
-        .describe("Best-effort match fields when item_id is unknown.")
-        .optional(),
-      patch: z
-        .object({
-          description: z.string().optional(),
-          date: z.string().optional(),
-          time: z.string().optional(),
-          duration_minutes: z.number().int().optional(),
-          timezone: z.string().optional(),
+	      match: z
+	        .object({
+	          description: z.string().optional(),
+	          title: z.string().optional(),
+	          titel: z.string().optional(),
+	          subject: z.string().optional(),
+	          onderwerp: z.string().optional(),
+	          name: z.string().optional(),
+	          content: z.string().optional(),
+	          summary: z.string().optional(),
+	          date: z.string().optional(),
+	          time: z.string().optional(),
+	        })
+	        .describe("Best-effort match fields when item_id is unknown.")
+	        .optional(),
+	      patch: z
+	        .object({
+	          description: z.string().optional(),
+	          title: z.string().optional(),
+	          titel: z.string().optional(),
+	          subject: z.string().optional(),
+	          onderwerp: z.string().optional(),
+	          name: z.string().optional(),
+	          content: z.string().optional(),
+	          summary: z.string().optional(),
+	          date: z.string().optional(),
+	          time: z.string().optional(),
+	          duration_minutes: z.number().int().optional(),
+	          timezone: z.string().optional(),
         })
         .describe("Fields to update for update actions.")
         .optional(),
@@ -340,38 +382,83 @@ export function createTools(input: {
         .boolean()
         .describe("Include items that overlap the range window.")
         .optional(),
-    }),
-    execute: async (inputData) => {
-      const action = inputData.action;
-      if (isTemporary && action !== "list") {
-        throw new Error(
-          "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
-        );
-      }
-      if (action === "create") {
-        return runAgendaAction(input.profileId, {
-          action,
-          description: inputData.description,
-          date: inputData.date,
-          time: inputData.time,
-          durationMinutes: Number(inputData.duration_minutes ?? 0),
-          timezone: inputData.timezone,
-        }, { viewerTimeZone: input.viewerTimeZone });
-      }
-      if (action === "update") {
-        return runAgendaAction(input.profileId, {
-          action,
-          itemId: inputData.item_id || undefined,
-          match: inputData.match,
-          patch: {
-            description: inputData.patch?.description,
-            date: inputData.patch?.date,
-            time: inputData.patch?.time,
-            durationMinutes: inputData.patch?.duration_minutes,
-            timezone: inputData.patch?.timezone,
-          },
-        }, { viewerTimeZone: input.viewerTimeZone });
-      }
+	    }),
+	    execute: async (inputData) => {
+	      const pickText = (...candidates: Array<unknown>) => {
+	        for (const c of candidates) {
+	          const v = String(c ?? "").trim();
+	          if (v) return v;
+	        }
+	        return "";
+	      };
+
+	      const action = inputData.action;
+	      if (isTemporary && action !== "list") {
+	        throw new Error(
+	          "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
+	        );
+	      }
+	      if (action === "create") {
+	        const description = pickText(
+	          inputData.description,
+	          inputData.title,
+	          inputData.titel,
+	          inputData.subject,
+	          inputData.onderwerp,
+	          inputData.name,
+	          inputData.content,
+	          inputData.summary,
+	          inputData.match?.description,
+	        );
+	        return runAgendaAction(input.profileId, {
+	          action,
+	          description,
+	          date: inputData.date,
+	          time: inputData.time,
+	          durationMinutes: Number(inputData.duration_minutes ?? 0),
+	          timezone: inputData.timezone,
+	        }, { viewerTimeZone: input.viewerTimeZone });
+	      }
+	      if (action === "update") {
+	        const matchDescription = pickText(
+	          inputData.match?.description,
+	          inputData.match?.title,
+	          inputData.match?.titel,
+	          inputData.match?.subject,
+	          inputData.match?.onderwerp,
+	          inputData.match?.name,
+	          inputData.match?.content,
+	          inputData.match?.summary,
+	        );
+	        const patchDescription = pickText(
+	          inputData.patch?.description,
+	          inputData.patch?.title,
+	          inputData.patch?.titel,
+	          inputData.patch?.subject,
+	          inputData.patch?.onderwerp,
+	          inputData.patch?.name,
+	          inputData.patch?.content,
+	          inputData.patch?.summary,
+	        );
+	        return runAgendaAction(input.profileId, {
+	          action,
+	          itemId: inputData.item_id || undefined,
+	          match: inputData.match
+	            ? {
+	                description: matchDescription || undefined,
+	                date: inputData.match.date,
+	                time: inputData.match.time,
+	              }
+	            : undefined,
+	          patch: {
+	            description: patchDescription || undefined,
+	            date: inputData.patch?.date,
+	            time: inputData.patch?.time,
+	            durationMinutes: inputData.patch?.duration_minutes,
+	            timezone: inputData.patch?.timezone,
+	          },
+	        }, { viewerTimeZone: input.viewerTimeZone });
+	      }
       if (action === "delete") {
         return runAgendaAction(input.profileId, {
           action,
