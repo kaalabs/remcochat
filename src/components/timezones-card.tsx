@@ -40,7 +40,10 @@ export function TimezonesCard(props: TimezonesToolOutput) {
             <span className="text-muted-foreground">•</span>
             <span className="tabular-nums">{props.reference.localTime}</span>
             <span className="text-muted-foreground">•</span>
-            <span>{props.reference.dateLabel}</span>
+            <span>
+              {props.reference.dateLabel}{" "}
+              <span className="tabular-nums">({props.reference.localDateISO})</span>
+            </span>
           </CardDescription>
         </div>
         <div className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70 shadow-xs">
@@ -72,7 +75,8 @@ export function TimezonesCard(props: TimezonesToolOutput) {
                   ) : null}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {entry.dateLabel}
+                  {entry.dateLabel}{" "}
+                  <span className="tabular-nums">({entry.localDateISO})</span>
                 </div>
               </div>
               <div className="text-right">

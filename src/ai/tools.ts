@@ -7,6 +7,7 @@ import { runNoteAction } from "@/server/notes";
 import { runAgendaAction } from "@/server/agenda";
 import { upsertPendingMemory } from "@/server/pending-memory";
 import { getUrlSummary, type UrlSummaryLength } from "@/ai/url-summary";
+import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
 
 export const displayWeather = createTool({
   description:
@@ -77,6 +78,45 @@ export function createTools(input: {
 }) {
   const memoryEnabled = Boolean(input.memoryEnabled);
   const isTemporary = Boolean(input.isTemporary);
+
+  const displayCurrentDateTime = createTool({
+    description:
+      "Display the current date and time (including ISO date) for a single timezone. Defaults to the viewer timezone when available.",
+    inputSchema: z.object({
+      zone: z
+        .string()
+        .describe("Optional city name or IANA timezone id (e.g. 'Europe/Amsterdam').")
+        .default(""),
+    }),
+    execute: async ({ zone }): Promise<CurrentDateTimeToolOutput> => {
+      const requestedZone = String(zone ?? "").trim();
+      const effectiveZone = requestedZone || input.viewerTimeZone || "UTC";
+
+      const nowUtcISO = new Date().toISOString();
+      const output = await getTimezones({ zones: [effectiveZone] });
+      const entry =
+        output.entries.find((e) => e.isReference) ?? output.entries[0];
+      if (!entry) {
+        throw new Error("No timezone could be resolved.");
+      }
+
+      const timePart = String(entry.localDateTimeISO.split("T")[1] ?? "").trim();
+      return {
+        nowUtcISO,
+        zone: {
+          label: entry.label,
+          timeZone: entry.timeZone,
+          offset: entry.offset,
+        },
+        local: {
+          dateISO: entry.localDateISO,
+          time24: timePart || entry.localTime,
+          dateTimeISO: entry.localDateTimeISO,
+          dateLabel: entry.dateLabel,
+        },
+      };
+    },
+  });
 
   const displayMemoryPrompt = createTool({
     description:
@@ -414,6 +454,7 @@ export function createTools(input: {
     displayMemoryPrompt,
     displayMemoryAnswer,
     displayTimezones,
+    displayCurrentDateTime,
     displayNotes,
     displayList,
     displayListsOverview,

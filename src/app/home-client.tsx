@@ -86,10 +86,11 @@ import { Weather } from "@/components/weather";
 import { WeatherForecast } from "@/components/weather-forecast";
 import { MemoryCard } from "@/components/memory-card";
 import { ListCard } from "@/components/list-card";
-import { ListsOverviewCard } from "@/components/lists-overview-card";
-import { AgendaCard } from "@/components/agenda-card";
-import { MemoryPromptCard } from "@/components/memory-prompt-card";
-import { TimezonesCard } from "@/components/timezones-card";
+	import { ListsOverviewCard } from "@/components/lists-overview-card";
+	import { AgendaCard } from "@/components/agenda-card";
+	import { CurrentDateTimeCard } from "@/components/current-date-time-card";
+	import { MemoryPromptCard } from "@/components/memory-prompt-card";
+	import { TimezonesCard } from "@/components/timezones-card";
 import {
   allowedReasoningEfforts,
   normalizeReasoningEffort,
@@ -100,10 +101,11 @@ import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
 import { SkillsToolCard } from "@/components/skills-tool-card";
 import { ConversationScrollButton } from "@/components/ai-elements/conversation";
-import type { WeatherToolOutput } from "@/ai/weather";
-import type { WeatherForecastToolOutput } from "@/ai/weather";
-import type { TimezonesToolOutput } from "@/ai/timezones";
-import type { UrlSummaryToolOutput } from "@/ai/url-summary";
+	import type { WeatherToolOutput } from "@/ai/weather";
+	import type { WeatherForecastToolOutput } from "@/ai/weather";
+	import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
+	import type { TimezonesToolOutput } from "@/ai/timezones";
+	import type { UrlSummaryToolOutput } from "@/ai/url-summary";
 import type { NotesToolOutput } from "@/lib/types";
 import {
 		  ArchiveIcon,
@@ -2633,10 +2635,10 @@ export function HomeClient({
                               }
                             }
 
-                            if (part.type === "tool-displayTimezones") {
-                              switch (part.state) {
-                                case "input-streaming":
-                                case "input-available":
+	                            if (part.type === "tool-displayTimezones") {
+	                              switch (part.state) {
+	                                case "input-streaming":
+	                                case "input-available":
                                   return (
                                     <ToolCallLine
                                       key={`${id}-${index}`}
@@ -2667,8 +2669,45 @@ export function HomeClient({
                                   );
                                 default:
                                   return null;
-                              }
-                            }
+	                              }
+	                            }
+
+	                            if (part.type === "tool-displayCurrentDateTime") {
+	                              switch (part.state) {
+	                                case "input-streaming":
+	                                case "input-available":
+	                                  return (
+	                                    <ToolCallLine
+	                                      key={`${id}-${index}`}
+	                                      state={part.state}
+	                                      type={part.type}
+	                                    />
+	                                  );
+	                                case "output-available": {
+	                                  const output = part.output as
+	                                    | CurrentDateTimeToolOutput
+	                                    | undefined;
+	                                  if (!output || typeof output !== "object") return null;
+	                                  return (
+	                                    <div className="space-y-2" key={`${id}-${index}`}>
+	                                      <ToolCallLine state={part.state} type={part.type} />
+	                                      <CurrentDateTimeCard {...output} />
+	                                    </div>
+	                                  );
+	                                }
+	                                case "output-error":
+	                                  return (
+	                                    <div className="space-y-2" key={`${id}-${index}`}>
+	                                      <ToolCallLine state={part.state} type={part.type} />
+	                                      <div className="text-sm text-destructive">
+	                                        Current date/time error: {part.errorText}
+	                                      </div>
+	                                    </div>
+	                                  );
+	                                default:
+	                                  return null;
+	                              }
+	                            }
 
                             if (part.type === "tool-displayUrlSummary") {
                               switch (part.state) {

@@ -51,7 +51,10 @@ import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
-import { isTimezonesUserQuery } from "@/server/timezones-intent";
+import {
+  isCurrentDateTimeUserQuery,
+  isTimezonesUserQuery,
+} from "@/server/timezones-intent";
 import { getSkillsRegistry } from "@/server/skills/runtime";
 import { stripExplicitSkillInvocationFromMessages } from "@/server/skills/explicit-invocation";
 import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
@@ -682,6 +685,7 @@ export async function POST(req: Request) {
       )
     : "";
   const stopAfterTimezones = isTimezonesUserQuery(lastUserText);
+  const stopAfterCurrentDateTime = isCurrentDateTimeUserQuery(lastUserText);
   const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
   const explicitBashNoExtraText = /\bdo not add any other text\b/i.test(lastUserText);
 
@@ -1091,6 +1095,9 @@ export async function POST(req: Request) {
 	          stopWhen: [
 	            hasToolCall("displayWeather"),
 	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterCurrentDateTime
+	              ? [hasToolCall("displayCurrentDateTime")]
+	              : []),
 	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
 	            hasToolCall("displayNotes"),
 	            hasToolCall("displayMemoryPrompt"),
@@ -1294,6 +1301,9 @@ export async function POST(req: Request) {
 	          stopWhen: [
 	            hasToolCall("displayWeather"),
 	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterCurrentDateTime
+	              ? [hasToolCall("displayCurrentDateTime")]
+	              : []),
 	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
 	            hasToolCall("displayNotes"),
 	            hasToolCall("displayMemoryPrompt"),
@@ -2051,6 +2061,9 @@ export async function POST(req: Request) {
 	          stopWhen: [
 	            hasToolCall("displayWeather"),
 	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterCurrentDateTime
+	              ? [hasToolCall("displayCurrentDateTime")]
+	              : []),
 	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
 	            hasToolCall("displayNotes"),
 	            hasToolCall("displayMemoryPrompt"),
@@ -2315,6 +2328,9 @@ export async function POST(req: Request) {
 	          stopWhen: [
 	            hasToolCall("displayWeather"),
 	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterCurrentDateTime
+	              ? [hasToolCall("displayCurrentDateTime")]
+	              : []),
 	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
 	            hasToolCall("displayNotes"),
 	            hasToolCall("displayMemoryAnswer"),

@@ -3,6 +3,8 @@ export type TimezoneEntry = {
   timeZone: string;
   localTime: string;
   dateLabel: string;
+  localDateISO: string;
+  localDateTimeISO: string;
   offset: string;
   dayDiff: number;
   isReference: boolean;
@@ -15,6 +17,8 @@ export type TimezonesToolOutput = {
     timeZone: string;
     localTime: string;
     dateLabel: string;
+    localDateISO: string;
+    localDateTimeISO: string;
   };
   entries: TimezoneEntry[];
 };
@@ -326,6 +330,26 @@ function formatTime(date: Date, timeZone: string) {
   return { time, dateLabel };
 }
 
+function pad2(value: number) {
+  return String(Math.trunc(value)).padStart(2, "0");
+}
+
+function buildLocalDateISO(parts: { year: number; month: number; day: number }) {
+  return `${String(parts.year).padStart(4, "0")}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function buildLocalDateTimeISO(parts: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}) {
+  const date = buildLocalDateISO(parts);
+  return `${date}T${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}`;
+}
+
 function parseTimeInput(raw: string, referenceZone: string) {
   const value = normalizeSpaces(raw);
   const dateTimeMatch = value.match(
@@ -473,6 +497,9 @@ export async function getTimezones(input: {
     : new Date();
 
   const referenceFormatted = formatTime(referenceInstant, reference.timeZone);
+  const referenceParts = getZonedParts(referenceInstant, reference.timeZone);
+  const referenceLocalDateISO = buildLocalDateISO(referenceParts);
+  const referenceLocalDateTimeISO = buildLocalDateTimeISO(referenceParts);
   const referenceDayKey = Date.UTC(
     getZonedParts(referenceInstant, reference.timeZone).year,
     getZonedParts(referenceInstant, reference.timeZone).month - 1,
@@ -482,6 +509,8 @@ export async function getTimezones(input: {
   const entries = resolved.map((zone) => {
     const formatted = formatTime(referenceInstant, zone.timeZone);
     const zoneParts = getZonedParts(referenceInstant, zone.timeZone);
+    const localDateISO = buildLocalDateISO(zoneParts);
+    const localDateTimeISO = buildLocalDateTimeISO(zoneParts);
     const zoneDayKey = Date.UTC(
       zoneParts.year,
       zoneParts.month - 1,
@@ -493,6 +522,8 @@ export async function getTimezones(input: {
       timeZone: zone.timeZone,
       localTime: formatted.time,
       dateLabel: formatted.dateLabel,
+      localDateISO,
+      localDateTimeISO,
       offset: formatOffset(zone.timeZone, referenceInstant),
       dayDiff,
       isReference: zone.timeZone === reference.timeZone,
@@ -506,6 +537,8 @@ export async function getTimezones(input: {
       timeZone: reference.timeZone,
       localTime: referenceFormatted.time,
       dateLabel: referenceFormatted.dateLabel,
+      localDateISO: referenceLocalDateISO,
+      localDateTimeISO: referenceLocalDateTimeISO,
     },
     entries,
   };

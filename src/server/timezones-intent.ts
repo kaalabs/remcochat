@@ -7,6 +7,9 @@ const TIMEZONES_INTENT_RE =
 const TIME_QUERY_RE =
   /\b(what time|time now|current time|time is it|local time|time in|time at|convert|conversion|difference|hoe laat|tijd nu|huidige tijd|lokale tijd|tijd in|omrekenen|verschil)\b/i;
 
+const DATE_QUERY_RE =
+  /\b(what date|today'?s date|current date|date today|what day is it|day of week|datum|vandaag.*datum|welke dag is het|welke dag is 't|dag van de week)\b/i;
+
 export function isTimezonesUserQuery(text: string): boolean {
   const value = String(text ?? "").trim();
   if (!value) return false;
@@ -18,3 +21,13 @@ export function isTimezonesUserQuery(text: string): boolean {
   return false;
 }
 
+export function isCurrentDateTimeUserQuery(text: string): boolean {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+
+  if (AGENDA_INTENT_RE.test(value)) return false;
+  if (DATE_QUERY_RE.test(value)) return true;
+  if (TIME_QUERY_RE.test(value)) return true;
+
+  return false;
+}
