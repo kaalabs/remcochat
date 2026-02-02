@@ -14,7 +14,7 @@ import { CalendarClock } from "lucide-react";
 export function CurrentDateTimeCard(props: CurrentDateTimeToolOutput) {
   return (
     <Card
-      className="w-full max-w-md overflow-hidden border-sky-200/70 bg-sky-50/70 shadow-xs dark:border-sky-500/50 dark:bg-sky-500/10"
+      className="w-full max-w-md overflow-hidden border-emerald-200/70 bg-emerald-50/80 shadow-xs dark:border-emerald-500/50 dark:bg-emerald-500/15"
       data-testid="tool:displayCurrentDateTime"
     >
       <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border/60 bg-transparent pb-4">
@@ -51,4 +51,3 @@ export function CurrentDateTimeCard(props: CurrentDateTimeToolOutput) {
     </Card>
   );
 }
-
