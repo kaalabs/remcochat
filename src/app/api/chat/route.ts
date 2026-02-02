@@ -51,9 +51,17 @@ import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
+import { isTimezonesUserQuery } from "@/server/timezones-intent";
 import { getSkillsRegistry } from "@/server/skills/runtime";
 import { stripExplicitSkillInvocationFromMessages } from "@/server/skills/explicit-invocation";
 import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
+import {
+  collectUIMessageChunks,
+  concatUIMessageStreams,
+  createBufferedUIMessageStream,
+  createUIMessageStreamWithToolErrorContinuation,
+  type ToolStreamError,
+} from "@/server/ui-stream";
 
 export const maxDuration = 30;
 
@@ -404,11 +412,20 @@ function uiWeatherResponse(input: {
           output,
         });
       } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to fetch weather.";
         writer.write({
           type: "tool-output-error",
           toolCallId,
-          errorText: err instanceof Error ? err.message : "Failed to fetch weather.",
+          errorText: message,
         });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `Weather error: ${message}`,
+        });
+        writer.write({ type: "text-end", id: messageId });
       }
       writer.write({
         type: "finish",
@@ -452,12 +469,20 @@ function uiWeatherForecastResponse(input: {
           output,
         });
       } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to fetch forecast.";
         writer.write({
           type: "tool-output-error",
           toolCallId,
-          errorText:
-            err instanceof Error ? err.message : "Failed to fetch forecast.",
+          errorText: message,
         });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `Forecast error: ${message}`,
+        });
+        writer.write({ type: "text-end", id: messageId });
       }
       writer.write({
         type: "finish",
@@ -559,12 +584,20 @@ function uiAgendaResponse(input: {
           output,
         });
       } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update agenda.";
         writer.write({
           type: "tool-output-error",
           toolCallId,
-          errorText:
-            err instanceof Error ? err.message : "Failed to update agenda.",
+          errorText: message,
         });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `Agenda error: ${message}\n\nPlease include a description (what the event is) and, for creates/updates, a date/time.`,
+        });
+        writer.write({ type: "text-end", id: messageId });
       }
       writer.write({
         type: "finish",
@@ -602,87 +635,23 @@ function isWebToolName(toolName: string) {
   return WEB_TOOL_NAMES.has(toolName);
 }
 
-function createBufferedUIMessageStream<T>(chunks: T[]): ReadableStream<T> {
-  return new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
-  });
-}
+function formatToolErrorsForPrompt(toolErrors: ToolStreamError[]) {
+  const lines = toolErrors
+    .slice(0, 5)
+    .map((e) => {
+      const name = e.toolName ? `${e.toolName}` : "unknown_tool";
+      const stage = e.stage === "input" ? "input" : "output";
+      const msg = String(e.errorText ?? "").trim() || "Tool failed.";
+      return `- ${name} (${stage}): ${msg}`;
+    });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object");
-}
-
-async function collectUIMessageChunks<T>(stream: ReadableStream<T>) {
-  const reader = stream.getReader();
-  const chunks: T[] = [];
-  const toolNamesByCallId = new Map<string, string>();
-  const webToolOutputs = new Map<string, unknown>();
-  let finishReason: unknown = undefined;
-  let hasUserVisibleOutput = false;
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-
-    const chunk = value as unknown;
-    if (!isRecord(chunk)) continue;
-
-    if (
-      chunk?.type === "tool-input-start" ||
-      chunk?.type === "tool-input-available" ||
-      chunk?.type === "tool-input-error"
-    ) {
-      if (typeof chunk.toolCallId === "string" && typeof chunk.toolName === "string") {
-        toolNamesByCallId.set(chunk.toolCallId, chunk.toolName);
-      }
-      continue;
-    }
-
-    if (chunk?.type === "tool-output-available" || chunk?.type === "tool-output-error") {
-      const toolName =
-        typeof chunk.toolCallId === "string"
-          ? toolNamesByCallId.get(chunk.toolCallId)
-          : undefined;
-
-      if (toolName && isWebToolName(toolName)) {
-        if (chunk.type === "tool-output-available") {
-          webToolOutputs.set(toolName, chunk.output);
-        } else {
-          webToolOutputs.set(toolName, {
-            error: "unknown",
-            message: typeof chunk.errorText === "string" ? chunk.errorText : "Web tool failed.",
-          });
-        }
-      } else {
-        hasUserVisibleOutput = true;
-      }
-      continue;
-    }
-
-    if (
-      (chunk?.type === "text-delta" || chunk?.type === "reasoning-delta") &&
-      typeof chunk.delta === "string"
-    ) {
-      if (chunk.delta.length > 0) hasUserVisibleOutput = true;
-      continue;
-    }
-
-    if (chunk?.type === "error") {
-      hasUserVisibleOutput = true;
-      continue;
-    }
-
-    if (chunk?.type === "finish") {
-      finishReason = chunk.finishReason;
-      continue;
-    }
-  }
-
-  return { chunks, webToolOutputs, finishReason, hasUserVisibleOutput };
+  return [
+    "A tool call failed during the previous step.",
+    "Do not call any tools now. Respond with a helpful explanation and next steps, in plain text.",
+    "",
+    "Errors:",
+    ...lines,
+  ].join("\n");
 }
 
 export async function POST(req: Request) {
@@ -712,6 +681,7 @@ export async function POST(req: Request) {
         [...body.messages].reverse().find((m) => m.id === lastUserMessageId)!
       )
     : "";
+  const stopAfterTimezones = isTimezonesUserQuery(lastUserText);
   const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
   const explicitBashNoExtraText = /\bdo not add any other text\b/i.test(lastUserText);
 
@@ -840,30 +810,19 @@ export async function POST(req: Request) {
         }
       }
       if (routed && routed.intent === "agenda") {
-        let agendaResult;
+        let agendaResult: Awaited<ReturnType<typeof routeAgendaCommand>> = {
+          ok: false,
+          error: "Agenda routing failed.",
+        };
         try {
           agendaResult = await routeAgendaCommand({ text: lastUserText });
         } catch (err) {
-          return uiTextResponse({
-            text:
-              err instanceof Error
-                ? err.message
-                : "Agenda intent engine is temporarily unavailable. Please try again.",
-            messageMetadata: {
-              createdAt: now,
-              turnUserMessageId: lastUserMessageId || undefined,
-            },
-          });
+          console.error("Agenda intent extraction failed (temporary chat fallback)", err);
         }
         if (!agendaResult.ok) {
-          return uiTextResponse({
-            text: agendaResult.error,
-            messageMetadata: {
-              createdAt: now,
-              turnUserMessageId: lastUserMessageId || undefined,
-            },
-          });
-        }
+          // Fall back to the main LLM flow (tool calling) instead of erroring the chat.
+          // The displayAgenda tool itself enforces temporary chat constraints.
+        } else {
         if (needsViewerTimeZoneForAgenda(agendaResult.command)) {
           return uiTextResponse({
             text:
@@ -874,24 +833,25 @@ export async function POST(req: Request) {
             },
           });
         }
-        if (isAgendaMutation(agendaResult.command.action)) {
-          return uiTextResponse({
-            text: "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
+          if (isAgendaMutation(agendaResult.command.action)) {
+            return uiTextResponse({
+              text: "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
+              messageMetadata: {
+                createdAt: now,
+                turnUserMessageId: lastUserMessageId || undefined,
+              },
+            });
+          }
+          return uiAgendaResponse({
+            profileId: profile.id,
+            command: agendaResult.command,
+            viewerTimeZone,
             messageMetadata: {
               createdAt: now,
               turnUserMessageId: lastUserMessageId || undefined,
             },
           });
         }
-        return uiAgendaResponse({
-          profileId: profile.id,
-          command: agendaResult.command,
-          viewerTimeZone,
-          messageMetadata: {
-            createdAt: now,
-            turnUserMessageId: lastUserMessageId || undefined,
-          },
-        });
       }
     }
 
@@ -1116,26 +1076,26 @@ export async function POST(req: Request) {
     };
 
     const result = streamText({
-      model: resolved.model,
+      model: resolved!.model,
       system,
       messages: modelMessages,
-      ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
         ? { temperature: 0 }
         : {}),
       ...(providerOptions ? { providerOptions } : {}),
-      ...(resolved.capabilities.tools
+      ...(resolved!.capabilities.tools
         ? {
           ...(explicitBashCommand
             ? { toolChoice: { type: "tool", toolName: "bash" } }
             : {}),
-          stopWhen: [
-            hasToolCall("displayWeather"),
-            hasToolCall("displayWeatherForecast"),
-            hasToolCall("displayTimezones"),
-            hasToolCall("displayNotes"),
-            hasToolCall("displayMemoryPrompt"),
-            hasToolCall("displayMemoryAnswer"),
-            hasToolCall("displayList"),
+	          stopWhen: [
+	            hasToolCall("displayWeather"),
+	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+	            hasToolCall("displayNotes"),
+	            hasToolCall("displayMemoryPrompt"),
+	            hasToolCall("displayMemoryAnswer"),
+	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
             hasToolCall("summarizeURL"),
@@ -1155,21 +1115,68 @@ export async function POST(req: Request) {
       webTools.enabled &&
       Object.prototype.hasOwnProperty.call(webTools.tools, "perplexity_search");
 
+    const baseUIStream = result.toUIMessageStream({
+      generateMessageId: nanoid,
+      messageMetadata,
+      sendReasoning: config.reasoning.exposeToClient,
+    });
+
     if (!shouldAutoContinuePerplexity) {
-      return result.toUIMessageStreamResponse({
-        headers,
-        generateMessageId: nanoid,
-        messageMetadata,
-        sendReasoning: config.reasoning.exposeToClient,
+      const stream = createUIMessageStreamWithToolErrorContinuation({
+        stream: baseUIStream,
+        shouldContinue: (toolErrors) => toolErrors.length > 0,
+        createContinuationStream: async (toolErrors) => {
+          if (toolErrors.length === 0) return null;
+
+          const continuationMessages = modelMessages.concat([
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: formatToolErrorsForPrompt(toolErrors),
+                },
+              ],
+            },
+          ]);
+
+          const continued = streamText({
+            model: resolved!.model,
+            system,
+            messages: continuationMessages,
+            toolChoice: "none",
+            tools: {
+              ...chatTools,
+              ...webTools.tools,
+              ...bashTools.tools,
+              ...skillsTools.tools,
+            } as StreamTextToolSet,
+            ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+              ? { temperature: 0 }
+              : {}),
+            ...(providerOptions ? { providerOptions } : {}),
+            stopWhen: [stepCountIs(5)],
+          });
+
+          const continuedStream = continued.toUIMessageStream({
+            generateMessageId: nanoid,
+            messageMetadata,
+            sendReasoning: config.reasoning.exposeToClient,
+          });
+          return createUIMessageStreamWithToolErrorContinuation({
+            stream: continuedStream,
+            shouldContinue: () => false,
+            createContinuationStream: async () => null,
+          });
+        },
       });
+
+      return createUIMessageStreamResponse({ headers, stream });
     }
 
     const collected = await collectUIMessageChunks(
-      result.toUIMessageStream({
-        generateMessageId: nanoid,
-        messageMetadata,
-        sendReasoning: config.reasoning.exposeToClient,
-      })
+      baseUIStream,
+      { isWebToolName }
     );
 
     const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
@@ -1179,6 +1186,57 @@ export async function POST(req: Request) {
       perplexityOutput != null;
 
     if (!needsContinuation) {
+      const needsToolErrorContinuation =
+        collected.toolErrors.length > 0;
+
+      if (needsToolErrorContinuation) {
+        const continuationMessages = modelMessages.concat([
+          {
+            role: "user" as const,
+            content: [
+              {
+                type: "text" as const,
+                text: formatToolErrorsForPrompt(collected.toolErrors),
+              },
+            ],
+          },
+        ]);
+
+        const continued = streamText({
+          model: resolved!.model,
+          system,
+          messages: continuationMessages,
+          toolChoice: "none",
+          tools: {
+            ...chatTools,
+            ...webTools.tools,
+            ...bashTools.tools,
+            ...skillsTools.tools,
+          } as StreamTextToolSet,
+          ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+            ? { temperature: 0 }
+            : {}),
+          ...(providerOptions ? { providerOptions } : {}),
+          stopWhen: [stepCountIs(5)],
+        });
+
+        const continuedStream = continued.toUIMessageStream({
+          generateMessageId: nanoid,
+          messageMetadata,
+          sendReasoning: config.reasoning.exposeToClient,
+        });
+        const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+          stream: continuedStream,
+          shouldContinue: () => false,
+          createContinuationStream: async () => null,
+        });
+
+	        return createUIMessageStreamResponse({
+	          headers,
+	          stream: concatUIMessageStreams(collected.chunks, safeContinuedStream),
+	        });
+	      }
+
       return createUIMessageStreamResponse({
         headers,
         stream: createBufferedUIMessageStream(collected.chunks),
@@ -1221,26 +1279,26 @@ export async function POST(req: Request) {
     delete tools.perplexity_search;
 
     const continued = streamText({
-      model: resolved.model,
+      model: resolved!.model,
       system,
       messages: continuationMessages,
-      ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
         ? { temperature: 0 }
         : {}),
       ...(providerOptions ? { providerOptions } : {}),
-      ...(resolved.capabilities.tools
+      ...(resolved!.capabilities.tools
         ? {
             ...(explicitBashCommand
               ? { toolChoice: { type: "tool", toolName: "bash" } }
               : {}),
-          stopWhen: [
-            hasToolCall("displayWeather"),
-            hasToolCall("displayWeatherForecast"),
-            hasToolCall("displayTimezones"),
-            hasToolCall("displayNotes"),
-            hasToolCall("displayMemoryPrompt"),
-            hasToolCall("displayMemoryAnswer"),
-            hasToolCall("displayList"),
+	          stopWhen: [
+	            hasToolCall("displayWeather"),
+	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+	            hasToolCall("displayNotes"),
+	            hasToolCall("displayMemoryPrompt"),
+	            hasToolCall("displayMemoryAnswer"),
+	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
             hasToolCall("summarizeURL"),
@@ -1607,47 +1665,41 @@ export async function POST(req: Request) {
     }
 
     if (routed && routed.intent === "agenda") {
-      let agendaResult;
+      let agendaResult: Awaited<ReturnType<typeof routeAgendaCommand>> = {
+        ok: false,
+        error: "Agenda routing failed.",
+      };
       try {
         agendaResult = await routeAgendaCommand({ text: lastUserText });
       } catch (err) {
-        return uiTextResponse({
-          text:
-            err instanceof Error
-              ? err.message
-              : "Agenda intent engine is temporarily unavailable. Please try again.",
-          messageMetadata: {
-            createdAt: now,
-            turnUserMessageId: lastUserMessageId || undefined,
-            profileInstructionsRevision: currentProfileRevision,
-            chatInstructionsRevision: currentChatRevision,
-          },
-        });
+        console.error("Agenda intent extraction failed (fallback to main chat)", err);
       }
-      if (!agendaResult.ok) {
-        return uiTextResponse({
-          text: agendaResult.error,
-          messageMetadata: {
-            createdAt: now,
-            turnUserMessageId: lastUserMessageId || undefined,
-            profileInstructionsRevision: currentProfileRevision,
-            chatInstructionsRevision: currentChatRevision,
-          },
-        });
-      }
-      if (needsViewerTimeZoneForAgenda(agendaResult.command)) {
-        return uiTextResponse({
-          text:
-            "I couldn't determine your timezone. Tell me your timezone (example: Europe/Amsterdam) or include it in your request, then try again.",
-          messageMetadata: {
-            createdAt: now,
-            turnUserMessageId: lastUserMessageId || undefined,
-            profileInstructionsRevision: currentProfileRevision,
-            chatInstructionsRevision: currentChatRevision,
-          },
-        });
-      }
-      if (isAgendaMutation(agendaResult.command.action)) {
+      if (agendaResult.ok) {
+        if (needsViewerTimeZoneForAgenda(agendaResult.command)) {
+          return uiTextResponse({
+            text:
+              "I couldn't determine your timezone. Tell me your timezone (example: Europe/Amsterdam) or include it in your request, then try again.",
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+              profileInstructionsRevision: currentProfileRevision,
+              chatInstructionsRevision: currentChatRevision,
+            },
+          });
+        }
+        if (isAgendaMutation(agendaResult.command.action)) {
+          return uiAgendaResponse({
+            profileId: profile.id,
+            command: agendaResult.command,
+            viewerTimeZone,
+            messageMetadata: {
+              createdAt: now,
+              turnUserMessageId: lastUserMessageId || undefined,
+              profileInstructionsRevision: currentProfileRevision,
+              chatInstructionsRevision: currentChatRevision,
+            },
+          });
+        }
         return uiAgendaResponse({
           profileId: profile.id,
           command: agendaResult.command,
@@ -1660,17 +1712,6 @@ export async function POST(req: Request) {
           },
         });
       }
-      return uiAgendaResponse({
-        profileId: profile.id,
-        command: agendaResult.command,
-        viewerTimeZone,
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
-          chatInstructionsRevision: currentChatRevision,
-        },
-      });
     }
   }
 
@@ -1992,29 +2033,29 @@ export async function POST(req: Request) {
   const explicitBashCommand = bashTools.enabled
     ? extractExplicitBashCommand(lastUserText)
     : null;
-  const result = streamText({
-    model: resolved.model,
+	  const result = streamText({
+    model: resolved!.model,
     system,
     messages: modelMessages,
-    ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+    ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
       ? { temperature: isRegenerate ? 0.9 : 0 }
       : {}),
     ...(providerOptions ? { providerOptions } : {}),
-    ...(resolved.capabilities.tools
+    ...(resolved!.capabilities.tools
       ? {
           ...(forceMemoryAnswerTool
             ? { toolChoice: { type: "tool", toolName: "displayMemoryAnswer" } }
             : explicitBashCommand
               ? { toolChoice: { type: "tool", toolName: "bash" } }
               : {}),
-          stopWhen: [
-            hasToolCall("displayWeather"),
-            hasToolCall("displayWeatherForecast"),
-            hasToolCall("displayTimezones"),
-            hasToolCall("displayNotes"),
-            hasToolCall("displayMemoryPrompt"),
-            hasToolCall("displayMemoryAnswer"),
-            hasToolCall("displayList"),
+	          stopWhen: [
+	            hasToolCall("displayWeather"),
+	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+	            hasToolCall("displayNotes"),
+	            hasToolCall("displayMemoryPrompt"),
+	            hasToolCall("displayMemoryAnswer"),
+	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
             stepCountIs(maxSteps),
@@ -2098,21 +2139,68 @@ export async function POST(req: Request) {
     webTools.enabled &&
     Object.prototype.hasOwnProperty.call(webTools.tools, "perplexity_search");
 
+  const baseUIStream = result.toUIMessageStream({
+    generateMessageId: nanoid,
+    messageMetadata,
+    sendReasoning: config.reasoning.exposeToClient,
+  });
+
   if (!shouldAutoContinuePerplexity) {
-    return result.toUIMessageStreamResponse({
-      headers,
-      generateMessageId: nanoid,
-      messageMetadata,
-      sendReasoning: config.reasoning.exposeToClient,
+    const stream = createUIMessageStreamWithToolErrorContinuation({
+      stream: baseUIStream,
+      shouldContinue: (toolErrors) => toolErrors.length > 0,
+      createContinuationStream: async (toolErrors) => {
+        if (toolErrors.length === 0) return null;
+
+        const continuationMessages = modelMessages.concat([
+          {
+            role: "user" as const,
+            content: [
+              {
+                type: "text" as const,
+                text: formatToolErrorsForPrompt(toolErrors),
+              },
+            ],
+          },
+        ]);
+
+        const continued = streamText({
+          model: resolved!.model,
+          system,
+          messages: continuationMessages,
+          toolChoice: "none",
+          tools: {
+            ...chatTools,
+            ...webTools.tools,
+            ...bashTools.tools,
+            ...skillsTools.tools,
+          } as StreamTextToolSet,
+          ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+            ? { temperature: isRegenerate ? 0.9 : 0 }
+            : {}),
+          ...(providerOptions ? { providerOptions } : {}),
+          stopWhen: [stepCountIs(5)],
+        });
+
+        const continuedStream = continued.toUIMessageStream({
+          generateMessageId: nanoid,
+          messageMetadata,
+          sendReasoning: config.reasoning.exposeToClient,
+        });
+        return createUIMessageStreamWithToolErrorContinuation({
+          stream: continuedStream,
+          shouldContinue: () => false,
+          createContinuationStream: async () => null,
+        });
+      },
     });
+
+    return createUIMessageStreamResponse({ headers, stream });
   }
 
   const collected = await collectUIMessageChunks(
-    result.toUIMessageStream({
-      generateMessageId: nanoid,
-      messageMetadata,
-      sendReasoning: config.reasoning.exposeToClient,
-    })
+    baseUIStream,
+    { isWebToolName }
   );
 
   const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
@@ -2121,7 +2209,58 @@ export async function POST(req: Request) {
     !collected.hasUserVisibleOutput &&
     perplexityOutput != null;
 
-  if (!needsContinuation) {
+	  if (!needsContinuation) {
+	    const needsToolErrorContinuation =
+	      collected.toolErrors.length > 0;
+
+	    if (needsToolErrorContinuation) {
+      const continuationMessages = modelMessages.concat([
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: formatToolErrorsForPrompt(collected.toolErrors),
+            },
+          ],
+        },
+      ]);
+
+	      const continued = streamText({
+	        model: resolved!.model,
+	        system,
+	        messages: continuationMessages,
+	        toolChoice: "none",
+	        tools: {
+	          ...chatTools,
+	          ...webTools.tools,
+	          ...bashTools.tools,
+	          ...skillsTools.tools,
+	        } as StreamTextToolSet,
+	        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+	          ? { temperature: isRegenerate ? 0.9 : 0 }
+	          : {}),
+	        ...(providerOptions ? { providerOptions } : {}),
+	        stopWhen: [stepCountIs(5)],
+	      });
+
+	      const continuedStream = continued.toUIMessageStream({
+	        generateMessageId: nanoid,
+	        messageMetadata,
+	        sendReasoning: config.reasoning.exposeToClient,
+	      });
+	      const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+	        stream: continuedStream,
+	        shouldContinue: () => false,
+	        createContinuationStream: async () => null,
+	      });
+
+	      return createUIMessageStreamResponse({
+	        headers,
+	        stream: concatUIMessageStreams(collected.chunks, safeContinuedStream),
+	      });
+	    }
+
     return createUIMessageStreamResponse({
       headers,
       stream: createBufferedUIMessageStream(collected.chunks),
@@ -2164,22 +2303,22 @@ export async function POST(req: Request) {
   delete tools.perplexity_search;
 
   const continued = streamText({
-    model: resolved.model,
+    model: resolved!.model,
     system,
     messages: continuationMessages,
-    ...(resolved.capabilities.temperature && !resolved.capabilities.reasoning
+    ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
       ? { temperature: isRegenerate ? 0.9 : 0 }
       : {}),
     ...(providerOptions ? { providerOptions } : {}),
-    ...(resolved.capabilities.tools
+    ...(resolved!.capabilities.tools
       ? {
-          stopWhen: [
-            hasToolCall("displayWeather"),
-            hasToolCall("displayWeatherForecast"),
-            hasToolCall("displayTimezones"),
-            hasToolCall("displayNotes"),
-            hasToolCall("displayMemoryAnswer"),
-            hasToolCall("displayList"),
+	          stopWhen: [
+	            hasToolCall("displayWeather"),
+	            hasToolCall("displayWeatherForecast"),
+	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+	            hasToolCall("displayNotes"),
+	            hasToolCall("displayMemoryAnswer"),
+	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
             hasToolCall("summarizeURL"),

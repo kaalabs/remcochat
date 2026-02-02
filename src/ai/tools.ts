@@ -303,6 +303,11 @@ export function createTools(input: {
     }),
     execute: async (inputData) => {
       const action = inputData.action;
+      if (isTemporary && action !== "list") {
+        throw new Error(
+          "Temporary chats do not save agenda items. Turn off Temp to manage your agenda.",
+        );
+      }
       if (action === "create") {
         return runAgendaAction(input.profileId, {
           action,
