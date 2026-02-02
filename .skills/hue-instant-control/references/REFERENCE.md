@@ -18,6 +18,21 @@ Keep `SKILL.md` short; only load this reference when you need deeper guidance or
 
 Important: if you are executing via a sandboxed Bash tool, `localhost` refers to the sandbox, not the host machine.
 
+### Auth header selection (recommended)
+
+In bash, prefer selecting a single `AUTH_HEADER` once and then using `-H "$AUTH_HEADER"` in all requests:
+
+```bash
+AUTH_HEADER="${HUE_AUTH_HEADER:-}"
+if [ -z "$AUTH_HEADER" ]; then
+  if [ -n "${HUE_API_KEY:-}" ]; then
+    AUTH_HEADER="X-API-Key: $HUE_API_KEY"
+  else
+    AUTH_HEADER="Authorization: Bearer ${HUE_TOKEN:-dev-token}"
+  fi
+fi
+```
+
 ### Base URL selection
 
 1) If the user provides a base URL, use it.
@@ -31,6 +46,11 @@ Important: if you are executing via a sandboxed Bash tool, `localhost` refers to
 ### Health check (fast; run once per chat)
 
 Use `scripts/health_check.sh` (recommended), or inline the pattern below.
+
+Notes:
+
+- When using RemcoChat bash tools, each tool call runs in a fresh shell; keep base URL selection + actions in the same call, or set `BASE_URL` explicitly each time.
+- If you are running from the RemcoChat repo root and this skill is under `./.skills` (default), invoke as `bash ./.skills/hue-instant-control/scripts/health_check.sh`.
 
 ```bash
 set -euo pipefail
@@ -48,6 +68,7 @@ if [ -z "$BASE_URL" ]; then
 fi
 
 [ -n "$BASE_URL" ] || { echo "Hue Gateway not reachable from this environment."; exit 1; }
+BASE_URL="${BASE_URL%/}"
 echo "Using BASE_URL=$BASE_URL"
 
 READY_JSON="$($CURL_HEALTH "$BASE_URL/readyz")"
@@ -101,7 +122,7 @@ If the Bash tool is available, use it to run curl commands. Otherwise, output ex
 
 When using Bash + curl:
 - Add `Content-Type: application/json`
-- Use `Authorization: Bearer dev-token` unless the user provides another token/key.
+- Use `AUTH_HEADER` (see above) unless the user provides another token/key.
 - Use `--connect-timeout 1 --max-time 8` so failures are fast.
 - Prefer one Bash tool call per user request: run a short bash script (`set -euo pipefail`) that does base URL selection and all needed `/v1/actions` calls.
 
@@ -117,10 +138,12 @@ Recommended (robust): pass the JSON via stdin using a here-string.
 Important: do **not** use `python3 -` for this. `python3 -` reads the *Python program* from stdin, so you cannot also
 use stdin for JSON input.
 
+Assumes `BASE_URL` and `AUTH_HEADER` are already set (see sections above).
+
 ```bash
 ROOMS_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
 
 PY_CODE="$(cat <<'PY'
@@ -180,8 +203,14 @@ Call:
 ```bash
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
+```
+
+Optional helper (RemcoChat default install layout): if this skill is under `./.skills` and you are running from the repo root, you can get a parsed list via:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/list_rooms.sh
 ```
 
 Parsing tip (jq, if available):
@@ -190,9 +219,9 @@ Parsing tip (jq, if available):
 # Prints: <room-name>\t<grouped_light_rid>
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}' \
-| jq -r '.result.body.data[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)"'
+| jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)"'
 ```
 
 Then, for each room:
@@ -206,7 +235,7 @@ Speed tip: for a single-room command, this list-rooms call + one `grouped_light.
 ```bash
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/zone"}}'
 ```
 
@@ -247,7 +276,7 @@ Example (room name known; uses stdin parsing so it cannot hit `os.environ[...]` 
 # Resolve room rid (fast) and fetch the room resource
 RESOLVE_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"resolve.by_name","args":{"rtype":"room","name":"Woonkamer"}}')"
 
 PY_RESOLVE="$(cat <<'PY'
@@ -264,12 +293,12 @@ ROOM_RID="$(python3 -c "$PY_RESOLVE" <<<"$RESOLVE_JSON")"
 
 ROOM_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d "{\"action\":\"clipv2.request\",\"args\":{\"method\":\"GET\",\"path\":\"/clip/v2/resource/room/$ROOM_RID\"}}")"
 
 DEVICE_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/device"}}')"
 
 PY_LIST="$(cat <<'PY'
@@ -311,7 +340,7 @@ Use `grouped_light.set` with the room’s `grouped_light` rid:
 ```bash
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":false}}'
 ```
 
@@ -382,7 +411,7 @@ After setting a room, verify at least once:
 ```bash
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer dev-token' \
+  -H "$AUTH_HEADER" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/grouped_light/<RID>"}}'
 ```
 

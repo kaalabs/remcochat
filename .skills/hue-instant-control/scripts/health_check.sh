@@ -23,6 +23,8 @@ if [ -z "$BASE_URL" ]; then
   exit 1
 fi
 
+BASE_URL="${BASE_URL%/}"
+
 READY_JSON="$($CURL_HEALTH "$BASE_URL/readyz" 2>/dev/null || true)"
 case "$READY_JSON" in
   *'"ready":true'*|*'"ready": true'*) : ;;
@@ -35,4 +37,3 @@ esac
 
 # Print only shell-safe exports on stdout so callers can: eval "$(<cmd>)"
 printf "export BASE_URL=%q\n" "$BASE_URL"
-

@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 eval "$("$SCRIPT_DIR/health_check.sh")"
 
+BASE_URL="${BASE_URL%/}"
+
 if ! command -v curl >/dev/null 2>&1; then
   echo "list_rooms.sh: missing required dependency: curl" >&2
   exit 127
@@ -27,7 +29,28 @@ ROOMS_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
   -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
 
 if command -v jq >/dev/null 2>&1; then
-  echo "$ROOMS_JSON" | jq -r '.result.body.data[] | "\(.metadata.name)\t\(.services[]? | select(.rtype==\"grouped_light\") | .rid)\t\(.id)"' \
+  OK="$(echo "$ROOMS_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
+  if [ "$OK" != "true" ]; then
+    ERR="$(echo "$ROOMS_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
+    echo "list_rooms.sh: gateway action failed at BASE_URL=$BASE_URL (${ERR:-unknown error})" >&2
+    echo "$ROOMS_JSON" >&2
+    exit 1
+  fi
+
+  STATUS="$(echo "$ROOMS_JSON" | jq -r '.result.status // empty' 2>/dev/null || true)"
+  if [[ -n "$STATUS" && "$STATUS" =~ ^[0-9]+$ ]]; then
+    if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+      ERRORS="$(echo "$ROOMS_JSON" | jq -c '.result.body.errors // []' 2>/dev/null || true)"
+      echo "list_rooms.sh: Hue Bridge returned status=$STATUS at BASE_URL=$BASE_URL" >&2
+      if [ -n "$ERRORS" ] && [ "$ERRORS" != "[]" ]; then
+        echo "errors: $ERRORS" >&2
+      fi
+      echo "$ROOMS_JSON" >&2
+      exit 1
+    fi
+  fi
+
+  echo "$ROOMS_JSON" | jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype==\"grouped_light\") | .rid)\t\(.id)"' \
   | awk -F'\t' 'NF>=2 && $1!="" && $2!="" {print}' \
   | sort -f
   exit 0
@@ -39,6 +62,26 @@ import json
 import sys
 
 resp = json.load(sys.stdin)
+if not resp.get("ok"):
+    err = resp.get("error") or {}
+    msg = (err.get("message") or err.get("code") or "unknown error").strip()
+    sys.stderr.write(f"list_rooms.sh: gateway action failed ({msg})\n")
+    sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
+    raise SystemExit(1)
+
+status = ((resp.get("result") or {}).get("status") or 0) or 0
+try:
+    status_i = int(status)
+except Exception:
+    status_i = 0
+if status_i and (status_i < 200 or status_i >= 300):
+    errors = (((resp.get("result") or {}).get("body") or {}).get("errors") or [])
+    sys.stderr.write(f"list_rooms.sh: Hue Bridge returned status={status_i}\n")
+    if errors:
+        sys.stderr.write("errors: " + json.dumps(errors, ensure_ascii=False) + "\n")
+    sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
+    raise SystemExit(1)
+
 rooms = ((resp.get("result") or {}).get("body") or {}).get("data") or []
 
 rows = []

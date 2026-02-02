@@ -10,10 +10,10 @@ compatibility: |
   Requires reachability to the Hue Gateway and ability to make HTTP requests. The base URL depends on where commands
   execute (host vs sandbox). Requires curl; jq/python3 are optional helpers. If the Bash tool is enabled, prefer using
   curl via Bash; otherwise, provide exact curl commands for the user.
-allowed-tools: Read Bash(curl:*) Bash(jq:*) Bash(python3:*)
+allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.3.0"
+  version: "0.3.2"
   purpose: hue-gateway-instant-control
 ---
 
@@ -57,20 +57,75 @@ Environment override knobs:
 - `HUE_API_KEY`: API key value (used if `HUE_AUTH_HEADER` is unset).
 
 Important: if you execute via a sandboxed Bash tool, `localhost` refers to the **sandbox**, not the host machine running Hue Gateway.
+Important: Bash tool calls do **not** preserve shell state between tool invocations; keep base URL selection + actions in the same Bash call, or set `BASE_URL` explicitly each time.
+
+### Base URL selection (do this first)
+
+If `BASE_URL` is not provided, try these in order until health succeeds:
+
+1) `http://hue-gateway:8000` (recommended when Hue Gateway is attached to the sandbox network)
+2) `http://host.docker.internal:8000` (common for Docker Desktop on macOS/Windows)
+3) `http://localhost:8000` (only works when executing on the same host/network namespace as the gateway)
+
+## Common mistakes (avoid)
+
+- Do not use `localhost:8000` from a sandboxed Bash tool unless you know the gateway is in the same network namespace.
+- Do not parse `result.data` for `clipv2.request`; Hue resources are at `result.body.data`.
+- Do not use `curl -f` for `/v1/actions` calls (it hides useful JSON error bodies); use `curl -sS`.
+- Prefer RID-based `grouped_light.set` (names are often missing/ambiguous for grouped lights).
 
 ## Quick start (recommended path)
 
-1) **Select `BASE_URL` + ensure ready** (fast; once per chat):
-   - Recommended: run `scripts/health_check.sh` and `eval` its output:
+1) **Select `BASE_URL` + ensure ready** (fast; put this at the top of the same Bash tool call where you run actions):
 
 ```bash
-eval "$(bash scripts/health_check.sh)"
+set -euo pipefail
+
+CURL_HEALTH='curl -fsS --connect-timeout 1 --max-time 2'
+
+BASE_URL="${BASE_URL:-}" # optional: user/environment provided
+if [ -z "$BASE_URL" ]; then
+  for base in "http://hue-gateway:8000" "http://host.docker.internal:8000" "http://localhost:8000"; do
+    if $CURL_HEALTH "$base/healthz" >/dev/null; then
+      BASE_URL="$base"
+      break
+    fi
+  done
+fi
+
+[ -n "$BASE_URL" ] || { echo "Hue Gateway not reachable from this environment. Set BASE_URL to a reachable base URL."; exit 1; }
+BASE_URL="${BASE_URL%/}"
+echo "Using BASE_URL=$BASE_URL"
+
+READY_JSON="$($CURL_HEALTH "$BASE_URL/readyz")"
+case "$READY_JSON" in
+  *'"ready":true'*|*'"ready": true'*) : ;;
+  *) echo "Hue Gateway is not ready (ready=false)."; exit 1 ;;
+esac
+
+AUTH_HEADER="${HUE_AUTH_HEADER:-}"
+if [ -z "$AUTH_HEADER" ]; then
+  if [ -n "${HUE_API_KEY:-}" ]; then
+    AUTH_HEADER="X-API-Key: $HUE_API_KEY"
+  else
+    AUTH_HEADER="Authorization: Bearer ${HUE_TOKEN:-dev-token}"
+  fi
+fi
 ```
 
 2) **Discover rooms** (room name → controllable grouped-light RID):
 
 ```bash
-bash scripts/list_rooms.sh
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
+```
+
+Optional helper: if this skill is installed under `./.skills` (RemcoChat default), you can get a parsed list as:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/list_rooms.sh
 ```
 
 This prints: `<room-name>\t<grouped_light_rid>\t<room_rid>`.
@@ -80,7 +135,7 @@ This prints: `<room-name>\t<grouped_light_rid>\t<room_rid>`.
 ```bash
 curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -H 'Content-Type: application/json' \
-  -H "${HUE_AUTH_HEADER:-Authorization: Bearer ${HUE_TOKEN:-dev-token}}" \
+  -H "$AUTH_HEADER" \
   -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":true,"brightness":35,"colorTempK":2400}}'
 ```
 

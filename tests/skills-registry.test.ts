@@ -28,13 +28,14 @@ afterEach(() => {
   }
 });
 
-test("discovers repo conformance skill in .skills", () => {
+test("discovers repo skills in .skills", () => {
   const res = discoverSkills({
     scanRoots: [path.resolve(".skills")],
     maxSkills: 200,
   });
 
   assert.ok(res.skills.some((s) => s.name === "skills-system-validation"));
+  assert.ok(res.skills.some((s) => s.name === "hue-instant-control"));
   assert.deepEqual(res.invalid, []);
 });
 
@@ -79,4 +80,3 @@ test("collision precedence: first scan root wins and later roots are recorded as
   assert.equal(collision.losers[0]?.description, "loser");
   assert.equal(collision.losers[0]?.sourceDir, rootB.replace(/\/+$/, ""));
 });
-

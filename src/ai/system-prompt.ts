@@ -140,6 +140,7 @@ export function buildSystemPrompt(input: {
                   "Bash tools are enabled for this chat.",
                   "Tools you may use: bash (run a shell command), readFile (read a file), writeFile (write a file), sandboxUrl (get a public URL for an exposed sandbox port).",
                   "Use them when you need to inspect the workspace, run builds/tests, or make file changes.",
+                  "Each bash tool call runs in a fresh shell. Do not assume exported environment variables or `cd` persist across separate bash tool calls.",
                   ...(String(input.bashToolsProvider ?? "") === "docker" &&
                   String(input.bashToolsRuntime ?? "") === "node24"
                     ? [
