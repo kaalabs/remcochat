@@ -4190,7 +4190,7 @@ export function HomeClient({
                   value={input}
                 />
 
-                <div className="flex items-center justify-end gap-2 pr-2">
+                <div className="flex items-center justify-end gap-2 pt-2 pr-2">
                   {status === "ready" && messages.some((m) => m.role === "user") ? (
                     <button
                       aria-label="Regenerate"
@@ -4216,7 +4216,7 @@ export function HomeClient({
                   )}
 
 	                <PromptInputSubmit
-	                  className="h-10 w-16"
+	                  className="h-16 w-16"
 	                  data-testid="composer:submit"
 	                  disabled={!canSend || !chatRequestBody}
 	                  status={status}
