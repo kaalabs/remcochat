@@ -30,4 +30,8 @@ ENV NODE_ENV=production
 
 EXPOSE 3000
 
+COPY scripts/docker-entrypoint.sh /usr/local/bin/remcochat-entrypoint
+RUN chmod +x /usr/local/bin/remcochat-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/remcochat-entrypoint"]
 CMD ["npm", "run", "start", "--", "-p", "3000", "-H", "0.0.0.0"]

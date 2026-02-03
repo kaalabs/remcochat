@@ -11,6 +11,7 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       REMCOCHAT_DB_PATH: /app/data/remcochat.sqlite
+      REMCOCHAT_CONFIG_PATH: /app/config/config.toml
       REMCOCHAT_ENABLE_ADMIN: ${REMCOCHAT_ENABLE_ADMIN:-0}
       REMCOCHAT_ENABLE_BASH_TOOL: ${REMCOCHAT_ENABLE_BASH_TOOL:-0}
       REMCOCHAT_ADMIN_TOKEN: ${REMCOCHAT_ADMIN_TOKEN:-}
@@ -19,10 +20,11 @@ services:
       EXA_API_KEY: ${EXA_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
+      - remcochat_config:/app/config
       # Bind-mount config for restart-only reloads (no rebuild needed).
       # Allow docker deployments to mount a different config without changing the repo file.
       # Example: REMCOCHAT_CONFIG_TOML=./config.docker.toml
-      - ${REMCOCHAT_CONFIG_TOML:-./config.toml}:/app/config.toml:ro
+      - ${REMCOCHAT_CONFIG_TOML:-./config.toml}:/app/config.seed.toml:ro
       # Host-side modelsdev installation directory (must contain `bin/modelsdev`).
       # Use a RemcoChat-specific env var to avoid collisions with globally-exported vars.
       - ${REMCOCHAT_MODELSDEV_CLI_HOST_DIR:-/usr/local/lib/modelsdev}:/usr/local/lib/modelsdev:ro
@@ -45,3 +47,4 @@ services:
 
 volumes:
   remcochat_data:
+  remcochat_config:
