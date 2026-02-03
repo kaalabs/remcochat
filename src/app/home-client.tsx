@@ -2922,13 +2922,14 @@ export function HomeClient({
                       type="button"
                       variant="ghost"
                     >
-                      <KeyIcon className="size-4" />
+                      <KeyIcon
+                        className={
+                          hasLanAdminToken
+                            ? "size-4 text-emerald-600 dark:text-emerald-400"
+                            : "size-4"
+                        }
+                      />
                       <span className="hidden md:inline">Admin access</span>
-                      <span className="hidden text-xs text-muted-foreground md:inline">
-                        LAN ·{" "}
-                        {hasLanAdminToken ? "token set" : "token required"}
-                        {bashToolsEnabledHeader ? ` · hdr=${bashToolsEnabledHeader}` : ""}
-                      </span>
                     </Button>
                   ) : null}
 	                <div className="hidden text-sm text-muted-foreground md:block">
