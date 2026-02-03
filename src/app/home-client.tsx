@@ -864,6 +864,7 @@ export function HomeClient({
     profileId: string;
     preferChatId?: string;
     ensureAtLeastOne?: boolean;
+    seedFolderId?: string | null;
   }) => {
     const refreshNonce = (refreshChatsNonceRef.current += 1);
     const res = await fetch(`/api/chats?profileId=${input.profileId}`);
@@ -889,7 +890,27 @@ export function HomeClient({
       });
       const created = (await createRes.json()) as { chat?: Chat };
       if (createRes.ok && created.chat) {
-        nextChats = [created.chat, ...nextChats];
+        let seededChat = created.chat;
+
+        const seedFolderId = String(input.seedFolderId ?? "").trim();
+        if (seedFolderId) {
+          const moveRes = await fetch(`/api/chats/${created.chat.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              profileId: input.profileId,
+              folderId: seedFolderId,
+            }),
+          });
+          const moved = (await moveRes.json().catch(() => null)) as
+            | { chat?: Chat; error?: string }
+            | null;
+          if (moveRes.ok && moved?.chat) {
+            seededChat = moved.chat;
+          }
+        }
+
+        nextChats = [seededChat, ...nextChats];
       }
     }
 
@@ -1106,10 +1127,13 @@ export function HomeClient({
     }
   }, [adminEnabled, adminResetConfirm, adminResetSaving, refreshProfiles]);
 
-  const deleteChatById = useCallback(async (chatId: string) => {
+  const deleteChatById = useCallback(async (chatId: string, folderIdHint?: string | null) => {
     if (!activeProfile) return;
     if (deleteChatSaving) return;
     if (status !== "ready") return;
+
+    const deletedFolderId =
+      folderIdHint ?? chats.find((c) => c.id === chatId)?.folderId ?? null;
 
     setDeleteChatSaving(true);
     setDeleteChatError(null);
@@ -1126,9 +1150,11 @@ export function HomeClient({
         throw new Error(data?.error || "Failed to delete chat.");
       }
 
-      refreshChats({ profileId: activeProfile.id, ensureAtLeastOne: true }).catch(
-        () => {}
-      );
+      refreshChats({
+        profileId: activeProfile.id,
+        ensureAtLeastOne: true,
+        seedFolderId: deletedFolderId,
+      }).catch(() => {});
     } catch (err) {
       setDeleteChatError(
         err instanceof Error ? err.message : "Failed to delete chat."
@@ -1136,7 +1162,7 @@ export function HomeClient({
     } finally {
       setDeleteChatSaving(false);
     }
-  }, [activeProfile, deleteChatSaving, refreshChats, status]);
+  }, [activeProfile, chats, deleteChatSaving, refreshChats, status]);
 
   const openRenameChat = useCallback(
     (chatId: string) => {
@@ -2406,7 +2432,7 @@ export function HomeClient({
                                   onClick={() => {
                                     if (!activeProfile) return;
                                     if (chat.profileId !== activeProfile.id) return;
-                                    deleteChatById(chat.id);
+                                    deleteChatById(chat.id, chat.folderId);
                                     closeIfDrawer();
                                   }}
                                   variant="destructive"
@@ -2548,14 +2574,14 @@ export function HomeClient({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         data-testid={`chat-action:delete:${chat.id}`}
-                        onClick={() => {
-                          if (!activeProfile) return;
-                          if (chat.profileId !== activeProfile.id) return;
-                          deleteChatById(chat.id);
-                          closeIfDrawer();
-                        }}
-                        variant="destructive"
-                      >
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    deleteChatById(chat.id, chat.folderId);
+                                    closeIfDrawer();
+                                  }}
+                                  variant="destructive"
+                                >
                         <Trash2Icon />
                         Delete
                       </DropdownMenuItem>
@@ -2716,14 +2742,14 @@ export function HomeClient({
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 data-testid={`chat-action:delete:${chat.id}`}
-                                onClick={() => {
-                                  if (!activeProfile) return;
-                                  if (chat.profileId !== activeProfile.id) return;
-                                  deleteChatById(chat.id);
-                                  closeIfDrawer();
-                                }}
-                                variant="destructive"
-                              >
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    deleteChatById(chat.id, chat.folderId);
+                                    closeIfDrawer();
+                                  }}
+                                  variant="destructive"
+                                >
                                 <Trash2Icon />
                                 Delete
                               </DropdownMenuItem>
