@@ -226,6 +226,7 @@ export type HomeClientProps = {
   adminEnabled: boolean;
   appVersion: string;
   bashToolsLanAccessEnabled: boolean;
+  initialActiveProfileId: string;
   initialProfiles: Profile[];
   initialChats: Chat[];
 };
@@ -234,9 +235,19 @@ export function HomeClient({
   adminEnabled,
   appVersion,
   bashToolsLanAccessEnabled,
+  initialActiveProfileId,
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
+  const initialProfileId =
+    initialProfiles.some((p) => p.id === initialActiveProfileId)
+      ? initialActiveProfileId
+      : initialProfiles[0]?.id ?? "";
+  const initialProfileDefaultModelId =
+    initialProfiles.find((p) => p.id === initialProfileId)?.defaultModelId ??
+    initialProfiles[0]?.defaultModelId ??
+    "";
+
   const readLanAdminToken = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
@@ -294,7 +305,7 @@ export function HomeClient({
 
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles);
   const [activeProfileId, setActiveProfileId] = useState<string>(
-    initialProfiles[0]?.id ?? ""
+    initialProfileId
   );
   const [chats, setChats] = useState<Chat[]>(initialChats);
   const [activeChatId, setActiveChatId] = useState<string>(
@@ -307,7 +318,7 @@ export function HomeClient({
   const [isTemporaryChat, setIsTemporaryChat] = useState(false);
   const [temporarySessionId, setTemporarySessionId] = useState(() => nanoid());
   const [temporaryModelId, setTemporaryModelId] = useState<string>(
-    () => initialProfiles[0]?.defaultModelId ?? ""
+    () => initialProfileDefaultModelId
   );
 
   const [lanAdminTokenOpen, setLanAdminTokenOpen] = useState(false);
@@ -394,12 +405,23 @@ export function HomeClient({
     if (stored === activeProfileId) return;
     if (!profiles.some((p) => p.id === stored)) return;
     setActiveProfileId(stored);
+    setChats([]);
+    setActiveChatId("");
+    setVariantsByUserMessageId({});
+    setIsTemporaryChat(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!activeProfileId) return;
     window.localStorage.setItem("remcochat:profileId", activeProfileId);
+    try {
+      document.cookie = `remcochat_profile_id=${encodeURIComponent(
+        activeProfileId
+      )}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    } catch {
+      // ignore
+    }
   }, [activeProfileId]);
 
   const activeProfile = useMemo(() => {
@@ -786,11 +808,13 @@ export function HomeClient({
     temporarySessionId,
   ]);
 
+  const refreshChatsNonceRef = useRef(0);
   const refreshChats = useCallback(async (input: {
     profileId: string;
     preferChatId?: string;
     ensureAtLeastOne?: boolean;
   }) => {
+    const refreshNonce = (refreshChatsNonceRef.current += 1);
     const res = await fetch(`/api/chats?profileId=${input.profileId}`);
     const data = (await res.json()) as { chats?: Chat[]; error?: string };
 
@@ -818,6 +842,7 @@ export function HomeClient({
       }
     }
 
+    if (refreshNonce !== refreshChatsNonceRef.current) return;
     setChats(nextChats);
 
     const storedChatId =
@@ -1876,6 +1901,8 @@ export function HomeClient({
                     className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
                     data-testid={`sidebar:chat:${chat.id}`}
                     onClick={() => {
+                      if (!activeProfile) return;
+                      if (chat.profileId !== activeProfile.id) return;
                       setIsTemporaryChat(false);
                       setActiveChatId(chat.id);
                       closeIfDrawer();
@@ -1892,7 +1919,11 @@ export function HomeClient({
                       <Button
                         className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                         data-testid={`sidebar:chat-menu:${chat.id}`}
-                        disabled={!activeProfile || status !== "ready"}
+                        disabled={
+                          !activeProfile ||
+                          status !== "ready" ||
+                          chat.profileId !== activeProfile.id
+                        }
                         suppressHydrationWarning
                         type="button"
                         variant="ghost"
@@ -1904,6 +1935,8 @@ export function HomeClient({
                       <DropdownMenuItem
                         data-testid={`chat-action:archive:${chat.id}`}
                         onClick={() => {
+                          if (!activeProfile) return;
+                          if (chat.profileId !== activeProfile.id) return;
                           archiveChatById(chat.id);
                           closeIfDrawer();
                         }}
@@ -1913,7 +1946,11 @@ export function HomeClient({
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         data-testid={`chat-action:rename:${chat.id}`}
-                        onClick={() => openRenameChat(chat.id)}
+                        onClick={() => {
+                          if (!activeProfile) return;
+                          if (chat.profileId !== activeProfile.id) return;
+                          openRenameChat(chat.id);
+                        }}
                       >
                         <PencilIcon />
                         Rename
@@ -1921,14 +1958,22 @@ export function HomeClient({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         data-testid={`chat-action:export-md:${chat.id}`}
-                        onClick={() => exportChatById(chat.id, "md")}
+                        onClick={() => {
+                          if (!activeProfile) return;
+                          if (chat.profileId !== activeProfile.id) return;
+                          exportChatById(chat.id, "md");
+                        }}
                       >
                         <DownloadIcon />
                         Export Markdown
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         data-testid={`chat-action:export-json:${chat.id}`}
-                        onClick={() => exportChatById(chat.id, "json")}
+                        onClick={() => {
+                          if (!activeProfile) return;
+                          if (chat.profileId !== activeProfile.id) return;
+                          exportChatById(chat.id, "json");
+                        }}
                       >
                         <DownloadIcon />
                         Export JSON
@@ -1937,6 +1982,8 @@ export function HomeClient({
                       <DropdownMenuItem
                         data-testid={`chat-action:delete:${chat.id}`}
                         onClick={() => {
+                          if (!activeProfile) return;
+                          if (chat.profileId !== activeProfile.id) return;
                           deleteChatById(chat.id);
                           closeIfDrawer();
                         }}
@@ -1995,6 +2042,8 @@ export function HomeClient({
                             className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
                             data-testid={`sidebar:archived-chat:${chat.id}`}
                             onClick={() => {
+                              if (!activeProfile) return;
+                              if (chat.profileId !== activeProfile.id) return;
                               setIsTemporaryChat(false);
                               setActiveChatId(chat.id);
                               closeIfDrawer();
@@ -2011,7 +2060,11 @@ export function HomeClient({
                               <Button
                                 className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                 data-testid={`sidebar:archived-chat-menu:${chat.id}`}
-                                disabled={!activeProfile || status !== "ready"}
+                                disabled={
+                                  !activeProfile ||
+                                  status !== "ready" ||
+                                  chat.profileId !== activeProfile.id
+                                }
                                 suppressHydrationWarning
                                 type="button"
                                 variant="ghost"
@@ -2023,6 +2076,8 @@ export function HomeClient({
                               <DropdownMenuItem
                                 data-testid={`chat-action:unarchive:${chat.id}`}
                                 onClick={() => {
+                                  if (!activeProfile) return;
+                                  if (chat.profileId !== activeProfile.id) return;
                                   unarchiveChatById(chat.id);
                                   closeIfDrawer();
                                 }}
@@ -2032,7 +2087,11 @@ export function HomeClient({
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 data-testid={`chat-action:rename:${chat.id}`}
-                                onClick={() => openRenameChat(chat.id)}
+                                onClick={() => {
+                                  if (!activeProfile) return;
+                                  if (chat.profileId !== activeProfile.id) return;
+                                  openRenameChat(chat.id);
+                                }}
                               >
                                 <PencilIcon />
                                 Rename
@@ -2040,14 +2099,22 @@ export function HomeClient({
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 data-testid={`chat-action:export-md:${chat.id}`}
-                                onClick={() => exportChatById(chat.id, "md")}
+                                onClick={() => {
+                                  if (!activeProfile) return;
+                                  if (chat.profileId !== activeProfile.id) return;
+                                  exportChatById(chat.id, "md");
+                                }}
                               >
                                 <DownloadIcon />
                                 Export Markdown
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 data-testid={`chat-action:export-json:${chat.id}`}
-                                onClick={() => exportChatById(chat.id, "json")}
+                                onClick={() => {
+                                  if (!activeProfile) return;
+                                  if (chat.profileId !== activeProfile.id) return;
+                                  exportChatById(chat.id, "json");
+                                }}
                               >
                                 <DownloadIcon />
                                 Export JSON
@@ -2056,6 +2123,8 @@ export function HomeClient({
                               <DropdownMenuItem
                                 data-testid={`chat-action:delete:${chat.id}`}
                                 onClick={() => {
+                                  if (!activeProfile) return;
+                                  if (chat.profileId !== activeProfile.id) return;
                                   deleteChatById(chat.id);
                                   closeIfDrawer();
                                 }}
@@ -2088,6 +2157,10 @@ export function HomeClient({
               }}
               onValueChange={(value) => {
                 setActiveProfileId(value);
+                setChats([]);
+                setActiveChatId("");
+                setVariantsByUserMessageId({});
+                setIsTemporaryChat(false);
                 closeIfDrawer();
               }}
               value={activeProfile?.id ?? ""}
