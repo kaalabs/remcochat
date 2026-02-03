@@ -4266,7 +4266,13 @@ export function HomeClient({
                                 className={
                                   "h-8 px-2 text-[11px] " +
                                   (selected
-                                    ? "relative z-10 font-semibold shadow-sm"
+                                    ? "relative z-10 font-semibold shadow-none "
+                                    : "")
+                                  +
+                                  (selected && (!canSend || !chatRequestBody)
+                                    ? isTemporaryChat
+                                      ? "bg-destructive/50 hover:bg-destructive/50"
+                                      : "bg-primary/50 hover:bg-primary/50 dark:text-white dark:hover:text-white"
                                     : "")
                                 }
                                 data-testid={`reasoning-option:${option}`}
@@ -4275,7 +4281,13 @@ export function HomeClient({
                                 key={option}
                                 onClick={() => setReasoningEffort(option)}
                                 type="button"
-                                variant={selected ? "default" : "outline"}
+                                variant={
+                                  selected
+                                    ? isTemporaryChat
+                                      ? "destructive"
+                                      : "default"
+                                    : "outline"
+                                }
                               >
                                 {label}
                               </Button>
