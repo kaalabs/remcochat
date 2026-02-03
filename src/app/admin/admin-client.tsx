@@ -36,6 +36,9 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
+const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
+
 type ProvidersResponse = {
   defaultProviderId: string;
   activeProviderId: string;
@@ -255,6 +258,15 @@ export function AdminClient() {
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillsAdminResponse | null>(null);
 
+  const readLanAdminToken = (): string => {
+    if (typeof window === "undefined") return "";
+    const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+    if (session && session.trim()) return session.trim();
+    const local = window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+    if (local && local.trim()) return local.trim();
+    return "";
+  };
+
   const load = async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
     if (!res.ok) {
@@ -278,7 +290,11 @@ export function AdminClient() {
   };
 
   const loadSkills = async () => {
-    const res = await fetch("/api/skills", { cache: "no-store" });
+    const token = readLanAdminToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["x-remcochat-admin-token"] = token;
+
+    const res = await fetch("/api/skills", { cache: "no-store", headers });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       throw new Error(json?.error || "Failed to load skills.");

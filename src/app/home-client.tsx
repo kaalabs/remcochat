@@ -2923,7 +2923,7 @@ export function HomeClient({
                       variant="ghost"
                     >
                       <KeyIcon className="size-4" />
-                      <span className="hidden md:inline">Bash tools</span>
+                      <span className="hidden md:inline">Admin access</span>
                       <span className="hidden text-xs text-muted-foreground md:inline">
                         LAN ·{" "}
                         {hasLanAdminToken ? "token set" : "token required"}
@@ -4674,19 +4674,19 @@ export function HomeClient({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Bash tools (LAN admin token)</DialogTitle>
+            <DialogTitle>Admin access</DialogTitle>
           </DialogHeader>
 
           {!bashToolsLanAccessEnabled ? (
             <div className="text-sm text-muted-foreground">
-              Bash tools are not configured for LAN access.
+              Admin access is not configured for LAN access.
             </div>
           ) : (
             <div className="space-y-3">
               <div className="text-sm text-muted-foreground">
-                Required when `config.toml` has `app.bash_tools.access = &quot;lan&quot;`. The
-                token is stored locally in this browser (session or localStorage) and
-                is sent as `x-remcochat-admin-token` on every `/api/chat` request.
+                For safety, some admin features are protected by a shared admin token when you
+                access RemcoChat over the network. Enter the token for this server to unlock
+                admin-only features in this browser (including Bash tool access).
               </div>
 
               <div className="space-y-2">
@@ -4759,7 +4759,7 @@ export function HomeClient({
               <div className="rounded-md border bg-card p-3">
                 <div className="text-sm font-medium">Verification</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Last `/api/chat` response header:
+                  Bash tools verification (from the last <code>/api/chat</code> response header):
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                   <code className="rounded bg-muted px-2 py-1">
