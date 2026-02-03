@@ -4217,7 +4217,7 @@ export function HomeClient({
                   )}
 
 	                <PromptInputSubmit
-	                  className="h-16 w-16"
+	                  className="h-16 w-16 dark:text-white"
 	                  data-testid="composer:submit"
 	                  disabled={!canSend || !chatRequestBody}
 	                  status={status}
@@ -4260,21 +4260,30 @@ export function HomeClient({
                                       : "Low";
 
                             const selected = reasoningEffort === option;
+                            const dim = !canSend || !chatRequestBody;
                             return (
                               <Button
                                 aria-pressed={selected}
                                 className={
-                                  "h-8 px-2 text-[11px] " +
+                                  // Fix width so toggling font-weight doesn't cause layout shift.
+                                  "h-8 min-w-12 px-2 text-[11px] " +
                                   (selected
                                     ? "relative z-10 shadow-none " +
                                       (canSend && chatRequestBody ? "font-semibold " : "")
                                     : "")
                                   +
-                                  (selected && (!canSend || !chatRequestBody)
+                                  (selected && dim
                                     ? isTemporaryChat
                                       ? "bg-destructive/50 hover:bg-destructive/50"
-                                      : "bg-primary/50 hover:bg-primary/50 dark:text-white dark:hover:text-white"
+                                      : "bg-primary/50 hover:bg-primary/50"
                                     : "")
+                                  +
+                                  // Match the send button's disabled "dim" behavior when canSend is false.
+                                  (dim
+                                    ? "text-foreground/60 hover:text-foreground/60"
+                                    : selected
+                                      ? "text-foreground hover:text-foreground"
+                                      : "")
                                 }
                                 data-testid={`reasoning-option:${option}`}
                                 data-selected={selected ? "true" : "false"}
