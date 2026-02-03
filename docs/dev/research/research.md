@@ -18,8 +18,8 @@ These reflect your answers plus the recommended defaults for the remaining “to
 1. **Skill scope:** Global (server-wide), not per-profile.
 2. **Default scan locations (in precedence order):**
    - `<repo-base-dir>/.skills/`
-   - `<repo-base-dir>/.github/skills/`
-   - `<repo-base-dir>/.claude/skills/` (legacy compatibility)
+   - `<repo-base-dir>/.agents/skills/` (searched up the tree)
+   - `<home-dir>/.agents/skills/`
    - `<home-dir>/.remcochat/skills/`
 3. **Reload model:** Restart-only (discover at server boot; no hot reload in v1).
 4. **Activation default (best practice; based on Codex CLI + Claude Code):**
@@ -191,8 +191,8 @@ enabled = false
 # Absolute or repo-relative directories to scan (discovered in order; name collisions: earlier wins).
 directories = [
   "./.skills",
-  "./.github/skills",
-  "./.claude/skills",
+  "./.agents/skills",
+  "~/.agents/skills",
   "~/.remcochat/skills",
 ]
 

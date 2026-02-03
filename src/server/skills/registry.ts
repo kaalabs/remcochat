@@ -8,17 +8,6 @@ import type {
   SkillsRegistrySnapshot,
 } from "./types";
 
-function looksLikeSkillDir(skillDir: string): { ok: true; skillMdPath: string } | { ok: false } {
-  const skillMdPath = path.join(skillDir, "SKILL.md");
-  try {
-    const stat = fs.statSync(skillMdPath);
-    if (!stat.isFile()) return { ok: false };
-  } catch {
-    return { ok: false };
-  }
-  return { ok: true, skillMdPath };
-}
-
 function parseFrontmatter(content: string): SkillFrontmatter {
   const text = String(content ?? "");
   if (!text.startsWith("---")) {
@@ -134,28 +123,58 @@ export function discoverSkills(input: {
       continue;
     }
 
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(scanRoot, { withFileTypes: true });
-    } catch (err) {
-      warnings.push(
-        `Skills scan root unreadable: ${scanRoot} (${err instanceof Error ? err.message : "unknown error"})`
-      );
-      continue;
-    }
+    const dirsToScan: string[] = [scanRoot];
+    const visited = new Set<string>();
 
-    for (const entry of entries) {
+    while (dirsToScan.length > 0) {
       if (capped) break;
-      if (!entry.isDirectory()) continue;
 
-      const dirName = entry.name;
-      if (!dirName) continue;
-      const skillDir = path.join(scanRoot, dirName);
-      const probe = looksLikeSkillDir(skillDir);
-      if (!probe.ok) continue;
+      const dir = dirsToScan.pop();
+      if (!dir) continue;
+      if (visited.has(dir)) continue;
+      visited.add(dir);
 
+      let entries: fs.Dirent[];
       try {
-        const content = fs.readFileSync(probe.skillMdPath, "utf8");
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        if (dir === scanRoot) {
+          warnings.push(`Skills scan root unreadable: ${scanRoot} (${msg})`);
+        } else {
+          warnings.push(`Skills scan dir unreadable: ${dir} (${msg})`);
+        }
+        continue;
+      }
+
+      for (const entry of entries) {
+        if (capped) break;
+
+        if (entry.isDirectory()) {
+          const child = entry.name;
+          if (!child) continue;
+          dirsToScan.push(path.join(dir, child));
+          continue;
+        }
+
+        if (entry.name !== "SKILL.md") continue;
+
+        let isFile = entry.isFile();
+        if (!isFile && entry.isSymbolicLink()) {
+          try {
+            isFile = fs.statSync(path.join(dir, entry.name)).isFile();
+          } catch {
+            isFile = false;
+          }
+        }
+        if (!isFile) continue;
+
+        const skillDir = dir;
+        const dirName = path.basename(skillDir);
+        const skillMdPath = path.join(skillDir, "SKILL.md");
+
+        try {
+          const content = fs.readFileSync(skillMdPath, "utf8");
         const fm = parseFrontmatter(content);
         const name = validateSkillName(fm.name);
         const description = validateDescription(fm.description);
@@ -174,7 +193,7 @@ export function discoverSkills(input: {
           ...(fm.metadata ? { metadata: fm.metadata } : {}),
           ...(fm["allowed-tools"] ? { allowedTools: fm["allowed-tools"] } : {}),
           skillDir,
-          skillMdPath: probe.skillMdPath,
+          skillMdPath,
           sourceDir: scanRoot,
         };
 
@@ -196,7 +215,7 @@ export function discoverSkills(input: {
       } catch (err) {
         invalid.push({
           skillDir,
-          skillMdPath: probe.skillMdPath,
+          skillMdPath,
           error: err instanceof Error ? err.message : "Invalid skill",
         });
       }
@@ -204,6 +223,7 @@ export function discoverSkills(input: {
       if (skills.length >= maxSkills && !capped) {
         capped = true;
         warnings.push(`Skills limit reached: max_skills=${maxSkills}`);
+      }
       }
     }
   }
@@ -217,4 +237,3 @@ export function discoverSkills(input: {
     warnings,
   };
 }
-

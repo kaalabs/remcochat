@@ -72,8 +72,8 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   const repoBase = process.cwd();
   assert.deepEqual(config.skills.directories, [
     path.resolve(repoBase, ".skills"),
-    path.resolve(repoBase, ".github/skills"),
-    path.resolve(repoBase, ".claude/skills"),
+    path.resolve(repoBase, ".agents/skills"),
+    path.join(os.homedir(), ".agents", "skills"),
     path.join(os.homedir(), ".remcochat", "skills"),
   ]);
   assert.equal(config.skills.maxSkills, 200);
@@ -132,4 +132,3 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   process.env.REMCOCHAT_CONFIG_PATH = configPath;
   assert.throws(() => getConfig());
 });
-

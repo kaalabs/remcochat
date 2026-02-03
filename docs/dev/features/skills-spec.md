@@ -64,8 +64,8 @@ enabled = false
 # Paths may be absolute, repo-relative, or ~-home relative.
 directories = [
   "./.skills",
-  "./.github/skills",
-  "./.claude/skills",
+  "./.agents/skills",
+  "~/.agents/skills",
   "~/.remcochat/skills",
 ]
 
@@ -404,4 +404,3 @@ Follow the step-by-step procedure in `.skills/skills-system-validation/SKILL.md`
 - Per-skill enable/disable controls.
 - Binary resource representation (images/assets) in tool output.
 - Enforcing “one level deep” reference guidance vs guidance-only.
-

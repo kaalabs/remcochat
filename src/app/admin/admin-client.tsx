@@ -25,7 +25,14 @@ import {
 } from "@/components/ui/select";
 import { listModelCapabilityBadges, type ModelCapabilities } from "@/lib/models";
 import { cn } from "@/lib/utils";
-import { CheckIcon, ChevronDownIcon, ShieldIcon } from "lucide-react";
+import {
+  CheckCircleIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ShieldIcon,
+  Sparkles,
+  XCircleIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -76,6 +83,7 @@ type SkillsAdminResponse = {
   enabled: boolean;
   scannedAt?: number;
   scanRoots?: string[];
+  scanRootsMeta?: Array<{ root: string; exists: boolean; skillsCount: number }>;
   skills?: Array<{
     name: string;
     description: string;
@@ -632,7 +640,6 @@ export function AdminClient() {
     const discovered = data.skills?.length ?? 0;
     const invalid = data.invalid?.length ?? 0;
     const collisions = data.collisions?.length ?? 0;
-    const warnings = data.warnings?.length ?? 0;
     const activatedChats = data.usage?.chatsWithAnyActivatedSkills ?? 0;
     const scannedAt =
       typeof data.scannedAt === "number" ? new Date(data.scannedAt) : null;
@@ -641,10 +648,10 @@ export function AdminClient() {
       discovered,
       invalid,
       collisions,
-      warnings,
       activatedChats,
       scannedAt,
       scanRoots: data.scanRoots ?? [],
+      scanRootsMeta: data.scanRootsMeta ?? [],
       activatedCounts: data.usage?.activatedSkillCounts ?? {},
     };
   }, [skills]);
@@ -1203,9 +1210,6 @@ export function AdminClient() {
                       <Badge variant="outline">
                         Collisions: {skillsSummary.collisions}
                       </Badge>
-                      <Badge variant="outline">
-                        Warnings: {skillsSummary.warnings}
-                      </Badge>
                       {skills?.usage ? (
                         <Badge variant="outline">
                           Chats with activated skills: {skillsSummary.activatedChats}
@@ -1228,30 +1232,42 @@ export function AdminClient() {
                       )}
                     </div>
 
-                    {skillsSummary.scanRoots.length > 0 ? (
+                    {skillsSummary.scanRootsMeta.length > 0 ? (
                       <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
                         <div className="mb-1 font-medium text-muted-foreground">
                           Scan roots
                         </div>
-                        <div className="space-y-1 font-mono">
-                          {skillsSummary.scanRoots.map((r) => (
-                            <div key={r} className="truncate">
-                              {r}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {(skills?.warnings?.length ?? 0) > 0 ? (
-                      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
-                        <div className="mb-1 font-medium text-muted-foreground">
-                          Warnings
-                        </div>
-                        <div className="space-y-1">
-                          {(skills?.warnings ?? []).map((w, idx) => (
-                            <div key={`${idx}-${w}`} className="break-words font-mono">
-                              {w}
+                        <div className="space-y-2">
+                          {skillsSummary.scanRootsMeta.map((r) => (
+                            <div
+                              key={r.root}
+                              className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-start"
+                            >
+                              <div
+                                className="min-w-0 font-mono break-all"
+                                title={r.root}
+                              >
+                                {r.exists ? (
+                                  <CheckCircleIcon
+                                    aria-label="Exists"
+                                    className="mr-1 inline-block size-3 align-[-2px] text-emerald-600 dark:text-emerald-400"
+                                  />
+                                ) : (
+                                  <XCircleIcon
+                                    aria-label="Missing"
+                                    className="mr-1 inline-block size-3 align-[-2px] text-red-600 dark:text-red-400"
+                                  />
+                                )}
+                                <Sparkles
+                                  aria-label="Skills available"
+                                  className="mr-1 inline-block size-3 align-[-2px] text-muted-foreground"
+                                />
+                                <span className="mr-2 text-muted-foreground">
+                                  {r.skillsCount}
+                                </span>
+                                {r.root}
+                              </div>
+                              <div />
                             </div>
                           ))}
                         </div>
@@ -1310,6 +1326,11 @@ export function AdminClient() {
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0">
                                   <div className="truncate font-mono text-sm">{s.name}</div>
+                                  {s.sourceDir ? (
+                                    <div className="mt-0.5 text-xs text-muted-foreground">
+                                      Root: <span className="font-mono break-all">{s.sourceDir}</span>
+                                    </div>
+                                  ) : null}
                                   <div className="mt-0.5 text-xs text-muted-foreground">
                                     {s.description}
                                   </div>

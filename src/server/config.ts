@@ -283,10 +283,47 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     const repoBaseDir = process.cwd();
     const homeDir = os.homedir();
 
+    const getUpTreeAgentsSkillsDirs = (startDir: string): string[] => {
+      const start = path.resolve(String(startDir ?? "")).replace(/\/+$/, "");
+      if (!start) return [];
+
+      const out: string[] = [];
+      const seen = new Set<string>();
+
+      const startCandidate = path.join(start, ".agents", "skills").replace(/\/+$/, "");
+      if (!seen.has(startCandidate)) {
+        seen.add(startCandidate);
+        out.push(startCandidate);
+      }
+
+      let current = start;
+      while (true) {
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+
+        const candidate = path.join(current, ".agents", "skills");
+        try {
+          const stat = fs.statSync(candidate);
+          if (stat.isDirectory()) {
+            const normalized = candidate.replace(/\/+$/, "");
+            if (!seen.has(normalized)) {
+              seen.add(normalized);
+              out.push(normalized);
+            }
+          }
+        } catch {
+          // ignore missing/unreadable candidates; this is "scan up", not a fixed directory list
+        }
+      }
+
+      return out;
+    };
+
     const defaultDirs = [
       "./.skills",
-      "./.github/skills",
-      "./.claude/skills",
+      "./.agents/skills",
+      path.join(homeDir, ".agents", "skills"),
       path.join(homeDir, ".remcochat", "skills"),
     ];
 
@@ -295,24 +332,35 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       : [];
     const inputDirs = inputDirsRaw.length > 0 ? inputDirsRaw : defaultDirs;
 
-    const resolveDir = (dir: string) => {
+    const isUpTreeAgentsEntry = (dir: string) => {
+      const trimmed = String(dir ?? "").trim().replace(/\/+$/, "");
+      return trimmed === ".agents/skills" || trimmed === "./.agents/skills";
+    };
+
+    const resolveDirs = (dir: string): string[] => {
       const trimmed = String(dir ?? "").trim();
-      if (!trimmed) return "";
-      if (trimmed === "~") return homeDir;
-      if (trimmed.startsWith("~/")) return path.join(homeDir, trimmed.slice(2));
-      if (path.isAbsolute(trimmed)) return trimmed;
-      return path.resolve(repoBaseDir, trimmed);
+      if (!trimmed) return [];
+
+      if (isUpTreeAgentsEntry(trimmed)) {
+        return getUpTreeAgentsSkillsDirs(repoBaseDir);
+      }
+
+      if (trimmed === "~") return [homeDir];
+      if (trimmed.startsWith("~/")) return [path.join(homeDir, trimmed.slice(2))];
+      if (path.isAbsolute(trimmed)) return [trimmed];
+      return [path.resolve(repoBaseDir, trimmed)];
     };
 
     const seen = new Set<string>();
     const directories: string[] = [];
     for (const entry of inputDirs) {
-      const resolved = resolveDir(entry);
-      if (!resolved) continue;
-      const normalized = resolved.replace(/\/+$/, "");
-      if (seen.has(normalized)) continue;
-      seen.add(normalized);
-      directories.push(normalized);
+      for (const resolved of resolveDirs(entry)) {
+        if (!resolved) continue;
+        const normalized = resolved.replace(/\/+$/, "");
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+        directories.push(normalized);
+      }
     }
 
     const maxSkills = Math.min(
