@@ -14,6 +14,7 @@ type ChatRow = {
   profile_id: string;
   title: string;
   model_id: string;
+  folder_id: string | null;
   chat_instructions: string;
   chat_instructions_revision: number;
   activated_skill_names_json: string;
@@ -147,6 +148,7 @@ function rowToChat(row: ChatRow): Chat {
     profileId: row.profile_id,
     title: row.title,
     modelId,
+    folderId: row.folder_id ?? null,
     chatInstructions: row.chat_instructions,
     chatInstructionsRevision: Number(row.chat_instructions_revision ?? 1),
     activatedSkillNames: activatedSkillNamesFromJson(row.activated_skill_names_json),
@@ -163,7 +165,7 @@ export function listChats(profileId: string): Chat[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
+      `SELECT id, profile_id, title, model_id, folder_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
        FROM chats
        WHERE profile_id = ? AND deleted_at IS NULL
        ORDER BY updated_at DESC`
@@ -177,7 +179,7 @@ export function getChat(chatId: string): Chat {
   const db = getDb();
   const row = db
     .prepare(
-      `SELECT id, profile_id, title, model_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
+      `SELECT id, profile_id, title, model_id, folder_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
        FROM chats
        WHERE id = ?`
     )
@@ -258,6 +260,7 @@ export function createChat(input: {
        profile_id,
        title,
        model_id,
+       folder_id,
        chat_instructions,
        chat_instructions_revision,
        created_at,
@@ -267,7 +270,7 @@ export function createChat(input: {
        forked_from_chat_id,
        forked_from_message_id
      )
-     VALUES (?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL, ?, ?)`
+     VALUES (?, ?, ?, ?, NULL, ?, 1, ?, ?, NULL, NULL, ?, ?)`
   ).run(
     id,
     profile.id,
@@ -343,10 +346,46 @@ function assertChatWritable(profileId: string, chatId: string): Chat {
 export function updateChatForProfile(
   profileId: string,
   chatId: string,
-  patch: Partial<Pick<Chat, "title" | "modelId" | "chatInstructions">>
+  patch: Partial<Pick<Chat, "title" | "modelId" | "chatInstructions" | "folderId">>
 ): Chat {
   assertChatWritable(profileId, chatId);
-  return updateChat(chatId, patch);
+
+  const db = getDb();
+
+  if (patch.folderId !== undefined) {
+    if (patch.folderId !== null) {
+      const folderRow = db
+        .prepare(
+          `SELECT 1 AS ok FROM chat_folders WHERE id = ? AND profile_id = ?`
+        )
+        .get(patch.folderId, profileId) as { ok: number } | undefined;
+      if (!folderRow) {
+        throw new Error("Folder not found.");
+      }
+    }
+
+    db.prepare(
+      `UPDATE chats
+       SET folder_id = ?
+       WHERE id = ? AND profile_id = ?`
+    ).run(patch.folderId, chatId, profileId);
+  }
+
+  const remainingPatch = {
+    title: patch.title,
+    modelId: patch.modelId,
+    chatInstructions: patch.chatInstructions,
+  } satisfies Partial<Pick<Chat, "title" | "modelId" | "chatInstructions">>;
+
+  if (
+    remainingPatch.title !== undefined ||
+    remainingPatch.modelId !== undefined ||
+    remainingPatch.chatInstructions !== undefined
+  ) {
+    return updateChat(chatId, remainingPatch);
+  }
+
+  return getChat(chatId);
 }
 
 export function archiveChat(profileId: string, chatId: string): Chat {

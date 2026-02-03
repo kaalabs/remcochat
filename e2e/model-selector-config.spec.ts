@@ -30,14 +30,14 @@ test("Model selector uses config models", async ({ page, request }) => {
     await page.getByTestId("model:picker-trigger").click();
 
     await expect(
-      page.getByTestId("model-option:gpt-5-nano")
+      page.getByTestId("model-option:gpt-5.2")
     ).toBeVisible();
     await expect(page.getByTestId("model-option:gpt-5.2-codex")).toBeVisible();
     await expect(
       page.locator('[data-testid="model-option:openai/gpt-5.2-chat"]')
     ).toHaveCount(0);
 
-    await expect(page.getByTestId("model-feature:gpt-5-nano:tools")).toHaveAttribute(
+    await expect(page.getByTestId("model-feature:gpt-5.2:tools")).toHaveAttribute(
       "data-enabled",
       /^(true|false)$/
     );

@@ -35,6 +35,21 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_profile_memory_profile_updated_at
       ON profile_memory(profile_id, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS chat_folders (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      collapsed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_folders_profile_created_at
+      ON chat_folders(profile_id, created_at ASC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_folders_profile_name
+      ON chat_folders(profile_id, name COLLATE NOCASE);
+
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -47,6 +62,7 @@ function initSchema(database: Database.Database) {
       updated_at TEXT NOT NULL,
       archived_at TEXT,
       deleted_at TEXT,
+      folder_id TEXT,
       forked_from_chat_id TEXT,
       forked_from_message_id TEXT
     );
@@ -206,6 +222,17 @@ function initSchema(database: Database.Database) {
     .prepare(`PRAGMA table_info(chats)`)
     .all() as Array<{ name: string }>;
 
+  const chatFolderColumns = database
+    .prepare(`PRAGMA table_info(chat_folders)`)
+    .all() as Array<{ name: string }>;
+
+  const hasFolderCollapsed = chatFolderColumns.some((c) => c.name === "collapsed");
+  if (!hasFolderCollapsed) {
+    database.exec(
+      `ALTER TABLE chat_folders ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;`
+    );
+  }
+
   const hasActivatedSkillNamesJson = chatColumns.some(
     (c) => c.name === "activated_skill_names_json"
   );
@@ -214,6 +241,15 @@ function initSchema(database: Database.Database) {
       `ALTER TABLE chats ADD COLUMN activated_skill_names_json TEXT NOT NULL DEFAULT '[]';`
     );
   }
+
+  const hasFolderId = chatColumns.some((c) => c.name === "folder_id");
+  if (!hasFolderId) {
+    database.exec(`ALTER TABLE chats ADD COLUMN folder_id TEXT;`);
+  }
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_chats_profile_folder_id ON chats(profile_id, folder_id);`
+  );
 
   const columns = database
     .prepare(`PRAGMA table_info(messages)`)

@@ -41,6 +41,7 @@ import type { ModelOption } from "@/lib/models";
 import { validateChatTitle } from "@/lib/chat-title";
 import type {
   Chat,
+  ChatFolder,
   AgendaToolOutput,
   ListsOverviewToolOutput,
   MemoryItem,
@@ -111,6 +112,8 @@ import {
 		  ArchiveIcon,
 		  BookmarkIcon,
 		  ChevronDownIcon,
+      FolderIcon,
+      FolderPlusIcon,
 		  ShieldIcon,
 		  DownloadIcon,
       KeyIcon,
@@ -134,7 +137,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -308,6 +316,7 @@ export function HomeClient({
     initialProfileId
   );
   const [chats, setChats] = useState<Chat[]>(initialChats);
+  const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [activeChatId, setActiveChatId] = useState<string>(
     initialChats[0]?.id ?? ""
   );
@@ -715,6 +724,25 @@ export function HomeClient({
   const [renameChatSaving, setRenameChatSaving] = useState(false);
   const [renameChatError, setRenameChatError] = useState<string | null>(null);
 
+  const [folderError, setFolderError] = useState<string | null>(null);
+
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderDraft, setNewFolderDraft] = useState("");
+  const [newFolderSaving, setNewFolderSaving] = useState(false);
+  const [newFolderError, setNewFolderError] = useState<string | null>(null);
+
+  const [renameFolderOpen, setRenameFolderOpen] = useState(false);
+  const [renameFolderId, setRenameFolderId] = useState<string>("");
+  const [renameFolderDraft, setRenameFolderDraft] = useState("");
+  const [renameFolderSaving, setRenameFolderSaving] = useState(false);
+  const [renameFolderError, setRenameFolderError] = useState<string | null>(null);
+
+  const [deleteFolderOpen, setDeleteFolderOpen] = useState(false);
+  const [deleteFolderId, setDeleteFolderId] = useState<string>("");
+  const [deleteFolderName, setDeleteFolderName] = useState<string>("");
+  const [deleteFolderSaving, setDeleteFolderSaving] = useState(false);
+  const [deleteFolderError, setDeleteFolderError] = useState<string | null>(null);
+
   const [memorizeOpen, setMemorizeOpen] = useState(false);
   const [memorizeText, setMemorizeText] = useState("");
   const [memorizeSaving, setMemorizeSaving] = useState(false);
@@ -751,6 +779,29 @@ export function HomeClient({
     setRenameChatError(null);
     setRenameChatSaving(false);
   }, [renameChatOpen]);
+
+  useEffect(() => {
+    if (newFolderOpen) return;
+    setNewFolderDraft("");
+    setNewFolderError(null);
+    setNewFolderSaving(false);
+  }, [newFolderOpen]);
+
+  useEffect(() => {
+    if (renameFolderOpen) return;
+    setRenameFolderId("");
+    setRenameFolderDraft("");
+    setRenameFolderError(null);
+    setRenameFolderSaving(false);
+  }, [renameFolderOpen]);
+
+  useEffect(() => {
+    if (deleteFolderOpen) return;
+    setDeleteFolderId("");
+    setDeleteFolderName("");
+    setDeleteFolderError(null);
+    setDeleteFolderSaving(false);
+  }, [deleteFolderOpen]);
 
   const renameChatValidation = useMemo(() => {
     return validateChatTitle(renameChatDraft);
@@ -867,6 +918,18 @@ export function HomeClient({
     setActiveChatId(nextActiveChatId);
   }, [profileDefaultModelId]);
 
+  const refreshFoldersNonceRef = useRef(0);
+  const refreshFolders = useCallback(async (profileId: string) => {
+    const refreshNonce = (refreshFoldersNonceRef.current += 1);
+    const res = await fetch(`/api/folders?profileId=${profileId}`);
+    const data = (await res.json().catch(() => null)) as
+      | { folders?: ChatFolder[]; error?: string }
+      | null;
+    const nextFolders = Array.isArray(data?.folders) ? data!.folders! : [];
+    if (refreshNonce !== refreshFoldersNonceRef.current) return;
+    setFolders(nextFolders);
+  }, []);
+
   const createProfile = async () => {
     const name = newProfileName.trim();
     if (!name) return;
@@ -889,6 +952,7 @@ export function HomeClient({
       setProfiles((prev) => [...prev, data.profile!]);
       setActiveProfileId(data.profile.id);
       setChats([]);
+      setFolders([]);
       setActiveChatId("");
       setNewProfileName("");
       setCreateOpen(false);
@@ -980,6 +1044,7 @@ export function HomeClient({
     const nextId = nextProfiles[0]?.id ?? "";
     setActiveProfileId(nextId);
     setChats([]);
+    setFolders([]);
     setActiveChatId("");
     setIsTemporaryChat(false);
   }, []);
@@ -1138,6 +1203,249 @@ export function HomeClient({
     status,
   ]);
 
+  const normalizeFolderNameDraft = useCallback((value: string) => {
+    return String(value ?? "").trim().replace(/\s+/g, " ");
+  }, []);
+
+  const validateFolderNameDraft = useCallback(
+    (value: string): { ok: true; name: string } | { ok: false; error: string } => {
+      const name = normalizeFolderNameDraft(value);
+      if (!name) return { ok: false, error: "Folder name is required." };
+      if (name.length > 60) return { ok: false, error: "Folder name is too long." };
+      return { ok: true, name };
+    },
+    [normalizeFolderNameDraft]
+  );
+
+  const createFolderByName = useCallback(async () => {
+    if (!activeProfile) return;
+    if (status !== "ready") return;
+    if (newFolderSaving) return;
+
+    const next = validateFolderNameDraft(newFolderDraft);
+    if (!next.ok) {
+      setNewFolderError(next.error);
+      return;
+    }
+
+    setNewFolderSaving(true);
+    setNewFolderError(null);
+    setFolderError(null);
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: activeProfile.id, name: next.name }),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { folder?: ChatFolder; error?: string }
+        | null;
+      if (!res.ok || !data?.folder) {
+        throw new Error(data?.error || "Failed to create folder.");
+      }
+
+      setFolders((prev) => {
+        const merged = prev.concat(data.folder!);
+        merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        return merged;
+      });
+      setNewFolderOpen(false);
+    } catch (err) {
+      setNewFolderError(
+        err instanceof Error ? err.message : "Failed to create folder."
+      );
+    } finally {
+      setNewFolderSaving(false);
+    }
+  }, [
+    activeProfile,
+    newFolderDraft,
+    newFolderSaving,
+    status,
+    validateFolderNameDraft,
+  ]);
+
+  const openRenameFolder = useCallback(
+    (folderId: string) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+      const target = folders.find((f) => f.id === folderId);
+      if (!target) return;
+      setRenameFolderId(folderId);
+      setRenameFolderDraft(target.name);
+      setRenameFolderError(null);
+      setRenameFolderOpen(true);
+    },
+    [activeProfile, folders, status]
+  );
+
+  const saveRenameFolder = useCallback(async () => {
+    if (!activeProfile) return;
+    if (status !== "ready") return;
+    if (renameFolderSaving) return;
+    if (!renameFolderId) return;
+
+    const next = validateFolderNameDraft(renameFolderDraft);
+    if (!next.ok) {
+      setRenameFolderError(next.error);
+      return;
+    }
+
+    setRenameFolderSaving(true);
+    setRenameFolderError(null);
+    setFolderError(null);
+    try {
+      const res = await fetch(`/api/folders/${renameFolderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: activeProfile.id, name: next.name }),
+      });
+
+      const data = (await res.json().catch(() => null)) as
+        | { folder?: ChatFolder; error?: string }
+        | null;
+      if (!res.ok || !data?.folder) {
+        throw new Error(data?.error || "Failed to rename folder.");
+      }
+
+      const updated = data.folder;
+      setFolders((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+      setRenameFolderOpen(false);
+    } catch (err) {
+      setRenameFolderError(
+        err instanceof Error ? err.message : "Failed to rename folder."
+      );
+    } finally {
+      setRenameFolderSaving(false);
+    }
+  }, [
+    activeProfile,
+    renameFolderDraft,
+    renameFolderId,
+    renameFolderSaving,
+    status,
+    validateFolderNameDraft,
+  ]);
+
+  const openDeleteFolder = useCallback(
+    (folderId: string) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+      const target = folders.find((f) => f.id === folderId);
+      if (!target) return;
+      setDeleteFolderId(folderId);
+      setDeleteFolderName(target.name);
+      setDeleteFolderError(null);
+      setDeleteFolderOpen(true);
+    },
+    [activeProfile, folders, status]
+  );
+
+  const confirmDeleteFolder = useCallback(async () => {
+    if (!activeProfile) return;
+    if (status !== "ready") return;
+    if (deleteFolderSaving) return;
+    if (!deleteFolderId) return;
+
+    setDeleteFolderSaving(true);
+    setDeleteFolderError(null);
+    setFolderError(null);
+    try {
+      const res = await fetch(`/api/folders/${deleteFolderId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: activeProfile.id }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Failed to delete folder.");
+      }
+
+      setFolders((prev) => prev.filter((f) => f.id !== deleteFolderId));
+      setChats((prev) =>
+        prev.map((c) =>
+          c.folderId === deleteFolderId ? { ...c, folderId: null } : c
+        )
+      );
+
+      setDeleteFolderOpen(false);
+    } catch (err) {
+      setDeleteFolderError(
+        err instanceof Error ? err.message : "Failed to delete folder."
+      );
+    } finally {
+      setDeleteFolderSaving(false);
+    }
+  }, [activeProfile, deleteFolderId, deleteFolderSaving, status]);
+
+  const toggleFolderCollapsed = useCallback(
+    async (folderId: string, nextCollapsed: boolean) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+
+      setFolderError(null);
+      setFolders((prev) =>
+        prev.map((f) =>
+          f.id === folderId ? { ...f, collapsed: nextCollapsed } : f
+        )
+      );
+
+      try {
+        const res = await fetch(`/api/folders/${folderId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId: activeProfile.id,
+            collapsed: nextCollapsed,
+          }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { folder?: ChatFolder; error?: string }
+          | null;
+        if (!res.ok || !data?.folder) {
+          throw new Error(data?.error || "Failed to update folder.");
+        }
+        setFolders((prev) =>
+          prev.map((f) => (f.id === data.folder!.id ? data.folder! : f))
+        );
+      } catch (err) {
+        setFolderError(err instanceof Error ? err.message : "Failed to update folder.");
+        refreshFolders(activeProfile.id).catch(() => {});
+      }
+    },
+    [activeProfile, refreshFolders, status]
+  );
+
+  const moveChatToFolder = useCallback(
+    async (chatId: string, folderId: string | null) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+
+      setFolderError(null);
+      try {
+        const res = await fetch(`/api/chats/${chatId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profileId: activeProfile.id, folderId }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { chat?: Chat; error?: string }
+          | null;
+        if (!res.ok || !data?.chat) {
+          throw new Error(data?.error || "Failed to move chat.");
+        }
+
+        setChats((prev) => prev.map((c) => (c.id === chatId ? data.chat! : c)));
+      } catch (err) {
+        setFolderError(err instanceof Error ? err.message : "Failed to move chat.");
+      }
+    },
+    [activeProfile, status]
+  );
+
   const setChatModel = async (nextModelId: string) => {
     if (!activeProfile) return;
     if (!activeChat) return;
@@ -1161,7 +1469,8 @@ export function HomeClient({
     refreshChats({ profileId: activeProfile.id, ensureAtLeastOne: true }).catch(
       () => {}
     );
-  }, [activeProfile, refreshChats]);
+    refreshFolders(activeProfile.id).catch(() => {});
+  }, [activeProfile, refreshChats, refreshFolders]);
 
   useEffect(() => {
     loadedChatIdRef.current = "";
@@ -1863,30 +2172,261 @@ export function HomeClient({
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <div className="flex items-center justify-between gap-2 px-2 py-2">
             <div className="text-xs font-medium text-muted-foreground">Chats</div>
-            <Button
-              aria-label="New chat"
-              className="h-7 w-7 px-0"
-              data-testid="sidebar:new-chat"
-              onClick={() => {
-                createChat();
-                closeIfDrawer();
-              }}
-              title="New chat"
-              type="button"
-              variant="secondary"
-            >
-              <PlusIcon className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                aria-label="New folder"
+                className="h-7 w-7 px-0"
+                data-testid="sidebar:new-folder"
+                disabled={!activeProfile || status !== "ready"}
+                onClick={() => setNewFolderOpen(true)}
+                title="New folder"
+                type="button"
+                variant="secondary"
+              >
+                <FolderPlusIcon className="size-4" />
+              </Button>
+              <Button
+                aria-label="New chat"
+                className="h-7 w-7 px-0"
+                data-testid="sidebar:new-chat"
+                disabled={!activeProfile || status !== "ready"}
+                onClick={() => {
+                  createChat();
+                  closeIfDrawer();
+                }}
+                title="New chat"
+                type="button"
+                variant="secondary"
+              >
+                <PlusIcon className="size-4" />
+              </Button>
+            </div>
           </div>
           {deleteChatError ? (
             <div className="px-2 pb-2 text-xs text-destructive">
               {deleteChatError}
             </div>
           ) : null}
+          {folderError ? (
+            <div className="px-2 pb-2 text-xs text-destructive">{folderError}</div>
+          ) : null}
 
           <div className="space-y-1 px-1 pb-2" data-testid="sidebar:chats-active">
+            <div className="space-y-1" data-testid="sidebar:folders">
+              {folders.map((folder) => {
+                const folderChats = chats.filter(
+                  (c) => !c.archivedAt && c.folderId === folder.id
+                );
+                return (
+                  <div className="space-y-1" key={folder.id}>
+                    <div
+                      className={
+                        "group flex items-center gap-1 rounded-md transition-colors hover:bg-sidebar-accent/70"
+                      }
+                      data-testid={`sidebar:folder:${folder.id}`}
+                    >
+                      <button
+                        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
+                        data-testid={`sidebar:folder-toggle:${folder.id}`}
+                        onClick={() =>
+                          toggleFolderCollapsed(folder.id, !folder.collapsed)
+                        }
+                        type="button"
+                      >
+                        <ChevronDownIcon
+                          className={
+                            "size-3 shrink-0 transition-transform " +
+                            (folder.collapsed ? "-rotate-90" : "")
+                          }
+                        />
+                        <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="truncate">{folder.name}</div>
+                        <div className="ml-auto text-xs text-muted-foreground">
+                          {folderChats.length}
+                        </div>
+                      </button>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                            data-testid={`sidebar:folder-menu:${folder.id}`}
+                            disabled={!activeProfile || status !== "ready"}
+                            suppressHydrationWarning
+                            type="button"
+                            variant="ghost"
+                          >
+                            <MoreVerticalIcon className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            data-testid={`folder-action:rename:${folder.id}`}
+                            onClick={() => openRenameFolder(folder.id)}
+                          >
+                            <PencilIcon />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            data-testid={`folder-action:delete:${folder.id}`}
+                            onClick={() => openDeleteFolder(folder.id)}
+                            variant="destructive"
+                          >
+                            <Trash2Icon />
+                            Delete folder
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    {!folder.collapsed ? (
+                      <div className="space-y-1 pl-4">
+                        {folderChats.map((chat) => (
+                          <div
+                            className={
+                              "group flex items-center gap-1 rounded-md transition-colors " +
+                              (chat.id === activeChatId && !isTemporaryChat
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                : "hover:bg-sidebar-accent/70")
+                            }
+                            key={chat.id}
+                          >
+                            <button
+                              className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                              data-testid={`sidebar:chat:${chat.id}`}
+                              onClick={() => {
+                                if (!activeProfile) return;
+                                if (chat.profileId !== activeProfile.id) return;
+                                setIsTemporaryChat(false);
+                                setActiveChatId(chat.id);
+                                closeIfDrawer();
+                              }}
+                              type="button"
+                            >
+                              <div className="truncate">
+                                {chat.title.trim() ? chat.title : "New chat"}
+                              </div>
+                            </button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                  data-testid={`sidebar:chat-menu:${chat.id}`}
+                                  disabled={
+                                    !activeProfile ||
+                                    status !== "ready" ||
+                                    chat.profileId !== activeProfile.id
+                                  }
+                                  suppressHydrationWarning
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  <MoreVerticalIcon className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger
+                                    data-testid={`chat-action:move-folder:${chat.id}`}
+                                  >
+                                    <FolderIcon />
+                                    Move to folder…
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuSubContent>
+                                    <DropdownMenuRadioGroup
+                                      onValueChange={(value) => {
+                                        moveChatToFolder(chat.id, value || null);
+                                      }}
+                                      value={chat.folderId ?? ""}
+                                    >
+                                      <DropdownMenuRadioItem value="">
+                                        No folder
+                                      </DropdownMenuRadioItem>
+                                      {folders.map((f) => (
+                                        <DropdownMenuRadioItem key={f.id} value={f.id}>
+                                          {f.name}
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                    </DropdownMenuRadioGroup>
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  data-testid={`chat-action:archive:${chat.id}`}
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    archiveChatById(chat.id);
+                                    closeIfDrawer();
+                                  }}
+                                >
+                                  <ArchiveIcon />
+                                  Archive
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  data-testid={`chat-action:rename:${chat.id}`}
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    openRenameChat(chat.id);
+                                  }}
+                                >
+                                  <PencilIcon />
+                                  Rename
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  data-testid={`chat-action:export-md:${chat.id}`}
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    exportChatById(chat.id, "md");
+                                  }}
+                                >
+                                  <DownloadIcon />
+                                  Export Markdown
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  data-testid={`chat-action:export-json:${chat.id}`}
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    exportChatById(chat.id, "json");
+                                  }}
+                                >
+                                  <DownloadIcon />
+                                  Export JSON
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  data-testid={`chat-action:delete:${chat.id}`}
+                                  onClick={() => {
+                                    if (!activeProfile) return;
+                                    if (chat.profileId !== activeProfile.id) return;
+                                    deleteChatById(chat.id);
+                                    closeIfDrawer();
+                                  }}
+                                  variant="destructive"
+                                >
+                                  <Trash2Icon />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
             {chats
-              .filter((c) => !c.archivedAt)
+              .filter((c) => !c.archivedAt && c.folderId == null)
               .map((chat) => (
                 <div
                   className={
@@ -1932,6 +2472,33 @@ export function HomeClient({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger
+                          data-testid={`chat-action:move-folder:${chat.id}`}
+                        >
+                          <FolderIcon />
+                          Move to folder…
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuRadioGroup
+                            onValueChange={(value) => {
+                              moveChatToFolder(chat.id, value || null);
+                            }}
+                            value={chat.folderId ?? ""}
+                          >
+                            <DropdownMenuRadioItem value="">
+                              No folder
+                            </DropdownMenuRadioItem>
+                            {folders.map((f) => (
+                              <DropdownMenuRadioItem key={f.id} value={f.id}>
+                                {f.name}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         data-testid={`chat-action:archive:${chat.id}`}
                         onClick={() => {
@@ -2085,6 +2652,33 @@ export function HomeClient({
                                 <Undo2Icon />
                                 Unarchive
                               </DropdownMenuItem>
+
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger
+                                  data-testid={`chat-action:move-folder:${chat.id}`}
+                                >
+                                  <FolderIcon />
+                                  Move to folder…
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent>
+                                  <DropdownMenuRadioGroup
+                                    onValueChange={(value) => {
+                                      moveChatToFolder(chat.id, value || null);
+                                    }}
+                                    value={chat.folderId ?? ""}
+                                  >
+                                    <DropdownMenuRadioItem value="">
+                                      No folder
+                                    </DropdownMenuRadioItem>
+                                    {folders.map((f) => (
+                                      <DropdownMenuRadioItem key={f.id} value={f.id}>
+                                        {f.name}
+                                      </DropdownMenuRadioItem>
+                                    ))}
+                                  </DropdownMenuRadioGroup>
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+
                               <DropdownMenuItem
                                 data-testid={`chat-action:rename:${chat.id}`}
                                 onClick={() => {
@@ -2782,7 +3376,10 @@ export function HomeClient({
 	                              }
 	                            }
 
-                            if (part.type === "tool-displayUrlSummary") {
+                            if (
+                              part.type === "tool-displayUrlSummary" ||
+                              part.type === "tool-summarizeURL"
+                            ) {
                               switch (part.state) {
                                 case "input-streaming":
                                 case "input-available":
@@ -4232,6 +4829,181 @@ export function HomeClient({
                 type="button"
               >
                 Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setNewFolderOpen} open={newFolderOpen}>
+        <DialogContent data-testid="folder:new-dialog">
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              autoFocus
+              data-testid="folder:new-input"
+              onChange={(e) => {
+                setNewFolderDraft(e.target.value);
+                if (newFolderError) setNewFolderError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setNewFolderOpen(false);
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  createFolderByName();
+                }
+              }}
+              placeholder="Folder name"
+              value={newFolderDraft}
+            />
+
+            {newFolderError ? (
+              <div className="text-sm text-destructive">{newFolderError}</div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                data-testid="folder:new-cancel"
+                disabled={newFolderSaving}
+                onClick={() => setNewFolderOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="folder:new-create"
+                disabled={
+                  !activeProfile ||
+                  status !== "ready" ||
+                  newFolderSaving ||
+                  !newFolderDraft.trim() ||
+                  newFolderDraft.trim().length > 60
+                }
+                onClick={() => createFolderByName()}
+                type="button"
+              >
+                Create
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setRenameFolderOpen} open={renameFolderOpen}>
+        <DialogContent data-testid="folder:rename-dialog">
+          <DialogHeader>
+            <DialogTitle>Rename folder</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Input
+              autoFocus
+              data-testid="folder:rename-input"
+              onChange={(e) => {
+                setRenameFolderDraft(e.target.value);
+                if (renameFolderError) setRenameFolderError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setRenameFolderOpen(false);
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  saveRenameFolder();
+                }
+              }}
+              placeholder="Folder name"
+              value={renameFolderDraft}
+            />
+
+            {renameFolderError ? (
+              <div className="text-sm text-destructive">{renameFolderError}</div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                data-testid="folder:rename-cancel"
+                disabled={renameFolderSaving}
+                onClick={() => setRenameFolderOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="folder:rename-save"
+                disabled={
+                  !activeProfile ||
+                  status !== "ready" ||
+                  renameFolderSaving ||
+                  !renameFolderId ||
+                  !renameFolderDraft.trim() ||
+                  renameFolderDraft.trim().length > 60
+                }
+                onClick={() => saveRenameFolder()}
+                type="button"
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setDeleteFolderOpen} open={deleteFolderOpen}>
+        <DialogContent data-testid="folder:delete-dialog">
+          <DialogHeader>
+            <DialogTitle>Delete folder?</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              Chats in this folder will be moved to the root level.
+            </div>
+
+            {deleteFolderName ? (
+              <div className="rounded-md border bg-card px-3 py-2 text-sm">
+                {deleteFolderName}
+              </div>
+            ) : null}
+
+            {deleteFolderError ? (
+              <div className="text-sm text-destructive">{deleteFolderError}</div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button
+                data-testid="folder:delete-cancel"
+                disabled={deleteFolderSaving}
+                onClick={() => setDeleteFolderOpen(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="folder:delete-confirm"
+                disabled={
+                  !activeProfile ||
+                  status !== "ready" ||
+                  deleteFolderSaving ||
+                  !deleteFolderId
+                }
+                onClick={() => confirmDeleteFolder()}
+                type="button"
+                variant="destructive"
+              >
+                Delete
               </Button>
             </div>
           </div>

@@ -34,7 +34,7 @@ test("Chat uses active provider", async ({ request }) => {
       const chatRes = await request.post("/api/chat", {
         data: {
           profileId: profileJson.profile.id,
-          modelId: "gpt-5-nano",
+          modelId: "gpt-5.2",
           temporary: true,
           messages: [
             {

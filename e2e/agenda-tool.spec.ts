@@ -101,9 +101,8 @@ test("Agenda tool renders a card and lists items (WebKit)", async ({ page }) => 
   await createChat(page);
 
   await selectPreferredModel(page, [
-    "anthropic/claude-sonnet-4.5",
-    "openai/gpt-4.1-mini",
-    "openai/gpt-5",
+    "gpt-5.2-codex",
+    "gpt-5.2",
   ]);
 
   const scheduled = new Date(Date.now() + 60 * 60 * 1000);

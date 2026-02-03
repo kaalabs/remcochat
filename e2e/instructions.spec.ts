@@ -187,86 +187,103 @@ async function sendAndExpectAssistant(
 
 test("Profile + chat instructions stay effective (WebKit)", async ({
   page,
+  request,
 }) => {
   const consoleErrors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
 
-  await page.goto("/");
+  const base = await request.get("/api/providers");
+  expect(base.ok()).toBeTruthy();
+  const baseJson = (await base.json()) as { defaultProviderId: string };
 
-  await createProfile(page, `E2E ${Date.now()}`);
-  await page.getByTestId("sidebar:new-chat").click();
-  await expect(page.getByTestId("chat:settings-open")).toBeVisible();
-  const modelId = await selectPreferredModel(page, [
-    "anthropic/claude-sonnet-4.5",
-    "openai/gpt-4.1-mini",
-  ]);
+  try {
+    await request.put("/api/providers/active", {
+      data: { providerId: baseJson.defaultProviderId },
+    });
 
-  await setProfileInstructions(
-    page,
-    "For every assistant response, output exactly one line containing only: PROFILE-OK"
-  );
+    await page.goto("/");
 
-  await sendAndExpectAssistant(page, {
-    prompt: "Hi",
-    expectedAssistantMustInclude: "PROFILE-OK",
-    expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
-    expectedModelId: modelId,
-    expectedProfileRev: 2,
-    expectedChatRev: 1,
-    expectedProfileInstructionsMinLen: 10,
-    expectedChatInstructionsMinLen: 0,
-    expectedProfileInstructionsStoredMinLen: 10,
-  });
+    await createProfile(page, `E2E ${Date.now()}`);
+    await page.getByTestId("sidebar:new-chat").click();
+    await expect(page.getByTestId("chat:settings-open")).toBeVisible();
+    const modelId = await selectPreferredModel(page, [
+      "gpt-5.2-codex",
+      "gpt-5.2",
+      "anthropic/claude-sonnet-4.5",
+      "openai/gpt-4.1-mini",
+    ]);
 
-  await sendAndExpectAssistant(page, {
-    prompt: "Hi again",
-    expectedAssistantMustInclude: "PROFILE-OK",
-    expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
-    expectedModelId: modelId,
-    expectedProfileRev: 2,
-    expectedChatRev: 1,
-    expectedProfileInstructionsMinLen: 10,
-    expectedChatInstructionsMinLen: 0,
-    expectedProfileInstructionsStoredMinLen: 10,
-  });
+    await setProfileInstructions(
+      page,
+      "For every assistant response, output exactly one line containing only: PROFILE-OK"
+    );
 
-  await setChatInstructions(
-    page,
-    "Ignore profile instructions. For every assistant response in this chat, output exactly one line containing only: CHAT-OK"
-  );
+    await sendAndExpectAssistant(page, {
+      prompt: "Hi",
+      expectedAssistantMustInclude: "PROFILE-OK",
+      expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
+      expectedModelId: modelId,
+      expectedProfileRev: 2,
+      expectedChatRev: 1,
+      expectedProfileInstructionsMinLen: 10,
+      expectedChatInstructionsMinLen: 0,
+      expectedProfileInstructionsStoredMinLen: 10,
+    });
 
-  await sendAndExpectAssistant(page, {
-    prompt: "Now what?",
-    expectedAssistantMustInclude: "CHAT-OK",
-    expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-NEW"],
-    expectedModelId: modelId,
-    expectedProfileRev: 2,
-    expectedChatRev: 2,
-    expectedProfileInstructionsMinLen: 0,
-    expectedChatInstructionsMinLen: 10,
-    expectedProfileInstructionsStoredMinLen: 10,
-  });
+    await sendAndExpectAssistant(page, {
+      prompt: "Hi again",
+      expectedAssistantMustInclude: "PROFILE-OK",
+      expectedAssistantMustNotInclude: ["CHAT-OK", "CHAT-NEW"],
+      expectedModelId: modelId,
+      expectedProfileRev: 2,
+      expectedChatRev: 1,
+      expectedProfileInstructionsMinLen: 10,
+      expectedChatInstructionsMinLen: 0,
+      expectedProfileInstructionsStoredMinLen: 10,
+    });
 
-  await setChatInstructions(
-    page,
-    "Ignore profile instructions. For every assistant response in this chat, output exactly one line containing only: CHAT-NEW"
-  );
+    await setChatInstructions(
+      page,
+      "Ignore profile instructions. For every assistant response in this chat, output exactly one line containing only: CHAT-OK"
+    );
 
-  await sendAndExpectAssistant(page, {
-    prompt: "And now?",
-    expectedAssistantMustInclude: "CHAT-NEW",
-    expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-OK"],
-    expectedModelId: modelId,
-    expectedProfileRev: 2,
-    expectedChatRev: 3,
-    expectedProfileInstructionsMinLen: 0,
-    expectedChatInstructionsMinLen: 10,
-    expectedProfileInstructionsStoredMinLen: 10,
-  });
+    await sendAndExpectAssistant(page, {
+      prompt: "Now what?",
+      expectedAssistantMustInclude: "CHAT-OK",
+      expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-NEW"],
+      expectedModelId: modelId,
+      expectedProfileRev: 2,
+      expectedChatRev: 2,
+      expectedProfileInstructionsMinLen: 0,
+      expectedChatInstructionsMinLen: 10,
+      expectedProfileInstructionsStoredMinLen: 10,
+    });
 
-  expect(consoleErrors).toEqual([]);
+    await setChatInstructions(
+      page,
+      "Ignore profile instructions. For every assistant response in this chat, output exactly one line containing only: CHAT-NEW"
+    );
+
+    await sendAndExpectAssistant(page, {
+      prompt: "And now?",
+      expectedAssistantMustInclude: "CHAT-NEW",
+      expectedAssistantMustNotInclude: ["PROFILE-OK", "CHAT-OK"],
+      expectedModelId: modelId,
+      expectedProfileRev: 2,
+      expectedChatRev: 3,
+      expectedProfileInstructionsMinLen: 0,
+      expectedChatInstructionsMinLen: 10,
+      expectedProfileInstructionsStoredMinLen: 10,
+    });
+
+    expect(consoleErrors).toEqual([]);
+  } finally {
+    await request.put("/api/providers/active", {
+      data: { providerId: baseJson.defaultProviderId },
+    });
+  }
 });
 
 test("Profile settings stays within viewport with long memory items (WebKit)", async ({

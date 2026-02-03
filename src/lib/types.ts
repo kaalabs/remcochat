@@ -15,6 +15,7 @@ export type Chat = {
   profileId: string;
   title: string;
   modelId: string;
+  folderId: string | null;
   chatInstructions: string;
   chatInstructionsRevision: number;
   activatedSkillNames: string[];
@@ -24,6 +25,15 @@ export type Chat = {
   deletedAt: string | null;
   forkedFromChatId?: string | null;
   forkedFromMessageId?: string | null;
+};
+
+export type ChatFolder = {
+  id: string;
+  profileId: string;
+  name: string;
+  collapsed: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type RemcoChatMessageMetadata = {

@@ -92,6 +92,8 @@ test("List tool renders a card (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -129,6 +131,8 @@ test("List tool deletes a list (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -176,6 +180,8 @@ test("Shared lists sync across profiles (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -207,6 +213,8 @@ test("Shared lists sync across profiles (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -252,7 +260,7 @@ test("Shared lists sync across profiles (WebKit)", async ({ page }) => {
     "Gebruik de displayList tool met action=show, list_name=Boodschappen."
   );
   await page.getByTestId("composer:submit").click();
-  await expect(page.getByText(/List error:.*not found/i)).toBeVisible({
+  await expect(page.getByText(/List error:.*not found/i).first()).toBeVisible({
     timeout: 120_000,
   });
 

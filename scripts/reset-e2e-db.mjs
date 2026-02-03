@@ -40,11 +40,18 @@ try {
     'modelsdev_provider_id = "opencode"',
     'default_model_id = "gpt-5.2-codex"',
     "allowed_model_ids = [",
-    '  "gpt-5-nano",',
     '  "gpt-5.2",',
     '  "gpt-5.2-codex",',
-    '  "claude-opus-4-5",',
-    '  "glm-4.7",',
+    "]",
+    "",
+    "[providers.e2e_compat]",
+    'name = "E2E OpenCode (chat/completions)"',
+    'base_url = "https://opencode.ai/zen/v1"',
+    'api_key_env = "OPENCODE_API_KEY"',
+    'modelsdev_provider_id = "opencode"',
+    'default_model_id = "big-pickle"',
+    "allowed_model_ids = [",
+    '  "big-pickle",',
     "]",
     "",
     "[providers.e2e_vercel]",
@@ -72,10 +79,31 @@ try {
   configText = configText.replace(/\[app\.router\][\s\S]*?(?=\n\[|$)/, (block) => {
     let out = block;
     out = out.replace(/\bprovider_id\s*=\s*\"[^\"]+\"/, 'provider_id = "e2e_alt"');
-    out = out.replace(/\bmodel_id\s*=\s*\"[^\"]+\"/, 'model_id = "gpt-5-nano"');
+    out = out.replace(/\bmodel_id\s*=\s*\"[^\"]+\"/, 'model_id = "gpt-5.2"');
     if (!hasSkillsConfig) {
       out = `${out.trimEnd()}\n\n[app.skills]\nenabled = true\ndirectories = [\"./.skills\"]\n`;
     }
+    return out;
+  });
+
+  // Keep the shared provider allowlist stable (and avoid disabled / flaky models) so
+  // E2E tests pick deterministic, tool-capable models.
+  configText = configText.replace(/\[providers\.opencode\][\s\S]*?(?=\n\[|$)/, (block) => {
+    let out = block;
+    out = out.replace(/\bdefault_model_id\s*=\s*\"[^\"]+\"/, 'default_model_id = "gpt-5.2"');
+    out = out.replace(
+      /\ballowed_model_ids\s*=\s*\[[\s\S]*?\]\s*/m,
+      [
+        "allowed_model_ids = [",
+        '  "gpt-5.2",',
+        '  "gpt-5.2-codex",',
+        '  "claude-3-5-haiku",',
+        '  "claude-sonnet-4-5",',
+        '  "big-pickle",',
+        "]",
+        "",
+      ].join("\n")
+    );
     return out;
   });
 

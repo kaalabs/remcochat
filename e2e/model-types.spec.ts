@@ -78,13 +78,13 @@ test("Chat works for OpenAI-compatible (chat/completions) model type", async ({ 
   const baseJson = (await base.json()) as { defaultProviderId: string };
 
   try {
-    await switchProvider(request, "e2e_alt");
+    await switchProvider(request, "e2e_compat");
     const profileId = await createProfile(request);
 
     const headers = await chatOnce({
       request,
       profileId,
-      modelId: "glm-4.7",
+      modelId: "big-pickle",
     });
 
     expect(headers["x-remcochat-model-type"]).toBe("openai_compatible");

@@ -107,6 +107,8 @@ test("Lists overview shows owned lists (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -128,7 +130,9 @@ test("Lists overview shows owned lists (WebKit)", async ({ page }) => {
     timeout: 120_000,
   });
 
-  await page.getByTestId("composer:textarea").fill("Show my lists.");
+  await page
+    .getByTestId("composer:textarea")
+    .fill("Show my lists. Use the displayListsOverview tool.");
   await page.getByTestId("composer:submit").click();
 
   const card = page.getByTestId("tool:displayListsOverview");
@@ -164,6 +168,8 @@ test("Lists overview includes shared lists (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",
@@ -182,6 +188,8 @@ test("Lists overview includes shared lists (WebKit)", async ({ page }) => {
   await createChat(page);
 
   await selectPreferredModel(page, [
+    "gpt-5.2-codex",
+    "gpt-5.2",
     "anthropic/claude-sonnet-4.5",
     "openai/gpt-4.1-mini",
     "openai/gpt-5",

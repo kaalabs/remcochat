@@ -495,7 +495,7 @@ export function createTools(input: {
     },
   });
 
-  const summarizeURL = input.model
+  const displayUrlSummary = input.model
     ? createTool({
         description:
           "Fetch and summarize the content of a web URL. Returns a structured summary with title, key points, and metadata. Useful when the user asks to summarize a link or webpage.",
@@ -540,6 +540,8 @@ export function createTools(input: {
     displayList,
     displayListsOverview,
     displayAgenda,
-    ...(summarizeURL ? { summarizeURL } : {}),
+    ...(displayUrlSummary ? { displayUrlSummary } : {}),
+    // Backward compat (old tool name).
+    ...(displayUrlSummary ? { summarizeURL: displayUrlSummary } : {}),
   };
 }

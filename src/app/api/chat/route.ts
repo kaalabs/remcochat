@@ -1107,8 +1107,9 @@ export async function POST(req: Request) {
 	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
-            hasToolCall("summarizeURL"),
-            stepCountIs(maxSteps),
+            hasToolCall("displayUrlSummary"),
+	            hasToolCall("summarizeURL"),
+	            stepCountIs(maxSteps),
           ],
           tools: {
             ...chatTools,
@@ -1313,8 +1314,9 @@ export async function POST(req: Request) {
 	            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
-            hasToolCall("summarizeURL"),
-            stepCountIs(maxSteps),
+            hasToolCall("displayUrlSummary"),
+	            hasToolCall("summarizeURL"),
+	            stepCountIs(maxSteps),
           ],
             tools,
           }
@@ -2328,20 +2330,21 @@ export async function POST(req: Request) {
     ...(providerOptions ? { providerOptions } : {}),
     ...(resolved!.capabilities.tools
       ? {
-	          stopWhen: [
-	            hasToolCall("displayWeather"),
-	            hasToolCall("displayWeatherForecast"),
-	            ...(stopAfterCurrentDateTime
-	              ? [hasToolCall("displayCurrentDateTime")]
-	              : []),
-	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-	            hasToolCall("displayNotes"),
-	            hasToolCall("displayMemoryAnswer"),
-	            hasToolCall("displayList"),
+		          stopWhen: [
+		            hasToolCall("displayWeather"),
+		            hasToolCall("displayWeatherForecast"),
+		            ...(stopAfterCurrentDateTime
+		              ? [hasToolCall("displayCurrentDateTime")]
+		              : []),
+		            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+		            hasToolCall("displayNotes"),
+		            hasToolCall("displayMemoryAnswer"),
+		            hasToolCall("displayList"),
             hasToolCall("displayListsOverview"),
             hasToolCall("displayAgenda"),
-            hasToolCall("summarizeURL"),
-            stepCountIs(maxSteps),
+            hasToolCall("displayUrlSummary"),
+		            hasToolCall("summarizeURL"),
+		            stepCountIs(maxSteps),
           ],
           tools,
         }

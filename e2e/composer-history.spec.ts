@@ -80,7 +80,7 @@ test("Composer ArrowUp/ArrowDown cycles through prompt history", async ({
 
   await createProfile(page, `E2E composer history ${Date.now()}`);
   await createChat(page);
-  await selectPreferredModel(page, ["openai/gpt-4o-mini", "gpt-5-nano"]);
+  await selectPreferredModel(page, ["openai/gpt-4o-mini", "gpt-5.2-codex", "gpt-5.2"]);
 
   await sendPromptAndStop(page, "First prompt");
   await sendPromptAndStop(page, "Second prompt");
@@ -100,4 +100,3 @@ test("Composer ArrowUp/ArrowDown cycles through prompt history", async ({
   await composer.press("ArrowDown");
   await expect(composer).toHaveValue("my draft");
 });
-

@@ -10,6 +10,7 @@ export async function PATCH(
     title?: string;
     modelId?: string;
     chatInstructions?: string;
+    folderId?: string | null;
   };
 
   try {
@@ -21,6 +22,7 @@ export async function PATCH(
       title: body.title,
       modelId: body.modelId,
       chatInstructions: body.chatInstructions,
+      folderId: body.folderId,
     });
     return Response.json({ chat });
   } catch (err) {
