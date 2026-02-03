@@ -4266,7 +4266,8 @@ export function HomeClient({
                                 className={
                                   "h-8 px-2 text-[11px] " +
                                   (selected
-                                    ? "relative z-10 font-semibold shadow-none "
+                                    ? "relative z-10 shadow-none " +
+                                      (canSend && chatRequestBody ? "font-semibold " : "")
                                     : "")
                                   +
                                   (selected && (!canSend || !chatRequestBody)
