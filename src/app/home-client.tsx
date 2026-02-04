@@ -115,6 +115,8 @@ import {
       FolderIcon,
       FolderOpenIcon,
       FolderPlusIcon,
+      PinIcon,
+      PinOffIcon,
 		  ShieldIcon,
 		  DownloadIcon,
       KeyIcon,
@@ -155,6 +157,24 @@ import {
 
 const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
 const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
+
+function chatIsPinned(chat: Pick<Chat, "pinnedAt">): boolean {
+  return typeof chat.pinnedAt === "string" && chat.pinnedAt.trim().length > 0;
+}
+
+function compareChatsForSidebar(a: Chat, b: Chat): number {
+  const aPinned = chatIsPinned(a);
+  const bPinned = chatIsPinned(b);
+  if (aPinned !== bPinned) return aPinned ? -1 : 1;
+
+  if (aPinned && bPinned) {
+    const aPinnedAt = a.pinnedAt ?? "";
+    const bPinnedAt = b.pinnedAt ?? "";
+    if (aPinnedAt !== bPinnedAt) return bPinnedAt.localeCompare(aPinnedAt);
+  }
+
+  return b.updatedAt.localeCompare(a.updatedAt);
+}
 
 function textLengthForMessage(message: UIMessage<RemcoChatMessageMetadata>) {
   return message.parts.reduce((acc, part) => {
@@ -1129,7 +1149,12 @@ export function HomeClient({
     const data = (await res.json()) as { chat?: Chat; error?: string };
     if (!res.ok || !data.chat) return;
 
-    setChats((prev) => [data.chat!, ...prev]);
+    setChats((prev) => {
+      const without = prev.filter((c) => c.id !== data.chat!.id);
+      const next = [data.chat!, ...without];
+      next.sort(compareChatsForSidebar);
+      return next;
+    });
     setActiveChatId(data.chat.id);
   };
 
@@ -1165,6 +1190,33 @@ export function HomeClient({
       );
     },
     [activeProfile, refreshChats, status]
+  );
+
+  const togglePinChatById = useCallback(
+    async (chatId: string, nextPinned: boolean) => {
+      if (!activeProfile) return;
+      if (status !== "ready") return;
+
+      const res = await fetch(`/api/chats/${chatId}/pin`, {
+        method: nextPinned ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: activeProfile.id }),
+      }).catch(() => null);
+      if (!res) return;
+
+      const data = (await res.json().catch(() => null)) as
+        | { chat?: Chat; error?: string }
+        | null;
+      if (!res.ok || !data?.chat) return;
+
+      const updated = data.chat;
+      setChats((prev) => {
+        const next = prev.map((c) => (c.id === updated.id ? updated : c));
+        next.sort(compareChatsForSidebar);
+        return next;
+      });
+    },
+    [activeProfile, status]
   );
 
   useEffect(() => {
@@ -1327,7 +1379,7 @@ export function HomeClient({
       const updated = data.chat;
       setChats((prev) => {
         const next = prev.map((c) => (c.id === updated.id ? updated : c));
-        next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        next.sort(compareChatsForSidebar);
         return next;
       });
 
@@ -1753,7 +1805,11 @@ export function HomeClient({
     const data = (await res.json()) as { chat?: Chat };
     if (!res.ok || !data.chat) return;
 
-    setChats((prev) => prev.map((c) => (c.id === data.chat!.id ? data.chat! : c)));
+    setChats((prev) => {
+      const next = prev.map((c) => (c.id === data.chat!.id ? data.chat! : c));
+      next.sort(compareChatsForSidebar);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -2154,7 +2210,9 @@ export function HomeClient({
 
       setChats((prev) => {
         const without = prev.filter((c) => c.id !== data.chat!.id);
-        return [data.chat!, ...without];
+        const next = [data.chat!, ...without];
+        next.sort(compareChatsForSidebar);
+        return next;
       });
       setActiveChatId(data.chat.id);
       setEditOpen(false);
@@ -2451,16 +2509,18 @@ export function HomeClient({
     window.setTimeout(() => focusComposer({ toEnd: true }), 0);
   }, [focusComposer]);
 
-  const renderSidebar = (mode: "desktop" | "drawer") => {
-    const closeIfDrawer = () => {
-      if (mode !== "drawer") return;
-      closeSidebarDrawer();
-    };
+	  const renderSidebar = (mode: "desktop" | "drawer") => {
+	    const closeIfDrawer = () => {
+	      if (mode !== "drawer") return;
+	      closeSidebarDrawer();
+	    };
 
-    const rootChats = chats.filter((c) => !c.archivedAt && c.folderId == null);
-    const showFoldersSeparator =
-      rootChats.length > 0 &&
-      (ownedFolders.length > 0 || sharedFoldersByOwner.length > 0);
+	    const rootChats = chats
+	      .filter((c) => !c.archivedAt && c.folderId == null)
+	      .sort(compareChatsForSidebar);
+	    const showFoldersSeparator =
+	      rootChats.length > 0 &&
+	      (ownedFolders.length > 0 || sharedFoldersByOwner.length > 0);
 
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
@@ -2554,12 +2614,11 @@ export function HomeClient({
 			              folderGroupCollapsed["folders:personal"] ? null : (
 			                <div className={sharedFoldersByOwner.length > 0 ? "pl-6" : ""}>
 			                  {ownedFolders.map((folder) => {
-				                const folderChats = chats.filter(
-				                  (c) =>
-				                    !c.archivedAt &&
-				                    c.folderId === folder.id &&
-				                    !pinnedChatIds.has(c.id)
-				                );
+			                const folderChats = chats
+			                  .filter(
+			                    (c) => !c.archivedAt && c.folderId === folder.id
+			                  )
+			                  .sort(compareChatsForSidebar);
 			                return (
                   <div className="space-y-1" key={folder.id}>
                     <div
@@ -2679,6 +2738,7 @@ export function HomeClient({
 	                              aria-label={
 	                                chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
 	                              }
+	                              aria-pressed={chatIsPinned(chat)}
 	                              className={
 	                                "h-8 w-8 shrink-0 px-0 transition-opacity " +
 	                                (chatIsPinned(chat)
@@ -2696,14 +2756,11 @@ export function HomeClient({
 	                              type="button"
 	                              variant="ghost"
 	                            >
-	                              <PinIcon
-	                                className={
-	                                  "size-4 " +
-	                                  (chatIsPinned(chat)
-	                                    ? "text-sidebar-primary"
-	                                    : "text-muted-foreground")
-	                                }
-	                              />
+	                              {chatIsPinned(chat) ? (
+	                                <PinIcon className="size-4 text-sidebar-primary" />
+	                              ) : (
+	                                <PinOffIcon className="size-4 text-muted-foreground" />
+	                              )}
 	                            </Button>
 
 	                            <DropdownMenu>
@@ -2877,12 +2934,11 @@ export function HomeClient({
 	                            {ownerGroupCollapsed
 	                              ? null
 	                              : ownerFolders.map((folder) => {
-		                        const folderChats = chats.filter(
-		                          (c) =>
-		                            !c.archivedAt &&
-		                            c.folderId === folder.id &&
-		                            !pinnedChatIds.has(c.id)
-		                        );
+		                        const folderChats = chats
+		                          .filter(
+		                            (c) => !c.archivedAt && c.folderId === folder.id
+		                          )
+		                          .sort(compareChatsForSidebar);
 	                        return (
                           <div className="space-y-1" key={folder.id}>
                             <div
@@ -2946,6 +3002,7 @@ export function HomeClient({
 	                                      aria-label={
 	                                        chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
 	                                      }
+	                                      aria-pressed={chatIsPinned(chat)}
 	                                      className={
 	                                        "h-8 w-8 shrink-0 px-0 transition-opacity " +
 	                                        (chatIsPinned(chat)
@@ -2963,14 +3020,11 @@ export function HomeClient({
 	                                      type="button"
 	                                      variant="ghost"
 	                                    >
-	                                      <PinIcon
-	                                        className={
-	                                          "size-4 " +
-	                                          (chatIsPinned(chat)
-	                                            ? "text-sidebar-primary"
-	                                            : "text-muted-foreground")
-	                                        }
-	                                      />
+	                                      {chatIsPinned(chat) ? (
+	                                        <PinIcon className="size-4 text-sidebar-primary" />
+	                                      ) : (
+	                                        <PinOffIcon className="size-4 text-muted-foreground" />
+	                                      )}
 	                                    </Button>
 
 	                                    <DropdownMenu>
@@ -3134,6 +3188,7 @@ export function HomeClient({
 
 	                  <Button
 	                    aria-label={chatIsPinned(chat) ? "Unpin chat" : "Pin chat"}
+	                    aria-pressed={chatIsPinned(chat)}
 	                    className={
 	                      "h-8 w-8 shrink-0 px-0 transition-opacity " +
 	                      (chatIsPinned(chat)
@@ -3151,14 +3206,11 @@ export function HomeClient({
 	                    type="button"
 	                    variant="ghost"
 	                  >
-	                    <PinIcon
-	                      className={
-	                        "size-4 " +
-	                        (chatIsPinned(chat)
-	                          ? "text-sidebar-primary"
-	                          : "text-muted-foreground")
-	                      }
-	                    />
+	                    {chatIsPinned(chat) ? (
+	                      <PinIcon className="size-4 text-sidebar-primary" />
+	                    ) : (
+	                      <PinOffIcon className="size-4 text-muted-foreground" />
+	                    )}
 	                  </Button>
 
 	                  <DropdownMenu>

@@ -84,6 +84,16 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_chats_profile_updated_at
       ON chats(profile_id, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS chat_pins (
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      pinned_at TEXT NOT NULL,
+      PRIMARY KEY (profile_id, chat_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_pins_profile_pinned_at
+      ON chat_pins(profile_id, pinned_at DESC);
+
     CREATE TABLE IF NOT EXISTS attachments (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

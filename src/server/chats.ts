@@ -24,6 +24,7 @@ type ChatRow = {
   deleted_at: string | null;
   forked_from_chat_id: string | null;
   forked_from_message_id: string | null;
+  pinned_at?: string | null;
 };
 
 type AccessibleChatRow = ChatRow & {
@@ -154,6 +155,7 @@ function rowToChat(row: ChatRow): Chat {
     title: row.title,
     modelId,
     folderId: row.folder_id ?? null,
+    pinnedAt: row.pinned_at ?? null,
     chatInstructions: row.chat_instructions,
     chatInstructionsRevision: Number(row.chat_instructions_revision ?? 1),
     activatedSkillNames: activatedSkillNamesFromJson(row.activated_skill_names_json),
@@ -170,12 +172,30 @@ export function listChats(profileId: string): Chat[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, profile_id, title, model_id, folder_id, chat_instructions, chat_instructions_revision, activated_skill_names_json, created_at, updated_at, archived_at, deleted_at, forked_from_chat_id, forked_from_message_id
+      `SELECT
+         chats.id as id,
+         chats.profile_id as profile_id,
+         chats.title as title,
+         chats.model_id as model_id,
+         chats.folder_id as folder_id,
+         chats.chat_instructions as chat_instructions,
+         chats.chat_instructions_revision as chat_instructions_revision,
+         chats.activated_skill_names_json as activated_skill_names_json,
+         chats.created_at as created_at,
+         chats.updated_at as updated_at,
+         chats.archived_at as archived_at,
+         chats.deleted_at as deleted_at,
+         chats.forked_from_chat_id as forked_from_chat_id,
+         chats.forked_from_message_id as forked_from_message_id,
+         chat_pins.pinned_at as pinned_at
        FROM chats
-       WHERE profile_id = ? AND deleted_at IS NULL
-       ORDER BY updated_at DESC`
+       LEFT JOIN chat_pins
+         ON chat_pins.chat_id = chats.id
+        AND chat_pins.profile_id = ?
+       WHERE chats.profile_id = ? AND chats.deleted_at IS NULL
+       ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC`
     )
-    .all(profileId) as ChatRow[];
+    .all(profileId, profileId) as ChatRow[];
 
   return rows.map(rowToChat);
 }
@@ -203,10 +223,14 @@ export function listAccessibleChats(profileId: string): Array<Chat & {
           chats.deleted_at as deleted_at,
           chats.forked_from_chat_id as forked_from_chat_id,
           chats.forked_from_message_id as forked_from_message_id,
+          chat_pins.pinned_at as pinned_at,
           profiles.name as owner_name,
           CASE WHEN chats.profile_id = ? THEN 'owned' ELSE 'shared' END as scope
         FROM chats
         JOIN profiles ON profiles.id = chats.profile_id
+        LEFT JOIN chat_pins
+          ON chat_pins.chat_id = chats.id
+         AND chat_pins.profile_id = ?
         LEFT JOIN chat_folder_members
           ON chat_folder_members.folder_id = chats.folder_id
          AND chat_folder_members.profile_id = ?
@@ -215,10 +239,10 @@ export function listAccessibleChats(profileId: string): Array<Chat & {
             chats.profile_id = ?
             OR chat_folder_members.profile_id = ?
           )
-        ORDER BY chats.updated_at DESC
+        ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC
       `
     )
-    .all(profileId, profileId, profileId, profileId) as AccessibleChatRow[];
+    .all(profileId, profileId, profileId, profileId, profileId) as AccessibleChatRow[];
 
   return rows.map((row) => ({
     ...rowToChat(row),
@@ -264,10 +288,14 @@ export function getChatForViewer(profileId: string, chatId: string): Chat & {
           chats.deleted_at as deleted_at,
           chats.forked_from_chat_id as forked_from_chat_id,
           chats.forked_from_message_id as forked_from_message_id,
+          chat_pins.pinned_at as pinned_at,
           profiles.name as owner_name,
           CASE WHEN chats.profile_id = ? THEN 'owned' ELSE 'shared' END as scope
         FROM chats
         JOIN profiles ON profiles.id = chats.profile_id
+        LEFT JOIN chat_pins
+          ON chat_pins.chat_id = chats.id
+         AND chat_pins.profile_id = ?
         LEFT JOIN chat_folder_members
           ON chat_folder_members.folder_id = chats.folder_id
          AND chat_folder_members.profile_id = ?
@@ -280,7 +308,7 @@ export function getChatForViewer(profileId: string, chatId: string): Chat & {
         LIMIT 1
       `
     )
-    .get(profileId, profileId, chatId, profileId, profileId) as AccessibleChatRow
+    .get(profileId, profileId, profileId, chatId, profileId, profileId) as AccessibleChatRow
     | undefined;
 
   if (!row) {
@@ -292,6 +320,35 @@ export function getChatForViewer(profileId: string, chatId: string): Chat & {
     scope: row.scope,
     ownerName: row.owner_name,
   };
+}
+
+export function pinChat(profileId: string, chatId: string): Chat & {
+  scope: "owned" | "shared";
+  ownerName: string;
+} {
+  getChatForViewer(profileId, chatId);
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO chat_pins (profile_id, chat_id, pinned_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(profile_id, chat_id) DO UPDATE SET
+       pinned_at = excluded.pinned_at`
+  ).run(profileId, chatId, now);
+  return getChatForViewer(profileId, chatId);
+}
+
+export function unpinChat(profileId: string, chatId: string): Chat & {
+  scope: "owned" | "shared";
+  ownerName: string;
+} {
+  getChatForViewer(profileId, chatId);
+  const db = getDb();
+  db.prepare(`DELETE FROM chat_pins WHERE profile_id = ? AND chat_id = ?`).run(
+    profileId,
+    chatId
+  );
+  return getChatForViewer(profileId, chatId);
 }
 
 export function recordActivatedSkillName(input: {

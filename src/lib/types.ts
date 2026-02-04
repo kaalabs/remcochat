@@ -16,6 +16,7 @@ export type Chat = {
   title: string;
   modelId: string;
   folderId: string | null;
+  pinnedAt: string | null;
   scope?: "owned" | "shared";
   ownerName?: string;
   chatInstructions: string;
