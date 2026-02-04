@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
-eval "$("$SCRIPT_DIR/health_check.sh")"
+HEALTH_EXPORTS="$(bash "$SCRIPT_DIR/health_check.sh")" || exit $?
+eval "$HEALTH_EXPORTS"
 
 BASE_URL="${BASE_URL%/}"
 
@@ -50,7 +51,7 @@ if command -v jq >/dev/null 2>&1; then
     fi
   fi
 
-  echo "$ROOMS_JSON" | jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype==\"grouped_light\") | .rid)\t\(.id)"' \
+  echo "$ROOMS_JSON" | jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)\t\(.id)"' \
   | awk -F'\t' 'NF>=2 && $1!="" && $2!="" {print}' \
   | sort -f
   exit 0

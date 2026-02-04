@@ -2554,9 +2554,12 @@ export function HomeClient({
 			              folderGroupCollapsed["folders:personal"] ? null : (
 			                <div className={sharedFoldersByOwner.length > 0 ? "pl-6" : ""}>
 			                  {ownedFolders.map((folder) => {
-			                const folderChats = chats.filter(
-			                  (c) => !c.archivedAt && c.folderId === folder.id
-			                );
+				                const folderChats = chats.filter(
+				                  (c) =>
+				                    !c.archivedAt &&
+				                    c.folderId === folder.id &&
+				                    !pinnedChatIds.has(c.id)
+				                );
 			                return (
                   <div className="space-y-1" key={folder.id}>
                     <div
@@ -2667,14 +2670,45 @@ export function HomeClient({
 	                              }}
 	                              type="button"
                             >
-                              <div className="truncate">
-                                {chat.title.trim() ? chat.title : "New chat"}
-                              </div>
-                            </button>
+	                              <div className="truncate">
+	                                {chat.title.trim() ? chat.title : "New chat"}
+	                              </div>
+	                            </button>
 
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
+	                            <Button
+	                              aria-label={
+	                                chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
+	                              }
+	                              className={
+	                                "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                                (chatIsPinned(chat)
+	                                  ? "opacity-100"
+	                                  : "opacity-50 group-hover:opacity-100")
+	                              }
+	                              data-testid={`sidebar:chat-pin:${chat.id}`}
+	                              disabled={!activeProfile || status !== "ready"}
+	                              onClick={(e) => {
+	                                e.preventDefault();
+	                                e.stopPropagation();
+	                                togglePinChatById(chat.id, !chatIsPinned(chat));
+	                              }}
+	                              suppressHydrationWarning
+	                              type="button"
+	                              variant="ghost"
+	                            >
+	                              <PinIcon
+	                                className={
+	                                  "size-4 " +
+	                                  (chatIsPinned(chat)
+	                                    ? "text-sidebar-primary"
+	                                    : "text-muted-foreground")
+	                                }
+	                              />
+	                            </Button>
+
+	                            <DropdownMenu>
+	                              <DropdownMenuTrigger asChild>
+	                                <Button
                                   className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                   data-testid={`sidebar:chat-menu:${chat.id}`}
                                   disabled={
@@ -2843,9 +2877,12 @@ export function HomeClient({
 	                            {ownerGroupCollapsed
 	                              ? null
 	                              : ownerFolders.map((folder) => {
-	                        const folderChats = chats.filter(
-	                          (c) => !c.archivedAt && c.folderId === folder.id
-	                        );
+		                        const folderChats = chats.filter(
+		                          (c) =>
+		                            !c.archivedAt &&
+		                            c.folderId === folder.id &&
+		                            !pinnedChatIds.has(c.id)
+		                        );
 	                        return (
                           <div className="space-y-1" key={folder.id}>
                             <div
@@ -2900,14 +2937,45 @@ export function HomeClient({
                                       }}
                                       type="button"
                                     >
-                                      <div className="truncate">
-                                        {chat.title.trim() ? chat.title : "New chat"}
-                                      </div>
-                                    </button>
+	                                      <div className="truncate">
+	                                        {chat.title.trim() ? chat.title : "New chat"}
+	                                      </div>
+	                                    </button>
 
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <Button
+	                                    <Button
+	                                      aria-label={
+	                                        chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
+	                                      }
+	                                      className={
+	                                        "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                                        (chatIsPinned(chat)
+	                                          ? "opacity-100"
+	                                          : "opacity-50 group-hover:opacity-100")
+	                                      }
+	                                      data-testid={`sidebar:chat-pin:${chat.id}`}
+	                                      disabled={!activeProfile || status !== "ready"}
+	                                      onClick={(e) => {
+	                                        e.preventDefault();
+	                                        e.stopPropagation();
+	                                        togglePinChatById(chat.id, !chatIsPinned(chat));
+	                                      }}
+	                                      suppressHydrationWarning
+	                                      type="button"
+	                                      variant="ghost"
+	                                    >
+	                                      <PinIcon
+	                                        className={
+	                                          "size-4 " +
+	                                          (chatIsPinned(chat)
+	                                            ? "text-sidebar-primary"
+	                                            : "text-muted-foreground")
+	                                        }
+	                                      />
+	                                    </Button>
+
+	                                    <DropdownMenu>
+	                                      <DropdownMenuTrigger asChild>
+	                                        <Button
                                           className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                           data-testid={`sidebar:chat-menu:${chat.id}`}
                                           disabled={
@@ -3059,14 +3127,43 @@ export function HomeClient({
 	                    }}
 	                    type="button"
                   >
-                    <div className="truncate">
-                      {chat.title.trim() ? chat.title : "New chat"}
-                    </div>
-                  </button>
+	                    <div className="truncate">
+	                      {chat.title.trim() ? chat.title : "New chat"}
+	                    </div>
+	                  </button>
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
+	                  <Button
+	                    aria-label={chatIsPinned(chat) ? "Unpin chat" : "Pin chat"}
+	                    className={
+	                      "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                      (chatIsPinned(chat)
+	                        ? "opacity-100"
+	                        : "opacity-50 group-hover:opacity-100")
+	                    }
+	                    data-testid={`sidebar:chat-pin:${chat.id}`}
+	                    disabled={!activeProfile || status !== "ready"}
+	                    onClick={(e) => {
+	                      e.preventDefault();
+	                      e.stopPropagation();
+	                      togglePinChatById(chat.id, !chatIsPinned(chat));
+	                    }}
+	                    suppressHydrationWarning
+	                    type="button"
+	                    variant="ghost"
+	                  >
+	                    <PinIcon
+	                      className={
+	                        "size-4 " +
+	                        (chatIsPinned(chat)
+	                          ? "text-sidebar-primary"
+	                          : "text-muted-foreground")
+	                      }
+	                    />
+	                  </Button>
+
+	                  <DropdownMenu>
+	                    <DropdownMenuTrigger asChild>
+	                      <Button
                         className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                         data-testid={`sidebar:chat-menu:${chat.id}`}
                         disabled={
