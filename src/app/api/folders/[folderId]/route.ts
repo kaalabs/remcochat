@@ -1,4 +1,4 @@
-import { deleteFolder, updateFolder } from "@/server/folders";
+import { deleteFolder, updateFolderForViewer } from "@/server/folders";
 
 export async function PATCH(
   req: Request,
@@ -18,7 +18,7 @@ export async function PATCH(
   }
 
   try {
-    const folder = updateFolder(body.profileId, folderId, {
+    const folder = updateFolderForViewer(body.profileId, folderId, {
       name: body.name,
       collapsed: body.collapsed,
     });

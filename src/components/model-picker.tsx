@@ -22,6 +22,7 @@ export type ModelPickerProps = {
   value: string;
   onChange: (modelId: string) => void;
   options: ModelOption[];
+  disabled?: boolean;
   className?: string;
   triggerTestId?: string;
 };
@@ -30,12 +31,14 @@ export function ModelPicker({
   value,
   onChange,
   options,
+  disabled,
   className,
   triggerTestId,
 }: ModelPickerProps) {
   const selected = options.find((m) => m.id === value);
   const [open, setOpen] = useState(false);
   const focusOnCloseRef = useRef(false);
+  const isDisabled = Boolean(disabled);
 
   const focusComposer = () => {
     window.requestAnimationFrame(() => {
@@ -50,11 +53,18 @@ export function ModelPicker({
   };
 
   return (
-    <ModelSelector onOpenChange={setOpen} open={open}>
+    <ModelSelector
+      onOpenChange={(next) => {
+        if (isDisabled) return;
+        setOpen(next);
+      }}
+      open={isDisabled ? false : open}
+    >
       <ModelSelectorTrigger asChild>
         <Button
           className={cn("h-8 justify-between gap-2 px-3", className)}
           data-testid={triggerTestId}
+          disabled={isDisabled}
           suppressHydrationWarning
           variant="outline"
         >
@@ -88,6 +98,7 @@ export function ModelPicker({
                 data-testid={`model-option:${option.id}`}
                 key={option.id}
                 onSelect={() => {
+                  if (isDisabled) return;
                   onChange(option.id);
                   focusOnCloseRef.current = true;
                   setOpen(false);

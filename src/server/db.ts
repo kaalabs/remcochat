@@ -50,6 +50,20 @@ function initSchema(database: Database.Database) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_folders_profile_name
       ON chat_folders(profile_id, name COLLATE NOCASE);
 
+    CREATE TABLE IF NOT EXISTS chat_folder_members (
+      folder_id TEXT NOT NULL REFERENCES chat_folders(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      collapsed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (folder_id, profile_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_folder_members_profile
+      ON chat_folder_members(profile_id);
+
+    CREATE INDEX IF NOT EXISTS idx_chat_folder_members_folder
+      ON chat_folder_members(folder_id);
+
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -226,10 +240,23 @@ function initSchema(database: Database.Database) {
     .prepare(`PRAGMA table_info(chat_folders)`)
     .all() as Array<{ name: string }>;
 
+  const chatFolderMemberColumns = database
+    .prepare(`PRAGMA table_info(chat_folder_members)`)
+    .all() as Array<{ name: string }>;
+
   const hasFolderCollapsed = chatFolderColumns.some((c) => c.name === "collapsed");
   if (!hasFolderCollapsed) {
     database.exec(
       `ALTER TABLE chat_folders ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;`
+    );
+  }
+
+  const hasFolderMemberCollapsed = chatFolderMemberColumns.some(
+    (c) => c.name === "collapsed"
+  );
+  if (!hasFolderMemberCollapsed && chatFolderMemberColumns.length > 0) {
+    database.exec(
+      `ALTER TABLE chat_folder_members ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;`
     );
   }
 

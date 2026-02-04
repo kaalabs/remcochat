@@ -16,6 +16,8 @@ export type Chat = {
   title: string;
   modelId: string;
   folderId: string | null;
+  scope?: "owned" | "shared";
+  ownerName?: string;
   chatInstructions: string;
   chatInstructionsRevision: number;
   activatedSkillNames: string[];
@@ -32,6 +34,9 @@ export type ChatFolder = {
   profileId: string;
   name: string;
   collapsed: boolean;
+  scope?: "owned" | "shared";
+  ownerName?: string;
+  sharedWithCount?: number;
   createdAt: string;
   updatedAt: string;
 };

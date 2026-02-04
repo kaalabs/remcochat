@@ -1,4 +1,4 @@
-import { createChat, listChats } from "@/server/chats";
+import { createChat, listAccessibleChats } from "@/server/chats";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   if (!profileId) {
     return Response.json({ error: "Missing profileId." }, { status: 400 });
   }
-  return Response.json({ chats: listChats(profileId) });
+  return Response.json({ chats: listAccessibleChats(profileId) });
 }
 
 export async function POST(req: Request) {
@@ -34,4 +34,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

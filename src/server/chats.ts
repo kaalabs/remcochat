@@ -26,6 +26,11 @@ type ChatRow = {
   forked_from_message_id: string | null;
 };
 
+type AccessibleChatRow = ChatRow & {
+  owner_name: string;
+  scope: "owned" | "shared";
+};
+
 type MessageRow = {
   id: string;
   role: "system" | "user" | "assistant";
@@ -175,6 +180,53 @@ export function listChats(profileId: string): Chat[] {
   return rows.map(rowToChat);
 }
 
+export function listAccessibleChats(profileId: string): Array<Chat & {
+  scope: "owned" | "shared";
+  ownerName: string;
+}> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          chats.id as id,
+          chats.profile_id as profile_id,
+          chats.title as title,
+          chats.model_id as model_id,
+          chats.folder_id as folder_id,
+          chats.chat_instructions as chat_instructions,
+          chats.chat_instructions_revision as chat_instructions_revision,
+          chats.activated_skill_names_json as activated_skill_names_json,
+          chats.created_at as created_at,
+          chats.updated_at as updated_at,
+          chats.archived_at as archived_at,
+          chats.deleted_at as deleted_at,
+          chats.forked_from_chat_id as forked_from_chat_id,
+          chats.forked_from_message_id as forked_from_message_id,
+          profiles.name as owner_name,
+          CASE WHEN chats.profile_id = ? THEN 'owned' ELSE 'shared' END as scope
+        FROM chats
+        JOIN profiles ON profiles.id = chats.profile_id
+        LEFT JOIN chat_folder_members
+          ON chat_folder_members.folder_id = chats.folder_id
+         AND chat_folder_members.profile_id = ?
+        WHERE chats.deleted_at IS NULL
+          AND (
+            chats.profile_id = ?
+            OR chat_folder_members.profile_id = ?
+          )
+        ORDER BY chats.updated_at DESC
+      `
+    )
+    .all(profileId, profileId, profileId, profileId) as AccessibleChatRow[];
+
+  return rows.map((row) => ({
+    ...rowToChat(row),
+    scope: row.scope,
+    ownerName: row.owner_name,
+  }));
+}
+
 export function getChat(chatId: string): Chat {
   const db = getDb();
   const row = db
@@ -187,6 +239,59 @@ export function getChat(chatId: string): Chat {
 
   if (!row) throw new Error("Chat not found.");
   return rowToChat(row);
+}
+
+export function getChatForViewer(profileId: string, chatId: string): Chat & {
+  scope: "owned" | "shared";
+  ownerName: string;
+} {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `
+        SELECT
+          chats.id as id,
+          chats.profile_id as profile_id,
+          chats.title as title,
+          chats.model_id as model_id,
+          chats.folder_id as folder_id,
+          chats.chat_instructions as chat_instructions,
+          chats.chat_instructions_revision as chat_instructions_revision,
+          chats.activated_skill_names_json as activated_skill_names_json,
+          chats.created_at as created_at,
+          chats.updated_at as updated_at,
+          chats.archived_at as archived_at,
+          chats.deleted_at as deleted_at,
+          chats.forked_from_chat_id as forked_from_chat_id,
+          chats.forked_from_message_id as forked_from_message_id,
+          profiles.name as owner_name,
+          CASE WHEN chats.profile_id = ? THEN 'owned' ELSE 'shared' END as scope
+        FROM chats
+        JOIN profiles ON profiles.id = chats.profile_id
+        LEFT JOIN chat_folder_members
+          ON chat_folder_members.folder_id = chats.folder_id
+         AND chat_folder_members.profile_id = ?
+        WHERE chats.id = ?
+          AND chats.deleted_at IS NULL
+          AND (
+            chats.profile_id = ?
+            OR chat_folder_members.profile_id = ?
+          )
+        LIMIT 1
+      `
+    )
+    .get(profileId, profileId, chatId, profileId, profileId) as AccessibleChatRow
+    | undefined;
+
+  if (!row) {
+    throw new Error("Chat not accessible.");
+  }
+
+  return {
+    ...rowToChat(row),
+    scope: row.scope,
+    ownerName: row.owner_name,
+  };
 }
 
 export function recordActivatedSkillName(input: {
@@ -641,10 +746,7 @@ export function saveChatState(input: {
     UIMessage<RemcoChatMessageMetadata>[]
   >;
 }): void {
-  const chat = getChat(input.chatId);
-  if (chat.profileId !== input.profileId) {
-    throw new Error("Chat does not belong to this profile.");
-  }
+  const chat = getChatForViewer(input.profileId, input.chatId);
 
   const messages = stripWebToolPartsFromMessages(input.messages);
   const variantsByUserMessageId = Object.fromEntries(
