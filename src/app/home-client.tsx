@@ -2592,7 +2592,7 @@ export function HomeClient({
 		              {sharedFoldersByOwner.length > 0 ? (
 		                <button
 		                  aria-expanded={!folderGroupCollapsed["folders:personal"]}
-		                  className="flex w-full items-center gap-2 px-2 text-left text-sm font-medium text-muted-foreground"
+		                  className="flex w-full items-center gap-2 px-3 text-left text-sm font-medium text-muted-foreground"
 		                  data-testid="sidebar:folders-personal-toggle"
 		                  onClick={() =>
 		                    setFolderGroupCollapsedValue(
@@ -2628,7 +2628,7 @@ export function HomeClient({
                       data-testid={`sidebar:folder:${folder.id}`}
                     >
                       <button
-                        className="flex min-w-0 flex-1 items-center gap-2 pr-3 py-2 text-left text-sm"
+                        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
                         data-testid={`sidebar:folder-toggle:${folder.id}`}
                         onClick={() =>
                           toggleFolderCollapsed(folder.id, !folder.collapsed)
@@ -2885,7 +2885,7 @@ export function HomeClient({
 		                <div className="space-y-2 pt-2" data-testid="sidebar:folders-shared">
 	                  <button
 	                    aria-expanded={!folderGroupCollapsed["folders:shared"]}
-	                    className="flex w-full items-center gap-2 px-2 text-left text-sm font-medium text-muted-foreground"
+	                    className="flex w-full items-center gap-2 px-3 text-left text-sm font-medium text-muted-foreground"
 	                    data-testid="sidebar:folders-shared-toggle"
 	                    onClick={() =>
 	                      setFolderGroupCollapsedValue(
@@ -2914,7 +2914,7 @@ export function HomeClient({
 	                          <div className="space-y-1 pl-6" key={ownerName}>
 	                            <button
 	                              aria-expanded={!ownerGroupCollapsed}
-		                              className="flex w-full items-center gap-2 pr-2 pt-1 text-left text-sm font-medium text-muted-foreground"
+		                              className="flex w-full items-center gap-2 px-3 pt-1 text-left text-sm font-medium text-muted-foreground"
 	                              onClick={() =>
 	                                setFolderGroupCollapsedValue(
 	                                  ownerGroupId,
