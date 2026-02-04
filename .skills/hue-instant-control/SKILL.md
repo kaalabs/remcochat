@@ -13,7 +13,7 @@ compatibility: |
 allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.3.2"
+  version: "0.3.4"
   purpose: hue-gateway-instant-control
 ---
 
@@ -73,6 +73,8 @@ If `BASE_URL` is not provided, try these in order until health succeeds:
 - Do not parse `result.data` for `clipv2.request`; Hue resources are at `result.body.data`.
 - Do not use `curl -f` for `/v1/actions` calls (it hides useful JSON error bodies); use `curl -sS`.
 - Prefer RID-based `grouped_light.set` (names are often missing/ambiguous for grouped lights).
+- Do not try to parse curl JSON with `python3 - <<'PY' ... json.load(sys.stdin) ... PY` (stdin is already used for the
+  Python program). Use `python3 -c ... <<<"$JSON"` (or `jq`) instead.
 
 ## Quick start (recommended path)
 
@@ -141,6 +143,52 @@ curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
 
 Note: for `clipv2.request` responses, Hue resources are at `result.body.data` (not `result.data`).
 
+4) **Set a named lamp / plug** using `light.set` (fast; no discovery needed):
+
+```bash
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"action":"light.set","args":{"name":"Vibiemme","on":true}}'
+```
+
+Optional helper script (handles base URL selection + readiness + auth):
+
+```bash
+bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Vibiemme" --on true
+```
+
+5) **Set a named room (fast + verified)** using `resolve.by_name` → RID-based `grouped_light.set`:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_set_by_name.sh --room "Woonkamer" --brightness 35 --color-temp-k 2400
+```
+
+6) **Apply a deterministic “vibe” preset** (reduces LLM variability):
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_vibe.sh --room "Woonkamer" --vibe cozy
+```
+
+7) **Set a named zone** (safe by default; requires `--confirm` when it affects >2 rooms):
+
+```bash
+bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false
+bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false --confirm
+```
+
+8) **List all lights in a named zone (read-only; first-time-right)**:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --print-ok
+```
+
+9) **List individual lamps in a named room (read-only; first-time-right)**:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer" --print-ok
+```
+
 ## When you need details
 
 - Full reference (discovery flows, parsing patterns, vibe presets, verification, failure handling): `references/REFERENCE.md`
@@ -149,3 +197,9 @@ Note: for `clipv2.request` responses, Hue resources are at `result.body.data` (n
 
 - Health + readiness: `scripts/health_check.sh`
 - Room discovery: `scripts/list_rooms.sh`
+- Named lamp/plug control: `scripts/light_set_by_name.sh`
+- Named room control: `scripts/room_set_by_name.sh`
+- Vibe presets (room): `scripts/room_vibe.sh`
+- Named zone control: `scripts/zone_set_by_name.sh`
+- List zone lights (read-only): `scripts/zone_list_lights.sh`
+- List room lamps (read-only): `scripts/room_list_lamps.sh`

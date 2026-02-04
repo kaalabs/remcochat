@@ -156,8 +156,8 @@ Gate: Phase 7 may start only after 6.5 passes.
    - scenario: send `/skills-system-validation validate that skills.activate and skills.readResource work`
    - assert: tool cards appear (activate + at least one readResource for `references/REFERENCE.md`)
 7.3 Validate DoD (Phase 7):
-   - run `npm run test:e2e -- -g \"skills\"`
-   - run `npm run test:agent-browser` (required for UI changes)
+   - If explicitly requested: run `npm run test:e2e -- -g \"skills\"`
+   - If explicitly requested: run `npm run test:agent-browser`
 
 Gate: Phase 8 may start only after 7.3 passes.
 
@@ -174,7 +174,7 @@ Only start Phase 8 if you are implementing optional script execution support in 
    - execute `.skills/skills-system-validation/scripts/echo.sh`
    - assert stdout marker `REMCOCHAT_SKILLS_SCRIPT_OK`
 8.3 Validate DoD (Phase 8):
-   - run `npm run test:e2e -- -g \"skills\"` with required env flags for sandbox bash tooling
+   - If explicitly requested: run `npm run test:e2e -- -g \"skills\"` with required env flags for sandbox bash tooling
    - run `.skills/skills-system-validation/SKILL.md` Step 5 and confirm output marker.
 
 Gate: Phase 9 may start only after 8.3 passes (if Phase 8 is executed).
@@ -195,7 +195,7 @@ Gate: Phase 9 may start only after 8.3 passes (if Phase 8 is executed).
    - blocked reads (policy rejections)
 9.4 Validate DoD (Phase 9):
    - run `npm run test:unit`
-   - run `npm run test:e2e -- -g \"skills\"`
+   - If explicitly requested: run `npm run test:e2e -- -g \"skills\"`
    - manual check: `/api/skills` + logs are sufficient to diagnose missing/invalid skills without code changes.
 
 ---
@@ -203,4 +203,3 @@ Gate: Phase 9 may start only after 8.3 passes (if Phase 8 is executed).
 ## Completion criterion
 
 The skills system implementation is considered delivered when Phases 0–7 are complete (and Phase 8 only if chosen), and Phase 9 hardening is complete, with every phase’s final validation task passing in order.
-

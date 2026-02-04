@@ -197,6 +197,81 @@ async function getGroupedLightOnState(rid: string): Promise<boolean> {
   return on;
 }
 
+async function getGroupedLightState(rid: string): Promise<{
+  on: boolean;
+  brightness: number | null;
+  mirek: number | null;
+}> {
+  const out = await hueHostAction({
+    action: "clipv2.request",
+    args: { method: "GET", path: `/clip/v2/resource/grouped_light/${rid}` },
+  });
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to read grouped_light state (status=${out.status}).`);
+  }
+
+  const body = (out.json.result as any)?.body ?? {};
+  const data = Array.isArray(body.data) ? body.data : [];
+  const gl = data?.[0] ?? {};
+
+  const on = Boolean(gl?.on?.on);
+  const brightnessRaw = gl?.dimming?.brightness;
+  const brightness =
+    typeof brightnessRaw === "number" && Number.isFinite(brightnessRaw) ? brightnessRaw : null;
+
+  const mirekRaw = gl?.color_temperature?.mirek;
+  const mirek = typeof mirekRaw === "number" && Number.isFinite(mirekRaw) ? mirekRaw : null;
+
+  return { on, brightness, mirek };
+}
+
+async function getLightRidByName(lightName: string): Promise<string> {
+  const out = await hueHostAction({
+    action: "clipv2.request",
+    args: { method: "GET", path: "/clip/v2/resource/light" },
+  });
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to list lights from Hue Gateway (status=${out.status}).`);
+  }
+
+  const body = (out.json.result as any)?.body ?? {};
+  const lights = Array.isArray(body.data) ? body.data : [];
+  const target = lights.find((l: any) => {
+    const name = String(l?.metadata?.name ?? "").trim();
+    return name.toLowerCase() === lightName.toLowerCase();
+  });
+  const rid = String(target?.id ?? "").trim();
+  return rid;
+}
+
+async function getLightOnState(rid: string): Promise<boolean> {
+  const out = await hueHostAction({
+    action: "clipv2.request",
+    args: { method: "GET", path: `/clip/v2/resource/light/${rid}` },
+  });
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to read light state (status=${out.status}).`);
+  }
+
+  const body = (out.json.result as any)?.body ?? {};
+  const data = Array.isArray(body.data) ? body.data : [];
+  const on = Boolean(data?.[0]?.on?.on);
+  return on;
+}
+
+async function setGroupedLightState(
+  rid: string,
+  args: { on?: boolean; brightness?: number; colorTempK?: number }
+) {
+  const out = await hueHostAction({
+    action: "grouped_light.set",
+    args: { rid, ...args },
+  });
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to set grouped_light state (status=${out.status}).`);
+  }
+}
+
 async function getLightDeviceNamesForRoom(roomName: string): Promise<string[]> {
   const roomsOut = await hueHostAction({
     action: "clipv2.request",
@@ -241,6 +316,52 @@ async function getLightDeviceNamesForRoom(roomName: string): Promise<string[]> {
     if (!hasLightService) continue;
 
     const name = String((d as any)?.metadata?.name ?? "").trim();
+    if (name) names.push(name);
+  }
+
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+async function getLightNamesForZone(zoneName: string): Promise<string[] | null> {
+  const zonesOut = await hueHostAction({
+    action: "clipv2.request",
+    args: { method: "GET", path: "/clip/v2/resource/zone" },
+  });
+  if (!zonesOut.ok || !zonesOut.json || zonesOut.json.ok !== true) {
+    throw new Error(`Failed to list zones from Hue Gateway (status=${zonesOut.status}).`);
+  }
+
+  const zonesBody = (zonesOut.json.result as any)?.body ?? {};
+  const zones = Array.isArray(zonesBody.data) ? zonesBody.data : [];
+  const zone = zones.find((z: any) => {
+    const name = String(z?.metadata?.name ?? "").trim();
+    return name.toLowerCase() === zoneName.toLowerCase();
+  });
+  if (!zone) return null;
+
+  const zoneLightIds = new Set(
+    (Array.isArray(zone.children) ? zone.children : [])
+      .filter((c: any) => String(c?.rtype ?? "") === "light")
+      .map((c: any) => String(c?.rid ?? "").trim())
+      .filter(Boolean)
+  );
+  if (zoneLightIds.size === 0) return [];
+
+  const lightsOut = await hueHostAction({
+    action: "clipv2.request",
+    args: { method: "GET", path: "/clip/v2/resource/light" },
+  });
+  if (!lightsOut.ok || !lightsOut.json || lightsOut.json.ok !== true) {
+    throw new Error(`Failed to list lights from Hue Gateway (status=${lightsOut.status}).`);
+  }
+
+  const lightsBody = (lightsOut.json.result as any)?.body ?? {};
+  const lights = Array.isArray(lightsBody.data) ? lightsBody.data : [];
+  const names: string[] = [];
+  for (const l of lights) {
+    const id = String(l?.id ?? "").trim();
+    if (!id || !zoneLightIds.has(id)) continue;
+    const name = String(l?.metadata?.name ?? "").trim();
     if (name) names.push(name);
   }
 
@@ -423,9 +544,8 @@ test.describe("hue-instant-control", () => {
                   "Maak een lijst van alle lampen (individuele licht devices) die beschikbaar zijn in de Woonkamer.",
                   "Constraints:",
                   "- Use bash tool.",
-                  "- Do base URL selection + readyz with tight timeouts.",
                   "- Read-only: do NOT call grouped_light.set or light.set.",
-                  "- Use clipv2.request to read room + device resources.",
+                  "- Prefer running: bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room \"Woonkamer\" --print-ok",
                   "- Output only the lamp names, one per line, then final line: ok",
                 ].join("\n"),
               },
@@ -444,10 +564,7 @@ test.describe("hue-instant-control", () => {
     expect(getUIMessageStreamErrors(chunks)).toEqual([]);
 
     const bashJoined = extractBashCommands(chunks).join("\n\n");
-    expect(bashJoined).toContain("--connect-timeout 1");
-    expect(bashJoined).toContain("/readyz");
-    expect(bashJoined).toContain("/v1/actions");
-    expect(bashJoined).toContain("/clip/v2/resource/");
+    expect(bashJoined).toContain("room_list_lamps.sh");
     expect(bashJoined).not.toContain("grouped_light.set");
     expect(bashJoined).not.toContain("light.set");
 
@@ -578,5 +695,226 @@ test.describe("hue-instant-control", () => {
     expect(bashResults.length).toBeGreaterThan(0);
     expect(bashResults.some((r) => r.exitCode === 0)).toBeTruthy();
     expect(getUIMessageStreamText(chunks)).toContain("ok");
+  });
+
+  test("controls a named light by name (Vibiemme) idempotently", async ({ request }) => {
+    test.skip(!ENABLE_DOCKER_SANDBOXD, "Set REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD=1 to run this test.");
+    test.skip(!isDockerAvailable(), "Docker is not available (docker info failed).");
+
+    const health = await fetch(`${HUE_HOST_BASE_URL}/healthz`, { method: "GET" }).catch(() => null);
+    test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
+
+    const vibiemmeRid = await getLightRidByName("Vibiemme");
+    test.skip(!vibiemmeRid, "No light named Vibiemme found on the Hue Bridge.");
+
+    const modelId = await getToolsEnabledModelId(request);
+    test.skip(!modelId, "No tools-enabled model found for active provider.");
+
+    const wasOn = await getLightOnState(vibiemmeRid);
+
+    const profileId = await createProfile(request);
+    const temporarySessionId = `e2e-hue-vibiemme-${Date.now()}`;
+
+    const chatRes = await request.post("/api/chat", {
+      data: {
+        profileId,
+        modelId,
+        temporary: true,
+        temporarySessionId,
+        messages: [
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: [
+                  "/hue-instant-control",
+                  `Set the light named \"Vibiemme\" on=${wasOn ? "true" : "false"} (idempotent).`,
+                  "Constraints:",
+                  "- Use bash tool.",
+                  "- Do base URL selection + readyz with tight timeouts.",
+                  "- Prefer running: bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name \"Vibiemme\" --on <true|false>.",
+                  "- Do NOT call grouped_light.set.",
+                  "Reply with: ok",
+                ].join("\n"),
+              },
+            ],
+            metadata: { createdAt: new Date().toISOString() },
+          },
+        ],
+      },
+    });
+
+    expect(chatRes.ok()).toBeTruthy();
+    const headers = chatRes.headers();
+    expect(headers["x-remcochat-bash-tools-enabled"]).toBe("1");
+
+    const chunks = parseUIMessageStreamChunks(await chatRes.body());
+    expect(getUIMessageStreamErrors(chunks)).toEqual([]);
+
+    const bashJoined = extractBashCommands(chunks).join("\n\n");
+    expect(bashJoined).toContain("light_set_by_name.sh");
+    expect(bashJoined).not.toContain("grouped_light.set");
+
+    const bashResults = extractBashResults(chunks);
+    expect(bashResults.length).toBeGreaterThan(0);
+    expect(bashResults.some((r) => r.exitCode === 0)).toBeTruthy();
+
+    const nowOn = await getLightOnState(vibiemmeRid);
+    expect(nowOn).toBe(wasOn);
+    expect(getUIMessageStreamText(chunks)).toContain("ok");
+  });
+
+  test("applies a deterministic vibe preset in Woonkamer and restores previous state", async ({ request }) => {
+    test.skip(!ENABLE_DOCKER_SANDBOXD, "Set REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD=1 to run this test.");
+    test.skip(!isDockerAvailable(), "Docker is not available (docker info failed).");
+
+    const health = await fetch(`${HUE_HOST_BASE_URL}/healthz`, { method: "GET" }).catch(() => null);
+    test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
+
+    const modelId = await getToolsEnabledModelId(request);
+    test.skip(!modelId, "No tools-enabled model found for active provider.");
+
+    const woonkamerRid = await getGroupedLightRidForRoom("Woonkamer").catch(() => "");
+    test.skip(!woonkamerRid, "Room not found: Woonkamer");
+
+    const prev = await getGroupedLightState(woonkamerRid);
+
+    const profileId = await createProfile(request);
+    const temporarySessionId = `e2e-hue-vibe-${Date.now()}`;
+
+    try {
+      const chatRes = await request.post("/api/chat", {
+        data: {
+          profileId,
+          modelId,
+          temporary: true,
+          temporarySessionId,
+          messages: [
+            {
+              id: `user-${Date.now()}`,
+              role: "user",
+              parts: [
+                {
+                  type: "text",
+                  text: [
+                    "/hue-instant-control",
+                    "Make Woonkamer cozy using the deterministic vibe helper.",
+                    "Constraints:",
+                    "- Use bash tool.",
+                    "- Do base URL selection + readyz with tight timeouts.",
+                    "- Prefer running: bash ./.skills/hue-instant-control/scripts/room_vibe.sh --room \"Woonkamer\" --vibe cozy.",
+                    "Reply with: ok",
+                  ].join("\n"),
+                },
+              ],
+              metadata: { createdAt: new Date().toISOString() },
+            },
+          ],
+        },
+      });
+
+      expect(chatRes.ok()).toBeTruthy();
+      const headers = chatRes.headers();
+      expect(headers["x-remcochat-bash-tools-enabled"]).toBe("1");
+
+      const chunks = parseUIMessageStreamChunks(await chatRes.body());
+      expect(getUIMessageStreamErrors(chunks)).toEqual([]);
+
+      const bashJoined = extractBashCommands(chunks).join("\n\n");
+      expect(bashJoined).toContain("room_vibe.sh");
+      expect(bashJoined).toContain("--vibe");
+
+      const bashResults = extractBashResults(chunks);
+      expect(bashResults.length).toBeGreaterThan(0);
+      expect(bashResults.some((r) => r.exitCode === 0)).toBeTruthy();
+
+      const now = await getGroupedLightState(woonkamerRid);
+      expect(now.on).toBe(true);
+      if (now.brightness !== null) {
+        expect(now.brightness).toBeGreaterThanOrEqual(20);
+        expect(now.brightness).toBeLessThanOrEqual(50);
+      }
+      expect(getUIMessageStreamText(chunks)).toContain("ok");
+    } finally {
+      const revertArgs: { on?: boolean; brightness?: number; colorTempK?: number } = {
+        on: prev.on,
+      };
+      if (prev.brightness !== null) revertArgs.brightness = prev.brightness;
+      if (prev.mirek !== null && prev.mirek > 0) {
+        revertArgs.colorTempK = Math.round(1_000_000 / prev.mirek);
+      }
+      await setGroupedLightState(woonkamerRid, revertArgs).catch(() => null);
+    }
+  });
+
+  test("lists lights in the Beneden zone (read-only)", async ({ request }) => {
+    test.skip(!ENABLE_DOCKER_SANDBOXD, "Set REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD=1 to run this test.");
+    test.skip(!isDockerAvailable(), "Docker is not available (docker info failed).");
+
+    const health = await fetch(`${HUE_HOST_BASE_URL}/healthz`, { method: "GET" }).catch(() => null);
+    test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
+
+    const expected = await getLightNamesForZone("Beneden");
+    test.skip(expected === null, "No zone found named Beneden.");
+    test.skip(expected.length === 0, "No lights found in zone Beneden.");
+
+    const modelId = await getToolsEnabledModelId(request);
+    test.skip(!modelId, "No tools-enabled model found for active provider.");
+
+    const profileId = await createProfile(request);
+    const temporarySessionId = `e2e-hue-zone-lights-${Date.now()}`;
+
+    const chatRes = await request.post("/api/chat", {
+      data: {
+        profileId,
+        modelId,
+        temporary: true,
+        temporarySessionId,
+        messages: [
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: [
+                  "/hue-instant-control",
+                  "List all lights available in the 'Beneden' zone.",
+                  "Constraints:",
+                  "- Use bash tool.",
+                  "- Do base URL selection + readyz with tight timeouts.",
+                  "- Read-only: do NOT call grouped_light.set or light.set.",
+                  "- Prefer running: bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone \"Beneden\" --print-ok",
+                  "- Output only the light names, one per line, then final line: ok",
+                ].join("\n"),
+              },
+            ],
+            metadata: { createdAt: new Date().toISOString() },
+          },
+        ],
+      },
+    });
+
+    expect(chatRes.ok()).toBeTruthy();
+    const headers = chatRes.headers();
+    expect(headers["x-remcochat-bash-tools-enabled"]).toBe("1");
+
+    const chunks = parseUIMessageStreamChunks(await chatRes.body());
+    expect(getUIMessageStreamErrors(chunks)).toEqual([]);
+
+    const bashJoined = extractBashCommands(chunks).join("\n\n");
+    expect(bashJoined).toContain("zone_list_lights.sh");
+    expect(bashJoined).not.toContain("grouped_light.set");
+    expect(bashJoined).not.toContain("light.set");
+
+    const bashResults = extractBashResults(chunks);
+    expect(bashResults.length).toBeGreaterThan(0);
+    expect(bashResults.some((r) => r.exitCode === 0)).toBeTruthy();
+
+    const text = getUIMessageStreamText(chunks);
+    expect(text).toContain("ok");
+    expect(text).toContain(expected[0] ?? "");
   });
 });

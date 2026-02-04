@@ -146,6 +146,8 @@ This enables:
 
 ## E2E
 
+E2E runs are opt-in (they may require real credentials). Only run them when explicitly requested.
+
 ### Playwright
 
 - Install WebKit once: `npx playwright install webkit`

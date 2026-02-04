@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3100;
+const PORT = Number(process.env.REMCOCHAT_E2E_PORT ?? 3100);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const E2E_DB = "data/remcochat-e2e.sqlite";
 const E2E_CONFIG = "data/remcochat-e2e-config.toml";

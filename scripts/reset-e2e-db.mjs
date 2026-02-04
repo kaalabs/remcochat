@@ -28,6 +28,15 @@ try {
   // ignore
 }
 
+// SQLite WAL mode can leave sidecar files around which must be removed as well when resetting.
+for (const suffix of ["-wal", "-shm", "-journal"]) {
+  try {
+    fs.rmSync(`${dbPath}${suffix}`, { force: true });
+  } catch {
+    // ignore
+  }
+}
+
 try {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   const example = fs.readFileSync(exampleConfigPath, "utf8");

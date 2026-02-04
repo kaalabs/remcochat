@@ -122,8 +122,9 @@ Minimalistic, modern ChatGPT-like chatbot for **local network use** (no auth). U
   - “Memorize this” creates a memory item and it influences a subsequent chat response
   - Weather tool renders a weather card
   - Export returns expected content
+- E2E runs are opt-in: only run them when explicitly requested.
 - Current: `npm run test:e2e` runs a WebKit (Safari-engine) E2E against a dedicated SQLite DB (`data/remcochat-e2e.sqlite`). It uses the real AI Gateway key from your shell (same requirement as `npm run dev/start`).
-- Also run the end-user smoke via `agent-browser`: `npm run test:agent-browser`.
+- Optional (when explicitly requested): run the end-user smoke via `agent-browser`: `npm run test:agent-browser`.
 
 ## Hardening (Optional)
 - Admin backup/export + reset tools are available when `REMCOCHAT_ENABLE_ADMIN=1` is set:
@@ -148,7 +149,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - `config.toml` is ignored by git; `config.toml.example` documents the schema.
 - `GET /api/providers` returns the configured providers and their allowed models.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e -- -g "Providers config endpoint"`
 
 ### Deliverable 2 — Persistent active provider + switching API
@@ -161,7 +162,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - Switching provider updates the DB setting and affects subsequent API responses.
 - If the active provider is removed from `config.toml`, the app safely falls back to the config default.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e -- -g "Switch active provider"`
 
 ### Deliverable 3 — Config-driven model list (replace hardcoded allowlist)
@@ -174,7 +175,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - No hardcoded model allowlist remains; only models present in `config.toml` are selectable/accepted.
 - Existing chats/profiles with an invalid model id are migrated or clamped to a configured default.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e -- -g "Model selector uses config models"`
 
 ### Deliverable 4 — Provider adapters for `/api/chat`
@@ -187,7 +188,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - `/api/chat` uses the active provider when resolving a model id.
 - Existing behavior remains unchanged when using the default Vercel AI Gateway config.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e -- -g "Chat uses active provider"`
 
 ### Deliverable 5 — Admin panel route for provider switching
@@ -200,7 +201,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - Switching provider from `/admin` updates the persisted `active_provider_id` and is reflected in `GET /api/providers`.
 - When admin is disabled, `/admin` is not accessible.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e -- -g "Admin panel switches provider"`
 
 ### Deliverable 6 — Models.dev-backed model catalog (modelsdev CLI)
@@ -216,7 +217,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - Switching active provider changes the active model list without requiring a rebuild (server restart still required for updated `modelsdev` metadata).
 - Admin can browse all models per provider and edit which ones are allowed (and the router model) via `/admin` (persists to `config.toml`).
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e`
 
 ### Deliverable 7 — Complete model-type adapters (Choice A: “any model type”)
@@ -229,7 +230,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - `/api/chat` reliably triggers weather tools when asked (card only; no duplicate text output).
 - E2E API-level chat tests fail on stream errors instead of passing silently.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e`
 - Optional (requires OpenCode Gemini access): `REMCOCHAT_E2E_ENABLE_GOOGLE_GEMINI=1 npm run test:e2e -- -g "Google Generative AI model type"`
 
@@ -249,7 +250,7 @@ Goal: introduce a global `config.toml` that defines multiple AI gateway provider
 - `/api/chat` never attempts tool calling when the selected model lacks `tools`.
 - `/api/chat` never sends `temperature` when the selected model lacks `temperature`.
 
-**Testcase**
+**E2E testcase (run only when explicitly requested)**
 - `npm run test:e2e`
 
 ## Spec — Model Types (Any Gateway / Any Model API)

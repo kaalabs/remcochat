@@ -352,8 +352,8 @@
           "id": "7.3",
           "title": "Validate DoD (Phase 7)",
           "details": [
-            "Run `npm run test:e2e -- -g \"skills\"`",
-            "Run `npm run test:agent-browser` (required for UI changes)"
+            "If explicitly requested: run `npm run test:e2e -- -g \"skills\"`",
+            "If explicitly requested: run `npm run test:agent-browser`"
           ],
           "status": "completed"
         }
@@ -387,7 +387,7 @@
           "id": "8.3",
           "title": "Validate DoD (Phase 8)",
           "details": [
-            "Run `npm run test:e2e -- -g \"skills\"` with required env flags for sandbox bash tooling",
+            "If explicitly requested: run `npm run test:e2e -- -g \"skills\"` with required env flags for sandbox bash tooling",
             "Run `.skills/skills-system-validation/SKILL.md` Step 5 and confirm output marker"
           ],
           "status": "completed"
@@ -432,7 +432,7 @@
           "title": "Validate DoD (Phase 9)",
           "details": [
             "Run `npm run test:unit`",
-            "Run `npm run test:e2e -- -g \"skills\"`",
+            "If explicitly requested: run `npm run test:e2e -- -g \"skills\"`",
             "Manual check: `/api/skills` + logs are sufficient to diagnose missing/invalid skills without code changes"
           ],
           "status": "completed"

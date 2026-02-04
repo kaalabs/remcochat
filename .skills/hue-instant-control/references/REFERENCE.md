@@ -344,6 +344,25 @@ curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
   -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":false}}'
 ```
 
+Helper script (fast + verified; resolves room name to grouped_light rid safely):
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_set_by_name.sh --room "Woonkamer" --on false
+```
+
+### Individual lamp / plug on/off (fast path)
+
+If the user provides an individual device name (e.g. a smart plug like “Vibiemme”), prefer `light.set` by `name` first:
+
+```bash
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+  -H 'Content-Type: application/json' \
+  -H "$AUTH_HEADER" \
+  -d '{"action":"light.set","args":{"name":"Vibiemme","on":true}}'
+```
+
+Helper script (repo default install layout): `bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Vibiemme" --on true`
+
 ### Brightness (0–100)
 
 ```json
@@ -394,6 +413,36 @@ Use these defaults unless the user specifies otherwise:
 
 If the user says “make it X” but also mentions “not too bright”, respect that constraint first.
 
+Deterministic vibe helper (removes LLM variability):
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_vibe.sh --room "Woonkamer" --vibe cozy
+```
+
+## Zone fast-path (downstairs/upstairs)
+
+Zones can affect many rooms. Prefer requiring confirmation before executing a zone change:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false
+bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false --confirm
+```
+
+## List lights in a zone (read-only; preferred)
+
+For end-user prompts like “list all lights available in the 'Beneden' zone”, prefer the helper script below instead of
+writing a large `jq` program.
+
+```bash
+bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden"
+```
+
+For E2E/chat-friendly output with a trailing sentinel:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --print-ok
+```
+
 ## Conversation patterns (make it feel great)
 
 - If the user: “make woonkamer cozy”
@@ -403,6 +452,20 @@ If the user says “make it X” but also mentions “not too bright”, respect
   - After confirmation: apply to those rooms, then summarize.
 - If the user: “set it to reading mode”
   - Ask: “Which room?” if not specified; then apply focus/bright but slightly warmer (e.g. 3500–4500K) if the user said “reading”.
+
+## List lamps in a room (read-only; preferred)
+
+For end-user prompts like “list all lamps available in the Woonkamer”, prefer:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer"
+```
+
+For E2E/chat-friendly output with a trailing sentinel:
+
+```bash
+bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer" --print-ok
+```
 
 ## Verification (don’t skip for multi-room changes)
 
