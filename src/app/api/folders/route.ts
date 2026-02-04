@@ -1,4 +1,4 @@
-import { createFolder, listFolders } from "@/server/folders";
+import { createFolder, listAccessibleFolders } from "@/server/folders";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   if (!profileId) {
     return Response.json({ error: "Missing profileId." }, { status: 400 });
   }
-  return Response.json({ folders: listFolders(profileId) });
+  return Response.json({ folders: listAccessibleFolders(profileId) });
 }
 
 export async function POST(req: Request) {
@@ -25,4 +25,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

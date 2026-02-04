@@ -53,6 +53,8 @@ export function resetAllData(): void {
   const db = getDb();
   db.exec(`
     PRAGMA foreign_keys = OFF;
+    DELETE FROM chat_folder_members;
+    DELETE FROM chat_folders;
     DELETE FROM agenda_item_members;
     DELETE FROM agenda_items;
     DELETE FROM list_members;

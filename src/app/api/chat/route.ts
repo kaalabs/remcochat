@@ -1,6 +1,7 @@
 import type { AgendaToolOutput, RemcoChatMessageMetadata } from "@/lib/types";
 import {
   getChat,
+  getChatForViewer,
   listTurnAssistantTexts,
   recordActivatedSkillName,
   updateChat,
@@ -1335,10 +1336,12 @@ export async function POST(req: Request) {
     return Response.json({ error: "Missing chatId." }, { status: 400 });
   }
 
-  const chat = getChat(body.chatId);
-  if (chat.profileId !== profile.id) {
+  let chat: ReturnType<typeof getChatForViewer>;
+  try {
+    chat = getChatForViewer(profile.id, body.chatId);
+  } catch (err) {
     return Response.json(
-      { error: "Chat does not belong to this profile." },
+      { error: err instanceof Error ? err.message : "Chat not accessible." },
       { status: 400 }
     );
   }
@@ -1346,7 +1349,8 @@ export async function POST(req: Request) {
   if (
     typeof body.modelId === "string" &&
     isModelAllowedForActiveProvider(body.modelId) &&
-    body.modelId !== chat.modelId
+    body.modelId !== chat.modelId &&
+    chat.scope === "owned"
   ) {
     updateChat(chat.id, { modelId: body.modelId });
   }
