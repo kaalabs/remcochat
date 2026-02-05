@@ -104,6 +104,18 @@ const BashToolsSchema = z
   })
   .optional();
 
+const HueGatewaySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    access: z.enum(["localhost", "lan"]).optional(),
+    base_urls: z.array(z.string().min(1)).optional(),
+    timeout_ms: z.number().int().min(1_000).max(120_000).optional(),
+    auth_header_env: z.string().min(1).optional(),
+    bearer_token_env: z.string().min(1).optional(),
+    api_key_env: z.string().min(1).optional(),
+  })
+  .optional();
+
 const AttachmentsSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -139,6 +151,7 @@ const RawConfigSchema = z.object({
     skills: SkillsSchema,
     reasoning: ReasoningSchema,
     bash_tools: BashToolsSchema,
+    hue_gateway: HueGatewaySchema,
     attachments: AttachmentsSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
@@ -215,6 +228,15 @@ export type RemcoChatConfig = {
       gitRevision: string | null;
       uploadInclude: string;
     };
+  } | null;
+  hueGateway: {
+    enabled: boolean;
+    access: "localhost" | "lan";
+    baseUrls: string[];
+    timeoutMs: number;
+    authHeaderEnv: string;
+    bearerTokenEnv: string;
+    apiKeyEnv: string;
   } | null;
   attachments: {
     enabled: boolean;
@@ -640,6 +662,95 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     };
   }
 
+  let hueGateway: RemcoChatConfig["hueGateway"] = null;
+  const rawHueGateway = raw.app.hue_gateway ?? {};
+  const hueGatewayEnabled = Boolean(rawHueGateway.enabled ?? false);
+  if (hueGatewayEnabled) {
+    const access = rawHueGateway.access ?? "localhost";
+    const defaultBaseUrls = [
+      "http://hue-gateway:8000",
+      "http://host.docker.internal:8000",
+      "http://localhost:8000",
+    ];
+    const baseUrlsRaw = Array.isArray(rawHueGateway.base_urls)
+      ? rawHueGateway.base_urls.map((u) => String(u).trim()).filter(Boolean)
+      : [];
+    const baseUrlsInput = baseUrlsRaw.length > 0 ? baseUrlsRaw : defaultBaseUrls;
+
+    const seenBaseUrls = new Set<string>();
+    const baseUrls: string[] = [];
+    for (const rawUrl of baseUrlsInput) {
+      const trimmed = String(rawUrl ?? "").trim().replace(/\/+$/, "");
+      if (!trimmed) continue;
+
+      let parsed: URL;
+      try {
+        parsed = new URL(trimmed);
+      } catch {
+        throw new Error(
+          `config.toml: app.hue_gateway.base_urls contains an invalid URL: ${JSON.stringify(trimmed)}`
+        );
+      }
+
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error(
+          `config.toml: app.hue_gateway.base_urls must use http(s): ${JSON.stringify(trimmed)}`
+        );
+      }
+      if (parsed.username || parsed.password) {
+        throw new Error(
+          `config.toml: app.hue_gateway.base_urls must not include credentials: ${JSON.stringify(trimmed)}`
+        );
+      }
+      if (parsed.pathname && parsed.pathname !== "/") {
+        throw new Error(
+          `config.toml: app.hue_gateway.base_urls must not include a path: ${JSON.stringify(trimmed)}`
+        );
+      }
+      if (parsed.search || parsed.hash) {
+        throw new Error(
+          `config.toml: app.hue_gateway.base_urls must not include a query/hash: ${JSON.stringify(trimmed)}`
+        );
+      }
+
+      const normalized = `${parsed.protocol}//${parsed.host}`.replace(/\/+$/, "");
+      if (!normalized) continue;
+      if (seenBaseUrls.has(normalized)) continue;
+      seenBaseUrls.add(normalized);
+      baseUrls.push(normalized);
+    }
+
+    if (baseUrls.length === 0) {
+      throw new Error(
+        "config.toml: app.hue_gateway.base_urls must include at least one base URL"
+      );
+    }
+
+    const timeoutMs = Math.min(
+      120_000,
+      Math.max(1_000, Math.floor(Number(rawHueGateway.timeout_ms ?? 8_000)))
+    );
+
+    const authHeaderEnv = String(rawHueGateway.auth_header_env ?? "HUE_AUTH_HEADER").trim();
+    const bearerTokenEnv = String(rawHueGateway.bearer_token_env ?? "HUE_TOKEN").trim();
+    const apiKeyEnv = String(rawHueGateway.api_key_env ?? "HUE_API_KEY").trim();
+    if (!authHeaderEnv || !bearerTokenEnv || !apiKeyEnv) {
+      throw new Error(
+        "config.toml: app.hue_gateway.*_env values must be non-empty environment variable names"
+      );
+    }
+
+    hueGateway = {
+      enabled: true,
+      access,
+      baseUrls,
+      timeoutMs,
+      authHeaderEnv,
+      bearerTokenEnv,
+      apiKeyEnv,
+    };
+  }
+
   const defaultAllowedMediaTypes = [
     "text/plain",
     "text/markdown",
@@ -728,6 +839,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
       googleThinkingBudget,
     },
     bashTools,
+    hueGateway,
     attachments: {
       enabled: attachmentsEnabled,
       allowedMediaTypes,

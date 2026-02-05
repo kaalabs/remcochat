@@ -1,26 +1,62 @@
-# Hue Instant Control — Reference
+# Hue Instant Control — Reference (Hue Gateway v2)
 
 This file contains the detailed operational reference for the `hue-instant-control` skill.
-Keep `SKILL.md` short; only load this reference when you need deeper guidance or longer snippets.
+Keep `SKILL.md` short; load this reference only when you need deeper guidance, exact payload shapes, or troubleshooting.
 
-## Dependencies / environment
+## Execution paths (choose in this order)
 
-- Required: `curl`
-- Optional (for parsing): `jq` or `python3`
-- Network: reachability to the Hue Gateway base URL from the *execution environment* (host vs sandbox differs).
+### 1) Server-side tool: `hueGateway` (preferred)
+
+If the `hueGateway` tool is present in the tool list, use it:
+
+- It calls Hue Gateway **v2** (`POST /v2/actions`) directly from the server (no bash/curl).
+- It sets correlation + idempotency deterministically (safe retries without “remembering” keys).
+- It applies safe defaults for matching and (some) verification.
+- It retries **at most once** on `409 idempotency_in_progress` and `429 rate_limited` / `bridge_rate_limited` using `retryAfterMs`.
+
+Tool input shape:
+
+```json
+{ "action": "<v2 action>", "args": { } }
+```
+
+Do **not** generate `requestId` / `idempotencyKey` yourself when using the tool.
+
+Recommended actions:
+- Read-only discovery: `inventory.snapshot`
+- Actuation: `room.set`, `zone.set`, `light.set`, `grouped_light.set`, `scene.activate`
+- Name resolution: `resolve.by_name` (use when inventory matching is insufficient)
+- Escape hatch (read-only): `clipv2.request` with `method=GET|HEAD|OPTIONS`
+- Multi-step: `actions.batch` (sequential)
+
+### 2) Bash fallback (still v2)
+
+Only use Bash when:
+- the user explicitly asks for bash/curl,
+- tool calling is unavailable, or
+- Hue v2 tools are disabled by config / access policy.
+
+Prefer executing the bundled scripts in `./.skills/hue-instant-control/scripts/`:
+
+- `health_check.sh` → base URL selection + `/readyz` check
+- `list_rooms.sh` → `inventory.snapshot` rooms list (`name\tgroupedLightRid\trid`)
+- `room_set_by_name.sh` → `room.set` (verified by default; `verified=false` is a warning)
+- `zone_set_by_name.sh` → `zone.set` (dry-run + confirm safety gate)
+- `light_set_by_name.sh` → `light.set`
+- `room_vibe.sh` → deterministic presets (delegates to `room_set_by_name.sh`)
+- `zone_list_lights.sh` → inventory-based zone light listing (names or TSV)
+- `room_list_lamps.sh` → inventory-based room light listing
 
 ## Gateway connection
 
 - Base URL default (recommended for sandbox networking): `http://hue-gateway:8000`
-- Auth header (either works for `/v1/*`):
+- Auth header (either works for `/v2/*`):
   - `Authorization: Bearer dev-token`
   - `X-API-Key: dev-key`
 
 Important: if you are executing via a sandboxed Bash tool, `localhost` refers to the sandbox, not the host machine.
 
-### Auth header selection (recommended)
-
-In bash, prefer selecting a single `AUTH_HEADER` once and then using `-H "$AUTH_HEADER"` in all requests:
+### Auth header selection (bash)
 
 ```bash
 AUTH_HEADER="${HUE_AUTH_HEADER:-}"
@@ -33,24 +69,9 @@ if [ -z "$AUTH_HEADER" ]; then
 fi
 ```
 
-### Base URL selection
+### Base URL selection + readiness (bash)
 
-1) If the user provides a base URL, use it.
-2) Otherwise, try these in order until health succeeds:
-   - `http://hue-gateway:8000` (recommended when Hue Gateway is attached to the sandbox network)
-   - `http://host.docker.internal:8000` (common for Docker Desktop on macOS/Windows)
-   - `http://localhost:8000` (only works when executing on the same host/network namespace as the gateway)
-3) If none work, ask the user for a base URL reachable **from the execution environment**.
-   - Have them verify from that same environment: `curl -fsS --connect-timeout 1 --max-time 2 <base>/healthz`
-
-### Health check (fast; run once per chat)
-
-Use `scripts/health_check.sh` (recommended), or inline the pattern below.
-
-Notes:
-
-- When using RemcoChat bash tools, each tool call runs in a fresh shell; keep base URL selection + actions in the same call, or set `BASE_URL` explicitly each time.
-- If you are running from the RemcoChat repo root and this skill is under `./.skills` (default), invoke as `bash ./.skills/hue-instant-control/scripts/health_check.sh`.
+Use `scripts/health_check.sh` (recommended), or inline:
 
 ```bash
 set -euo pipefail
@@ -69,7 +90,6 @@ fi
 
 [ -n "$BASE_URL" ] || { echo "Hue Gateway not reachable from this environment."; exit 1; }
 BASE_URL="${BASE_URL%/}"
-echo "Using BASE_URL=$BASE_URL"
 
 READY_JSON="$($CURL_HEALTH "$BASE_URL/readyz")"
 case "$READY_JSON" in
@@ -78,420 +98,107 @@ case "$READY_JSON" in
 esac
 ```
 
-If `ready=false`, do not proceed.
+## Hue Gateway API v2 contract (what to build to)
 
-## Core API pattern (single envelope)
+Endpoints:
+- `POST /v2/actions`
+- `GET /v2/events/stream` (SSE; resume with `Last-Event-ID`)
 
-All actions use:
+Canonical envelope everywhere (including 401/429):
 
-`POST {BASE_URL}/v1/actions` with JSON:
+- Success: `{"requestId": "...", "action": "...", "ok": true, "result": ...}`
+- Error: `{"requestId": "...", "action": "...", "ok": false, "error": { "code": "...", "message": "...", "details": {} }}`
 
-```json
-{ "requestId":"optional", "action":"<action>", "args": { } }
-```
+Correlation vs idempotency:
+- Correlation: `X-Request-Id` header preferred; body `requestId` echoed.
+  - If both header + body are present they must match → else `400 request_id_mismatch`.
+- Idempotency: `Idempotency-Key` header preferred; optional body `idempotencyKey`.
+  - Header wins; mismatch → `400 invalid_idempotency_key`.
 
-Success returns `"ok": true` and a `"result"` payload.
-Failure returns `"ok": false` and an `"error"` payload. Some failures also use non-2xx HTTP status codes.
+Retry/backoff:
+- `409 idempotency_in_progress` returns `Retry-After` and/or `error.details.retryAfterMs`.
+- `429 rate_limited` / `bridge_rate_limited` returns backoff hints similarly.
+- Treat those as “wait then retry once” (scripts/tools do bounded retries; do not loop indefinitely).
 
-### Response shape gotcha (avoid empty parsing)
+Verification:
+- State-changing actions return verification fields and `warnings[]`.
+- `ok:true` can still mean `verified:false` → treat as success with warning unless the user asked for strict convergence.
 
-The gateway always wraps responses in the action envelope.
+## Inventory (recommended discovery model)
 
-- For calls that return a Hue Bridge response (`action=clipv2.request`, `light.set`, `grouped_light.set`, `scene.activate`), the Hue Bridge JSON is nested under `result.body`.
-  - Hue resources are typically at `result.body.data`
-  - Hue errors (if any) are typically at `result.body.errors`
+`inventory.snapshot` returns a normalized read model and a `revision`. In the full response:
 
-Example (shape):
+- `rooms[]`: `{ rid, name, groupedLightRid }`
+- `zones[]`: `{ rid, name, groupedLightRid, roomRids[]? }`
+- `lights[]`: `{ rid, name, ownerDeviceRid, roomRid? }`
 
-```json
-{
-  "ok": true,
-  "action": "clipv2.request",
-  "result": {
-    "status": 200,
-    "body": { "errors": [], "data": [ /* resources */ ] }
-  }
-}
-```
+Use inventory for:
+- listing rooms/zones/lights
+- mapping zone → rooms → lights
+- mapping room → lights
 
-When parsing rooms/lights, use `result.body.data`, not `result.data`.
+## Curl templates (v2)
 
-## How you execute actions
+Always use tight timeouts:
+- `curl -sS --connect-timeout 1 --max-time 8`
+- Avoid `curl -f` (it hides the useful JSON envelope on 4xx/5xx).
 
-If the Bash tool is available, use it to run curl commands. Otherwise, output exact curl commands for the user.
-
-When using Bash + curl:
-- Add `Content-Type: application/json`
-- Use `AUTH_HEADER` (see above) unless the user provides another token/key.
-- Use `--connect-timeout 1 --max-time 8` so failures are fast.
-- Prefer one Bash tool call per user request: run a short bash script (`set -euo pipefail`) that does base URL selection and all needed `/v1/actions` calls.
-
-For `/v1/actions`, prefer `curl -sS` (not `-f`) so you still receive the JSON error body on 4xx/5xx.
-
-## Bash JSON parsing patterns (avoid env-var bugs)
-
-If you capture JSON into a shell variable (e.g. `ROOMS_JSON="$(...)"`), that variable is **not** visible to Python via
-`os.environ[...]` unless you explicitly export it.
-
-Recommended (robust): pass the JSON via stdin using a here-string.
-
-Important: do **not** use `python3 -` for this. `python3 -` reads the *Python program* from stdin, so you cannot also
-use stdin for JSON input.
-
-Assumes `BASE_URL` and `AUTH_HEADER` are already set (see sections above).
+### inventory.snapshot (read-only)
 
 ```bash
-ROOMS_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+REQ_ID="bash-snap-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
-
-PY_CODE="$(cat <<'PY'
-import json,sys
-resp=json.load(sys.stdin)
-rooms=((resp.get("result") or {}).get("body") or {}).get("data") or []
-for r in rooms:
-    if (r.get("metadata") or {}).get("name") == "Woonkamer":
-        print(r.get("id",""))
-        break
-PY
-)"
-
-ROOM_RID="$(python3 -c "$PY_CODE" <<<"$ROOMS_JSON")"
+  -d "$(printf '{"requestId":"%s","action":"inventory.snapshot","args":{}}' "$REQ_ID")"
 ```
 
-Allowed (but easier to mess up): export then read from env:
+### room.set (state change; idempotent)
 
 ```bash
-export ROOMS_JSON
-python3 - <<'PY'
-import os
-rooms_json=os.environ.get('ROOMS_JSON','')
-PY
-```
-
-### Verification parsing (multiple JSON blobs)
-
-If you need to parse multiple JSON blobs in one Python run, use `python3 -c` and pass the JSON lines in order:
-
-```bash
-PY_VERIFY="$(cat <<'PY'
-import json,sys
-set_resp=json.loads(sys.stdin.readline())
-ver_resp=json.loads(sys.stdin.readline())
-print("SET ok=", set_resp.get("ok"))
-vbody=((ver_resp.get("result") or {}).get("body") or {})
-data=vbody.get("data") or []
-if data:
-    gl=data[0]
-    print("VERIFY on.on=", (gl.get("on") or {}).get("on"))
-    print("VERIFY brightness=", (gl.get("dimming") or {}).get("brightness"))
-PY
-)"
-
-printf '%s\n%s\n' "$SET_JSON" "$VERIFY_JSON" | python3 -c "$PY_VERIFY"
-```
-
-## Discovery flow (mapping fuzzy names → entities)
-
-You need a stable mapping of room/zone names to controllable IDs.
-
-### Step A — List rooms (fast default)
-
-Call:
-
-```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+REQ_ID="bash-room-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+IDEM_KEY="bash-idem-room-$REQ_ID"
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
+  -H "Idempotency-Key: $IDEM_KEY" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
+  -d "$(printf '{"requestId":"%s","idempotencyKey":"%s","action":"room.set","args":{"roomName":"%s","state":{"on":true,"brightness":35,"colorTempK":2400}}}' \
+    "$REQ_ID" "$IDEM_KEY" "Woonkamer")"
 ```
 
-Optional helper (RemcoChat default install layout): if this skill is under `./.skills` and you are running from the repo root, you can get a parsed list via:
+### grouped_light.set (state change; low-level)
 
 ```bash
-bash ./.skills/hue-instant-control/scripts/list_rooms.sh
-```
-
-Parsing tip (jq, if available):
-
-```bash
-# Prints: <room-name>\t<grouped_light_rid>
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+REQ_ID="bash-gl-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+IDEM_KEY="bash-idem-gl-$REQ_ID"
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
+  -H "Idempotency-Key: $IDEM_KEY" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}' \
-| jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)"'
+  -d "$(printf '{"requestId":"%s","idempotencyKey":"%s","action":"grouped_light.set","args":{"rid":"%s","state":{"on":true,"brightness":35}}}' \
+    "$REQ_ID" "$IDEM_KEY" "<GROUPED_LIGHT_RID>")"
 ```
 
-Then, for each room:
-- Find `services[]` where `rtype == "grouped_light"`
-- Use that `rid` as the controllable ID for the room’s lights.
-
-Speed tip: for a single-room command, this list-rooms call + one `grouped_light.set` is usually the fastest and most reliable path.
-
-### Step B — Optional: list zones (if user asks “downstairs”, “upstairs”, etc.)
+### clipv2.request (read-only escape hatch)
 
 ```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+REQ_ID="bash-clip-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/zone"}}'
+  -d "$(printf '{"requestId":"%s","action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}' "$REQ_ID")"
 ```
 
-Zones also typically have a `grouped_light` service.
-
-### Step C — Resolve by name (fast path)
-
-If listing rooms/zones is unexpectedly large, you may resolve the *room/zone* first, then extract its `grouped_light` service rid.
-
-```json
-{ "action":"resolve.by_name", "args": { "rtype":"room", "name":"Woonkamer" } }
-```
-
-Then fetch the room resource and extract the grouped light rid:
-
-```json
-{ "action":"clipv2.request", "args": { "method":"GET", "path":"/clip/v2/resource/room/<ROOM_RID>" } }
-```
-
-Important: `grouped_light` resources are often unnamed (no `metadata.name`), so do not rely on `resolve.by_name` with `rtype="grouped_light"`.
-
-If it returns ambiguous (409), ask the user to pick.
-
-### Step D — List individual lamps in a room (read-only)
-
-User prompts like “list all lamps in the woonkamer” are **read-only**.
-
-Recommended flow (no state changes):
-
-1) Get the room resource (either list rooms or `resolve.by_name` + fetch the room)
-2) Collect its `children[]` `device` rids
-3) List devices and keep only those that actually expose a `light` service
-4) Output `device.metadata.name` as the lamp list
-
-Example (room name known; uses stdin parsing so it cannot hit `os.environ[...]` KeyErrors):
-
-```bash
-# Resolve room rid (fast) and fetch the room resource
-RESOLVE_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d '{"action":"resolve.by_name","args":{"rtype":"room","name":"Woonkamer"}}')"
-
-PY_RESOLVE="$(cat <<'PY'
-import json,sys
-resp=json.load(sys.stdin)
-matched=(resp.get('result') or {}).get('matched') or {}
-print(matched.get('rid',''))
-PY
-)"
-
-ROOM_RID="$(python3 -c "$PY_RESOLVE" <<<"$RESOLVE_JSON")"
-
-[ -n "$ROOM_RID" ] || { echo "Room not found" >&2; exit 1; }
-
-ROOM_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d "{\"action\":\"clipv2.request\",\"args\":{\"method\":\"GET\",\"path\":\"/clip/v2/resource/room/$ROOM_RID\"}}")"
-
-DEVICE_JSON="$(curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/device"}}')"
-
-PY_LIST="$(cat <<'PY'
-import json,sys
-room_resp=json.loads(sys.stdin.readline())
-dev_resp=json.loads(sys.stdin.readline())
-
-room=((room_resp.get('result') or {}).get('body') or {}).get('data') or []
-devices=((dev_resp.get('result') or {}).get('body') or {}).get('data') or []
-
-room0=room[0] if room else {}
-child_device_ids={c.get('rid') for c in (room0.get('children') or []) if c.get('rtype')=='device' and c.get('rid')}
-
-names=[]
-for d in devices:
-    if d.get('id') not in child_device_ids:
-        continue
-    services=d.get('services') or []
-    if not any(s.get('rtype')=='light' for s in services):
-        continue
-    name=((d.get('metadata') or {}).get('name') or '').strip()
-    if name:
-        names.append(name)
-
-for name in sorted(set(names), key=lambda s: s.lower()):
-    print(name)
-PY
-)"
-
-printf '%s\n%s\n' "$ROOM_JSON" "$DEVICE_JSON" | python3 -c "$PY_LIST"
-```
-
-## Instant control actions
-
-### Room on/off (most common)
-
-Use `grouped_light.set` with the room’s `grouped_light` rid:
-
-```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":false}}'
-```
-
-Helper script (fast + verified; resolves room name to grouped_light rid safely):
-
-```bash
-bash ./.skills/hue-instant-control/scripts/room_set_by_name.sh --room "Woonkamer" --on false
-```
-
-### Individual lamp / plug on/off (fast path)
-
-If the user provides an individual device name (e.g. a smart plug like “Vibiemme”), prefer `light.set` by `name` first:
-
-```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d '{"action":"light.set","args":{"name":"Vibiemme","on":true}}'
-```
-
-Helper script (repo default install layout): `bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Vibiemme" --on true`
-
-### Brightness (0–100)
-
-```json
-{ "action":"grouped_light.set", "args": { "rid":"...", "on": true, "brightness": 35 } }
-```
-
-### Warm/cool white (color temperature)
-
-Use Kelvin:
-
-```json
-{ "action":"grouped_light.set", "args": { "rid":"...", "on": true, "colorTempK": 2200 } }
-```
-
-### Simple colors (only if user asks for color)
-
-Prefer scenes if available. If not, you may set `xy` using rough presets.
-
-Important: `xy` is an object: `{ "x": <number>, "y": <number> }`.
-
-- red: `{ "x": 0.700, "y": 0.299 }`
-- green: `{ "x": 0.170, "y": 0.700 }`
-- blue: `{ "x": 0.150, "y": 0.060 }`
-- purple: `{ "x": 0.270, "y": 0.110 }`
-
-Example:
-
-```json
-{ "action":"grouped_light.set", "args": { "rid":"...", "on": true, "brightness": 45, "xy": {"x": 0.150, "y": 0.060} } }
-```
-
-If the user requests a nuanced color (“teal”, “sunset”), ask whether they want a **scene** (recommended) or accept a best-effort color.
-
-## “Vibe” translation (fuzzy → concrete)
-
-Use these defaults unless the user specifies otherwise:
-
-- **cozy / warm / relaxing**
-  - on: true, brightness: 25–45, colorTempK: 2000–2700
-- **focus / working / bright**
-  - on: true, brightness: 70–100, colorTempK: 4000–5500
-- **movie night**
-  - on: true, brightness: 5–20, colorTempK: 2000–2400 (or a dim blue/purple if asked)
-- **nightlight / don’t wake anyone**
-  - on: true, brightness: 1–10, colorTempK: 2000–2200
-- **wake up / energize**
-  - on: true, brightness: 60–90, colorTempK: 3500–5000
-
-If the user says “make it X” but also mentions “not too bright”, respect that constraint first.
-
-Deterministic vibe helper (removes LLM variability):
-
-```bash
-bash ./.skills/hue-instant-control/scripts/room_vibe.sh --room "Woonkamer" --vibe cozy
-```
-
-## Zone fast-path (downstairs/upstairs)
-
-Zones can affect many rooms. Prefer requiring confirmation before executing a zone change:
-
-```bash
-bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false
-bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstairs" --on false --confirm
-```
-
-## List lights in a zone (read-only; preferred)
-
-For end-user prompts like “list all lights available in the 'Beneden' zone”, prefer the helper script below instead of
-writing a large `jq` program.
-
-```bash
-bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden"
-```
-
-For E2E/chat-friendly output with a trailing sentinel:
-
-```bash
-bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --print-ok
-```
-
-## Conversation patterns (make it feel great)
-
-- If the user: “make woonkamer cozy”
-  - Do it immediately (single room), then reply: “Done — Woonkamer is now cozy (warm, dim). Want the same in Keukenblok?”
-- If the user: “turn off the lights downstairs”
-  - Ask: “Which rooms count as downstairs for you? I currently see: <top 4 candidates>”
-  - After confirmation: apply to those rooms, then summarize.
-- If the user: “set it to reading mode”
-  - Ask: “Which room?” if not specified; then apply focus/bright but slightly warmer (e.g. 3500–4500K) if the user said “reading”.
-
-## List lamps in a room (read-only; preferred)
-
-For end-user prompts like “list all lamps available in the Woonkamer”, prefer:
-
-```bash
-bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer"
-```
-
-For E2E/chat-friendly output with a trailing sentinel:
-
-```bash
-bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer" --print-ok
-```
-
-## Verification (don’t skip for multi-room changes)
-
-After setting a room, verify at least once:
-
-```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/grouped_light/<RID>"}}'
-```
-
-Confirm:
-- `on.on`
-- `dimming.brightness` (if present)
-
-## Failure handling
-
-If gateway returns:
-- `ready=false`: stop and tell user the gateway is not paired/configured.
-- `401`: ask user for correct token/key.
-- `409 ambiguous_name`: show choices and ask user to pick.
-- `404 not_found`: usually means you tried to address a resource by name where it has no name (common with `grouped_light`). Switch to RID-based control.
-- `424` / `502`: tell user bridge is unreachable and stop.
-- `429`: tell user it is rate-limited; wait briefly and retry once, otherwise stop.
-
-If `action=clipv2.request` returns `"ok": true` but `result.status` is not 2xx:
-- treat it as a failed bridge operation
-- show `result.body.errors` (if present)
+Note: for `clipv2.request`, Hue Bridge resources are nested under `result.body.data`.
+
+## Troubleshooting checklist
+
+- `healthz` works but `readyz` is `ready=false`: the gateway is up but not paired/configured; don’t proceed.
+- `401`/`403`: auth header wrong/missing.
+- `400 request_id_mismatch`: you set both `X-Request-Id` and body `requestId` but they differ.
+- `409 idempotency_in_progress`: wait then retry once (use retryAfter hints).
+- `verified=false`: treat as success with warning; do not auto-loop unless the user asked for strict verification.

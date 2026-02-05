@@ -138,14 +138,44 @@ type HueActionResponse = {
   error?: unknown;
 };
 
+function isStateChangingE2E(action: string, args: any): boolean {
+  if (action === "inventory.snapshot") return false;
+  if (action === "resolve.by_name") return false;
+  if (action === "clipv2.request") return false;
+  if (action === "zone.set") return args?.dryRun !== true;
+  return true;
+}
+
 async function hueHostAction(payload: Record<string, unknown>) {
-  const res = await fetch(`${HUE_HOST_BASE_URL}/v1/actions`, {
+  const action = String((payload as any)?.action ?? "").trim();
+  const args = (payload as any)?.args ?? {};
+
+  const requestId =
+    typeof (payload as any)?.requestId === "string" && String((payload as any).requestId).trim()
+      ? String((payload as any).requestId).trim()
+      : `e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  const nextPayload: Record<string, unknown> = { ...payload, requestId };
+
+  const stateChanging = isStateChangingE2E(action, args);
+  const idempotencyKey =
+    stateChanging && typeof (payload as any)?.idempotencyKey === "string" && String((payload as any).idempotencyKey).trim()
+      ? String((payload as any).idempotencyKey).trim()
+      : stateChanging
+        ? `e2e-idem-${requestId}`
+        : null;
+
+  if (idempotencyKey) nextPayload.idempotencyKey = idempotencyKey;
+
+  const res = await fetch(`${HUE_HOST_BASE_URL}/v2/actions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "X-Request-Id": requestId,
       Authorization: "Bearer dev-token",
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(nextPayload),
   });
   const text = await res.text();
   let json: HueActionResponse | null = null;
@@ -160,24 +190,26 @@ async function hueHostAction(payload: Record<string, unknown>) {
 
 async function getGroupedLightRidForRoom(roomName: string): Promise<string> {
   const out = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/room" },
+    action: "inventory.snapshot",
+    args: {},
   });
   if (!out.ok || !out.json || out.json.ok !== true) {
     throw new Error(`Failed to list rooms from Hue Gateway (status=${out.status}).`);
   }
 
-  const body = (out.json.result as any)?.body ?? {};
-  const rooms = Array.isArray(body.data) ? body.data : [];
+  const result = (out.json.result as any) ?? {};
+  if (result?.notModified === true) {
+    throw new Error(`inventory.snapshot returned notModified=true (revision=${String(result?.revision ?? "")}).`);
+  }
+
+  const rooms = Array.isArray(result.rooms) ? result.rooms : [];
   const target = rooms.find((r: any) => {
-    const name = String(r?.metadata?.name ?? "").trim();
+    const name = String(r?.name ?? "").trim();
     return name.toLowerCase() === roomName.toLowerCase();
   });
   if (!target) throw new Error(`Room not found: ${roomName}`);
 
-  const services = Array.isArray(target.services) ? target.services : [];
-  const gl = services.find((s: any) => String(s?.rtype ?? "") === "grouped_light");
-  const rid = String(gl?.rid ?? "").trim();
+  const rid = String(target?.groupedLightRid ?? "").trim();
   if (!rid) throw new Error(`Missing grouped_light rid for room: ${roomName}`);
   return rid;
 }
@@ -227,20 +259,24 @@ async function getGroupedLightState(rid: string): Promise<{
 
 async function getLightRidByName(lightName: string): Promise<string> {
   const out = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/light" },
+    action: "inventory.snapshot",
+    args: {},
   });
   if (!out.ok || !out.json || out.json.ok !== true) {
-    throw new Error(`Failed to list lights from Hue Gateway (status=${out.status}).`);
+    throw new Error(`Failed to fetch inventory.snapshot from Hue Gateway (status=${out.status}).`);
   }
 
-  const body = (out.json.result as any)?.body ?? {};
-  const lights = Array.isArray(body.data) ? body.data : [];
+  const result = (out.json.result as any) ?? {};
+  if (result?.notModified === true) {
+    throw new Error(`inventory.snapshot returned notModified=true (revision=${String(result?.revision ?? "")}).`);
+  }
+
+  const lights = Array.isArray(result.lights) ? result.lights : [];
   const target = lights.find((l: any) => {
-    const name = String(l?.metadata?.name ?? "").trim();
+    const name = String(l?.name ?? "").trim();
     return name.toLowerCase() === lightName.toLowerCase();
   });
-  const rid = String(target?.id ?? "").trim();
+  const rid = String(target?.rid ?? "").trim();
   return rid;
 }
 
@@ -265,57 +301,43 @@ async function setGroupedLightState(
 ) {
   const out = await hueHostAction({
     action: "grouped_light.set",
-    args: { rid, ...args },
+    args: { rid, state: { ...args } },
   });
   if (!out.ok || !out.json || out.json.ok !== true) {
     throw new Error(`Failed to set grouped_light state (status=${out.status}).`);
   }
 }
 
-async function getLightDeviceNamesForRoom(roomName: string): Promise<string[]> {
-  const roomsOut = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/room" },
+async function getLightNamesForRoom(roomName: string): Promise<string[]> {
+  const out = await hueHostAction({
+    action: "inventory.snapshot",
+    args: {},
   });
-  if (!roomsOut.ok || !roomsOut.json || roomsOut.json.ok !== true) {
-    throw new Error(`Failed to list rooms from Hue Gateway (status=${roomsOut.status}).`);
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to fetch inventory.snapshot from Hue Gateway (status=${out.status}).`);
   }
 
-  const roomsBody = (roomsOut.json.result as any)?.body ?? {};
-  const rooms = Array.isArray(roomsBody.data) ? roomsBody.data : [];
+  const result = (out.json.result as any) ?? {};
+  if (result?.notModified === true) {
+    throw new Error(`inventory.snapshot returned notModified=true (revision=${String(result?.revision ?? "")}).`);
+  }
+
+  const rooms = Array.isArray(result.rooms) ? result.rooms : [];
   const room = rooms.find((r: any) => {
-    const name = String(r?.metadata?.name ?? "").trim();
+    const name = String(r?.name ?? "").trim();
     return name.toLowerCase() === roomName.toLowerCase();
   });
   if (!room) throw new Error(`Room not found: ${roomName}`);
 
-  const childDeviceIds = new Set(
-    (Array.isArray(room.children) ? room.children : [])
-      .filter((c: any) => String(c?.rtype ?? "") === "device")
-      .map((c: any) => String(c?.rid ?? "").trim())
-      .filter(Boolean)
-  );
+  const roomRid = String(room?.rid ?? "").trim();
+  if (!roomRid) throw new Error(`Room missing rid: ${roomName}`);
 
-  const devicesOut = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/device" },
-  });
-  if (!devicesOut.ok || !devicesOut.json || devicesOut.json.ok !== true) {
-    throw new Error(`Failed to list devices from Hue Gateway (status=${devicesOut.status}).`);
-  }
-
-  const devicesBody = (devicesOut.json.result as any)?.body ?? {};
-  const devices = Array.isArray(devicesBody.data) ? devicesBody.data : [];
+  const lights = Array.isArray(result.lights) ? result.lights : [];
   const names: string[] = [];
-  for (const d of devices) {
-    const id = String((d as any)?.id ?? "").trim();
-    if (!id || !childDeviceIds.has(id)) continue;
-
-    const services = Array.isArray((d as any)?.services) ? (d as any).services : [];
-    const hasLightService = services.some((s: any) => String(s?.rtype ?? "") === "light");
-    if (!hasLightService) continue;
-
-    const name = String((d as any)?.metadata?.name ?? "").trim();
+  for (const l of lights) {
+    const lightRoomRid = String((l as any)?.roomRid ?? "").trim();
+    if (!lightRoomRid || lightRoomRid !== roomRid) continue;
+    const name = String((l as any)?.name ?? "").trim();
     if (name) names.push(name);
   }
 
@@ -323,45 +345,38 @@ async function getLightDeviceNamesForRoom(roomName: string): Promise<string[]> {
 }
 
 async function getLightNamesForZone(zoneName: string): Promise<string[] | null> {
-  const zonesOut = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/zone" },
+  const out = await hueHostAction({
+    action: "inventory.snapshot",
+    args: {},
   });
-  if (!zonesOut.ok || !zonesOut.json || zonesOut.json.ok !== true) {
-    throw new Error(`Failed to list zones from Hue Gateway (status=${zonesOut.status}).`);
+  if (!out.ok || !out.json || out.json.ok !== true) {
+    throw new Error(`Failed to fetch inventory.snapshot from Hue Gateway (status=${out.status}).`);
   }
 
-  const zonesBody = (zonesOut.json.result as any)?.body ?? {};
-  const zones = Array.isArray(zonesBody.data) ? zonesBody.data : [];
+  const result = (out.json.result as any) ?? {};
+  if (result?.notModified === true) {
+    throw new Error(`inventory.snapshot returned notModified=true (revision=${String(result?.revision ?? "")}).`);
+  }
+
+  const zones = Array.isArray(result.zones) ? result.zones : [];
   const zone = zones.find((z: any) => {
-    const name = String(z?.metadata?.name ?? "").trim();
+    const name = String(z?.name ?? "").trim();
     return name.toLowerCase() === zoneName.toLowerCase();
   });
   if (!zone) return null;
 
-  const zoneLightIds = new Set(
-    (Array.isArray(zone.children) ? zone.children : [])
-      .filter((c: any) => String(c?.rtype ?? "") === "light")
-      .map((c: any) => String(c?.rid ?? "").trim())
-      .filter(Boolean)
+  const roomRids = Array.isArray(zone.roomRids) ? zone.roomRids : [];
+  const roomRidSet = new Set(
+    roomRids.map((r: any) => String(r ?? "").trim()).filter((r: string) => Boolean(r))
   );
-  if (zoneLightIds.size === 0) return [];
+  if (roomRidSet.size === 0) return [];
 
-  const lightsOut = await hueHostAction({
-    action: "clipv2.request",
-    args: { method: "GET", path: "/clip/v2/resource/light" },
-  });
-  if (!lightsOut.ok || !lightsOut.json || lightsOut.json.ok !== true) {
-    throw new Error(`Failed to list lights from Hue Gateway (status=${lightsOut.status}).`);
-  }
-
-  const lightsBody = (lightsOut.json.result as any)?.body ?? {};
-  const lights = Array.isArray(lightsBody.data) ? lightsBody.data : [];
+  const lights = Array.isArray(result.lights) ? result.lights : [];
   const names: string[] = [];
   for (const l of lights) {
-    const id = String(l?.id ?? "").trim();
-    if (!id || !zoneLightIds.has(id)) continue;
-    const name = String(l?.metadata?.name ?? "").trim();
+    const roomRid = String((l as any)?.roomRid ?? "").trim();
+    if (!roomRid || !roomRidSet.has(roomRid)) continue;
+    const name = String((l as any)?.name ?? "").trim();
     if (name) names.push(name);
   }
 
@@ -440,6 +455,62 @@ test.describe("hue-instant-control", () => {
     await stopSandboxd(sandboxdProc);
   });
 
+  test("uses hueGateway tool to list rooms (no bash)", async ({ request }) => {
+    const health = await fetch(`${HUE_HOST_BASE_URL}/healthz`, { method: "GET" }).catch(() => null);
+    test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
+
+    const modelId = await getToolsEnabledModelId(request);
+    test.skip(!modelId, "No tools-enabled model found for active provider.");
+
+    const profileId = await createProfile(request);
+    const temporarySessionId = `e2e-hue-tool-rooms-${Date.now()}`;
+
+    const chatRes = await request.post("/api/chat", {
+      data: {
+        profileId,
+        modelId,
+        temporary: true,
+        temporarySessionId,
+        messages: [
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: [
+                  "/hue-instant-control",
+                  "Use the hueGateway tool (not bash) to call inventory.snapshot and list Hue room names.",
+                  "Requirements:",
+                  "- Do not use the bash tool.",
+                  "- Read-only: do NOT change any light state.",
+                  "Reply with: done",
+                ].join("\n"),
+              },
+            ],
+            metadata: { createdAt: new Date().toISOString() },
+          },
+        ],
+      },
+    });
+
+    expect(chatRes.ok()).toBeTruthy();
+    const chunks = parseUIMessageStreamChunks(await chatRes.body());
+    expect(getUIMessageStreamErrors(chunks)).toEqual([]);
+
+    const activated = extractToolInputs(chunks, "skillsActivate");
+    expect(activated.some((i) => String(i?.name ?? "") === "hue-instant-control")).toBeTruthy();
+
+    const hueGatewayInputs = extractToolInputs(chunks, "hueGateway");
+    expect(hueGatewayInputs.length).toBeGreaterThan(0);
+    expect(hueGatewayInputs.some((i) => String(i?.action ?? "") === "inventory.snapshot")).toBeTruthy();
+
+    const bashCommands = extractBashCommands(chunks);
+    expect(bashCommands).toEqual([]);
+
+    expect(getUIMessageStreamText(chunks)).toContain("done");
+  });
+
   test("lists rooms from sandbox without changing lights", async ({ request }) => {
     test.skip(!ENABLE_DOCKER_SANDBOXD, "Set REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD=1 to run this test.");
     test.skip(!isDockerAvailable(), "Docker is not available (docker info failed).");
@@ -473,7 +544,8 @@ test.describe("hue-instant-control", () => {
                   "- Use the bash tool (do not just print curl).",
                   "- Do NOT change any light state.",
                   "- Use tight curl timeouts (--connect-timeout 1, --max-time).",
-                  "- List rooms via clipv2.request GET /clip/v2/resource/room.",
+                  "- Prefer running: bash ./.skills/hue-instant-control/scripts/list_rooms.sh",
+                  "- List rooms via v2 inventory.snapshot (not clipv2.request).",
                   "Reply with: done",
                 ].join("\n"),
               },
@@ -500,9 +572,12 @@ test.describe("hue-instant-control", () => {
     expect(bashJoined).toContain("--connect-timeout 1");
     expect(bashJoined).toContain("/healthz");
     expect(bashJoined).toContain("/readyz");
-    expect(bashJoined).toContain("/v1/actions");
-    expect(bashJoined).toContain("/clip/v2/resource/room");
+    expect(bashJoined).toContain("/v2/actions");
+    expect(bashJoined).toContain("inventory.snapshot");
     expect(bashJoined).not.toContain("grouped_light.set");
+    expect(bashJoined).not.toContain("room.set");
+    expect(bashJoined).not.toContain("zone.set");
+    expect(bashJoined).not.toContain("light.set");
 
     const bashResults = extractBashResults(chunks);
     expect(bashResults.length).toBeGreaterThan(0);
@@ -517,8 +592,8 @@ test.describe("hue-instant-control", () => {
     const health = await fetch(`${HUE_HOST_BASE_URL}/healthz`, { method: "GET" }).catch(() => null);
     test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
 
-    const expected = await getLightDeviceNamesForRoom("Woonkamer");
-    test.skip(expected.length === 0, "No light devices found in room Woonkamer.");
+    const expected = await getLightNamesForRoom("Woonkamer");
+    test.skip(expected.length === 0, "No lights found in room Woonkamer.");
 
     const modelId = await getToolsEnabledModelId(request);
     test.skip(!modelId, "No tools-enabled model found for active provider.");
@@ -541,12 +616,12 @@ test.describe("hue-instant-control", () => {
                 type: "text",
                 text: [
                   "/hue-instant-control",
-                  "Maak een lijst van alle lampen (individuele licht devices) die beschikbaar zijn in de Woonkamer.",
+                  "Maak een lijst van alle lampen (Hue lights) die beschikbaar zijn in de Woonkamer.",
                   "Constraints:",
                   "- Use bash tool.",
                   "- Read-only: do NOT call grouped_light.set or light.set.",
                   "- Prefer running: bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room \"Woonkamer\" --print-ok",
-                  "- Output only the lamp names, one per line, then final line: ok",
+                  "- Output only the light names, one per line, then final line: ok",
                 ].join("\n"),
               },
             ],
@@ -620,6 +695,9 @@ test.describe("hue-instant-control", () => {
 
     const bashCommands = extractBashCommands(chunks).join("\n\n");
     expect(bashCommands).not.toContain("grouped_light.set");
+    expect(bashCommands).not.toContain("room.set");
+    expect(bashCommands).not.toContain("zone.set");
+    expect(bashCommands).not.toContain("light.set");
 
     const text = getUIMessageStreamText(chunks);
     expect(text).toMatch(/\?/);
@@ -683,7 +761,7 @@ test.describe("hue-instant-control", () => {
     const bashCommands = extractBashCommands(chunks);
     expect(bashCommands.length).toBeGreaterThan(0);
     const bashJoined = bashCommands.join("\n\n");
-    expect(bashJoined).toContain("/v1/actions");
+    expect(bashJoined).toContain("/v2/actions");
     expect(bashJoined).toContain("grouped_light.set");
     expect(bashJoined).toMatch(/grouped_light\.set[\s\S]{0,400}rid/);
     expect(bashJoined).toMatch(/grouped_light\.set[\s\S]{0,400}on/);

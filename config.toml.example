@@ -113,6 +113,23 @@ git_url = ""         # required if mode="git"
 git_revision = ""    # optional
 upload_include = "**/*" # used only for mode="upload"
 
+# Hue Gateway API v2 integration (optional).
+#
+# This enables the server-side `hueGateway` tool (preferred) which calls the Hue Gateway directly
+# using typed `/v2/actions` requests (no bash/curl).
+#
+# Auth values are read from environment variables at runtime; do not put secrets in config.toml.
+[app.hue_gateway]
+enabled = false
+access = "localhost" # "localhost" (localhost requests only) | "lan" (requires admin policy / token)
+base_urls = ["http://hue-gateway:8000", "http://host.docker.internal:8000", "http://localhost:8000"]
+timeout_ms = 8000
+
+# Env var NAMES (not secret values):
+auth_header_env = "HUE_AUTH_HEADER" # full header line (e.g. "Authorization: Bearer ...")
+bearer_token_env = "HUE_TOKEN"      # used when auth_header_env is unset
+api_key_env = "HUE_API_KEY"         # used when auth_header_env is unset (preferred over bearer)
+
 # Providers configure only:
 # - how to connect (base_url + api_key_env)
 # - which models are allowed (allowed_model_ids + default_model_id)

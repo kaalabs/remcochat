@@ -11,8 +11,8 @@ Examples:
   bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer" --print-ok
 
 Notes:
-  - Read-only: uses only resolve.by_name (rtype=room) + clipv2.request reads.
-  - Prints individual lamp device names (Hue devices that expose a "light" service).
+  - Read-only: uses a single v2 `inventory.snapshot` call.
+  - Prints Hue light names that belong to the room (from the normalized inventory read model).
 EOF
 }
 
@@ -59,11 +59,6 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 127
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "room_list_lamps.sh: missing required dependency: python3" >&2
-  exit 127
-fi
-
 AUTH_HEADER=""
 if [ -n "${HUE_AUTH_HEADER:-}" ]; then
   AUTH_HEADER="$HUE_AUTH_HEADER"
@@ -75,36 +70,96 @@ fi
 
 CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 10}"
 
-post_actions() {
-  local payload="$1"
-  $CURL_JSON -X POST "$BASE_URL/v1/actions" \
-    -H 'Content-Type: application/json' \
-    -H "$AUTH_HEADER" \
-    -d "$payload"
-}
+REQ_ID="bash-room-lamps-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+INVENTORY_JSON="$($CURL_JSON -X POST "$BASE_URL/v2/actions" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
+  -H "$AUTH_HEADER" \
+  -d "$(printf '{"requestId":"%s","action":"inventory.snapshot","args":{}}' "$REQ_ID")")"
 
-export HUE_ROOM_NAME="$ROOM"
-export HUE_ROOM_PRINT_OK="$PRINT_OK"
+if command -v jq >/dev/null 2>&1; then
+  OK="$(echo "$INVENTORY_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
+  if [ "$OK" != "true" ]; then
+    ERR="$(echo "$INVENTORY_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
+    echo "room_list_lamps.sh: inventory.snapshot failed at BASE_URL=$BASE_URL (${ERR:-unknown error})" >&2
+    echo "$INVENTORY_JSON" >&2
+    exit 1
+  fi
 
-RESOLVE_JSON="$(post_actions "$(python3 - <<'PY'
-import json, os
-name=(os.environ.get("HUE_ROOM_NAME") or "").strip()
-print(json.dumps({"action":"resolve.by_name","args":{"rtype":"room","name":name}}, separators=(",",":")))
-PY
-)")"
+  NOT_MODIFIED="$(echo "$INVENTORY_JSON" | jq -r '.result.notModified // empty' 2>/dev/null || true)"
+  if [ "$NOT_MODIFIED" = "true" ]; then
+    REV="$(echo "$INVENTORY_JSON" | jq -r '.result.revision // empty' 2>/dev/null || true)"
+    echo "room_list_lamps.sh: inventory.snapshot returned notModified=true (revision=${REV:-unknown})" >&2
+    exit 1
+  fi
 
-ROOMS_JSON="$(post_actions '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
-DEVICES_JSON="$(post_actions '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/device"}}')"
+  MATCH_COUNT="$(echo "$INVENTORY_JSON" | jq -r --arg room "$ROOM" '
+    def norm: gsub("^\\s+|\\s+$";"") | ascii_downcase;
+    (.result.rooms // []) | map(select((.name // "" | norm) == ($room | norm))) | length
+  ' 2>/dev/null || true)"
+  case "$MATCH_COUNT" in
+    ''|*[!0-9]*)
+      echo "room_list_lamps.sh: failed to parse rooms from inventory.snapshot" >&2
+      echo "$INVENTORY_JSON" >&2
+      exit 1
+      ;;
+  esac
 
-export RESOLVE_JSON ROOMS_JSON DEVICES_JSON
+  if [ "$MATCH_COUNT" -eq 0 ]; then
+    CANDIDATES="$(echo "$INVENTORY_JSON" | jq -r '(.result.rooms // [])[]?.name // empty' 2>/dev/null || true | head -n 12 | paste -sd ', ' -)"
+    echo "room_list_lamps.sh: room not found: $ROOM" >&2
+    if [ -n "$CANDIDATES" ]; then
+      echo "room_list_lamps.sh: candidates: $CANDIDATES" >&2
+    fi
+    exit 1
+  fi
+  if [ "$MATCH_COUNT" -gt 1 ]; then
+    MATCHES="$(echo "$INVENTORY_JSON" | jq -r --arg room "$ROOM" '
+      def norm: gsub("^\\s+|\\s+$";"") | ascii_downcase;
+      (.result.rooms // []) | map(select((.name // "" | norm) == ($room | norm))) | map(.name) | .[]
+    ' 2>/dev/null || true | head -n 12 | paste -sd ', ' -)"
+    echo "room_list_lamps.sh: room name is ambiguous: $ROOM" >&2
+    if [ -n "$MATCHES" ]; then
+      echo "room_list_lamps.sh: matches: $MATCHES" >&2
+    fi
+    exit 1
+  fi
 
-python3 - <<'PY'
+  ROOM_RID="$(echo "$INVENTORY_JSON" | jq -r --arg room "$ROOM" '
+    def norm: gsub("^\\s+|\\s+$";"") | ascii_downcase;
+    (.result.rooms // []) | map(select((.name // "" | norm) == ($room | norm))) | .[0].rid // empty
+  ' 2>/dev/null || true)"
+  if [ -z "$ROOM_RID" ]; then
+    echo "room_list_lamps.sh: missing room rid after match" >&2
+    exit 1
+  fi
+
+  echo "$INVENTORY_JSON" | jq -r --arg rid "$ROOM_RID" '
+    (.result.lights // [])[]
+    | select((.roomRid // "") == $rid)
+    | (.name // empty)
+  ' 2>/dev/null \
+  | awk 'NF>0 {print}' \
+  | sort -f \
+  | uniq
+
+  if [ "$PRINT_OK" -eq 1 ]; then
+    echo "ok"
+  fi
+  exit 0
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  export HUE_ROOM_NAME="$ROOM"
+  export HUE_ROOM_PRINT_OK="$PRINT_OK"
+
+  PY_CODE="$(cat <<'PY'
 import json
 import os
 import sys
 
 room_name = (os.environ.get("HUE_ROOM_NAME") or "").strip()
-print_ok = (os.environ.get("HUE_ROOM_PRINT_OK") or "0").strip() in ("1", "true", "yes", "on")
+print_ok = (os.environ.get("HUE_ROOM_PRINT_OK") or "0").strip().lower() in ("1", "true", "yes", "on")
 
 def eprint(msg: str) -> None:
     sys.stderr.write(msg.rstrip() + "\n")
@@ -113,70 +168,44 @@ def die(msg: str, code: int = 1) -> None:
     eprint(f"room_list_lamps.sh: {msg}")
     raise SystemExit(code)
 
-def load_env_json(key: str) -> dict:
-    raw = os.environ.get(key, "") or ""
-    try:
-        return json.loads(raw)
-    except Exception:
-        die(f"invalid JSON in env {key}")
-        return {}
+resp = json.load(sys.stdin)
+if not resp.get("ok"):
+    err = resp.get("error") or {}
+    msg = (err.get("message") or err.get("code") or "unknown error").strip()
+    die(f"inventory.snapshot failed ({msg})")
 
-def unwrap_clip(resp: dict, what: str) -> list:
-    if not resp.get("ok"):
-        err = resp.get("error") or {}
-        code = (err.get("code") or "unknown_error").strip()
-        msg = (err.get("message") or "").strip()
-        die(f"{what} failed ({code}) {msg}".rstrip(), 1)
-    status = ((resp.get("result") or {}).get("status") or 0) or 0
-    try:
-        status_i = int(status)
-    except Exception:
-        status_i = 0
-    if status_i and (status_i < 200 or status_i >= 300):
-        errors = (((resp.get("result") or {}).get("body") or {}).get("errors") or [])
-        extra = ""
-        if errors:
-            extra = " errors=" + json.dumps(errors, ensure_ascii=False)
-        die(f"{what} returned status={status_i}{extra}", 1)
-    return (((resp.get("result") or {}).get("body") or {}).get("data") or [])
+result = resp.get("result") or {}
+if result.get("notModified") is True:
+    die("inventory.snapshot returned notModified=true")
 
-resolve = load_env_json("RESOLVE_JSON")
-rooms_resp = load_env_json("ROOMS_JSON")
-devices_resp = load_env_json("DEVICES_JSON")
+def norm(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
 
-if not resolve.get("ok"):
-    err = resolve.get("error") or {}
-    code = (err.get("code") or "").strip()
-    msg = (err.get("message") or "").strip()
-    die(f"resolve.by_name failed ({code or 'unknown_error'}) {msg}".rstrip(), 1)
+rooms = result.get("rooms") or []
+matches = [r for r in rooms if norm(str(r.get("name") or "")) == norm(room_name)]
+if not matches:
+    candidates = [str(r.get("name") or "").strip() for r in rooms if (r.get("name") or "").strip()]
+    candidates = sorted(set(candidates), key=lambda s: s.lower())
+    extra = ""
+    if candidates:
+        extra = " Candidates: " + ", ".join(candidates[:12]) + (" ..." if len(candidates) > 12 else "")
+    die(f'room not found: "{room_name}".{extra}')
 
-matched = (resolve.get("result") or {}).get("matched") or {}
-room_rid = str(matched.get("rid") or "").strip()
+if len(matches) > 1:
+    names = sorted({str(r.get("name") or "").strip() for r in matches if (r.get("name") or "").strip()}, key=lambda s: s.lower())
+    extra = " Matches: " + ", ".join(names[:12]) + (" ..." if len(names) > 12 else "")
+    die(f'room name is ambiguous: "{room_name}".{extra}')
+
+room_rid = str(matches[0].get("rid") or "").strip()
 if not room_rid:
-    die("resolve.by_name returned empty rid", 1)
+    die("matched room missing rid")
 
-rooms = unwrap_clip(rooms_resp, "clipv2.request(room)")
-room = next((r for r in rooms if str(r.get("id") or "").strip() == room_rid), None)
-if not room:
-    die(f'room "{room_name}" not found after resolve (rid={room_rid})', 1)
-
-child_device_ids = {
-    str(c.get("rid") or "").strip()
-    for c in (room.get("children") or [])
-    if str(c.get("rtype") or "") == "device" and str(c.get("rid") or "").strip()
-}
-
-devices = unwrap_clip(devices_resp, "clipv2.request(device)")
-
+lights = result.get("lights") or []
 names = []
-for d in devices:
-    did = str(d.get("id") or "").strip()
-    if not did or did not in child_device_ids:
+for l in lights:
+    if str(l.get("roomRid") or "").strip() != room_rid:
         continue
-    services = d.get("services") or []
-    if not any(str(s.get("rtype") or "") == "light" for s in services):
-        continue
-    name = str(((d.get("metadata") or {}).get("name") or "")).strip()
+    name = str(l.get("name") or "").strip()
     if name:
         names.append(name)
 
@@ -186,4 +215,11 @@ for name in sorted(set(names), key=lambda s: s.lower()):
 if print_ok:
     sys.stdout.write("ok\n")
 PY
+)"
 
+  python3 -c "$PY_CODE" <<<"$INVENTORY_JSON"
+  exit 0
+fi
+
+echo "room_list_lamps.sh: need jq or python3 to parse JSON (neither found)." >&2
+exit 127

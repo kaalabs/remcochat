@@ -59,6 +59,15 @@ timeout_ms = 900000
 mode = "upload"
 upload_include = "**/*"
 
+[app.hue_gateway]
+enabled = false
+access = "localhost" # "localhost" | "lan"
+base_urls = ["http://hue-gateway:8000", "http://host.docker.internal:8000", "http://localhost:8000"]
+timeout_ms = 8000
+auth_header_env = "HUE_AUTH_HEADER"
+bearer_token_env = "HUE_TOKEN"
+api_key_env = "HUE_API_KEY"
+
 [providers.opencode]
 name = "OpenCode Zen"
 base_url = "https://opencode.ai/zen/v1"
@@ -66,4 +75,3 @@ api_key_env = "OPENCODE_API_KEY"
 modelsdev_provider_id = "opencode"
 default_model_id = "kimi-k2.5-free"
 allowed_model_ids = ["kimi-k2.5-free"]
-

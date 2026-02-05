@@ -31,6 +31,7 @@ import { createTools } from "@/ai/tools";
 import { createWebTools } from "@/ai/web-tools";
 import { createBashTools, runExplicitBashCommand } from "@/ai/bash-tools";
 import { createSkillsTools } from "@/ai/skills-tools";
+import { createHueGatewayTools } from "@/ai/hue-gateway-tools";
 import { buildSystemPrompt } from "@/ai/system-prompt";
 import { createProviderOptionsForWebTools } from "@/ai/provider-options";
 import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
@@ -938,6 +939,16 @@ export async function POST(req: Request) {
       skillNames,
     });
 
+    const hueSkillRelevant = skillInvocation.explicitSkillName === "hue-instant-control";
+    const hueGatewayTools = createHueGatewayTools({
+      request: req,
+      isTemporary: true,
+      skillRelevant: hueSkillRelevant,
+      temporarySessionId:
+        typeof body.temporarySessionId === "string" ? body.temporarySessionId.trim() : "",
+      turnUserMessageId: lastUserMessageId || "",
+    });
+
     let system = buildSystemPrompt({
       isTemporary: true,
       chatInstructions: "",
@@ -1117,6 +1128,7 @@ export async function POST(req: Request) {
             ...webTools.tools,
             ...bashTools.tools,
             ...skillsTools.tools,
+            ...hueGatewayTools.tools,
           } as StreamTextToolSet,
         }
       : { stopWhen: [stepCountIs(5)] }),
@@ -1161,6 +1173,7 @@ export async function POST(req: Request) {
               ...webTools.tools,
               ...bashTools.tools,
               ...skillsTools.tools,
+              ...hueGatewayTools.tools,
             } as StreamTextToolSet,
             ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
               ? { temperature: 0 }
@@ -1223,6 +1236,7 @@ export async function POST(req: Request) {
             ...webTools.tools,
             ...bashTools.tools,
             ...skillsTools.tools,
+            ...hueGatewayTools.tools,
           } as StreamTextToolSet,
           ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
             ? { temperature: 0 }
@@ -2037,6 +2051,16 @@ export async function POST(req: Request) {
     enabled: Boolean(skillsRegistry),
     chatId: effectiveChat.id,
   });
+  const hueSkillRelevant =
+    skillInvocation.explicitSkillName === "hue-instant-control" ||
+    effectiveChat.activatedSkillNames.includes("hue-instant-control");
+  const hueGatewayTools = createHueGatewayTools({
+    request: req,
+    isTemporary: false,
+    skillRelevant: hueSkillRelevant,
+    chatId: effectiveChat.id,
+    turnUserMessageId: lastUserMessageId || "",
+  });
   const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
   const providerOptions = createProviderOptionsForWebTools({
     modelType: resolved.modelType,
@@ -2087,6 +2111,7 @@ export async function POST(req: Request) {
             ...webTools.tools,
             ...bashTools.tools,
             ...skillsTools.tools,
+            ...hueGatewayTools.tools,
           } as StreamTextToolSet,
         }
       : { stopWhen: [stepCountIs(5)] }),
@@ -2196,6 +2221,7 @@ export async function POST(req: Request) {
             ...webTools.tools,
             ...bashTools.tools,
             ...skillsTools.tools,
+            ...hueGatewayTools.tools,
           } as StreamTextToolSet,
           ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
             ? { temperature: isRegenerate ? 0.9 : 0 }
@@ -2258,6 +2284,7 @@ export async function POST(req: Request) {
 	          ...webTools.tools,
 	          ...bashTools.tools,
 	          ...skillsTools.tools,
+            ...hueGatewayTools.tools,
 	        } as StreamTextToolSet,
 	        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
 	          ? { temperature: isRegenerate ? 0.9 : 0 }

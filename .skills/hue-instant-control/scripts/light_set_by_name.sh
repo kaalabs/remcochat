@@ -4,14 +4,14 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  light_set_by_name.sh --name "<Hue device name>" [--on true|false] [--brightness 0-100] [--color-temp-k <kelvin>] [--xy "x,y"]
+  light_set_by_name.sh --name "<Hue light name>" [--on true|false] [--brightness 0-100] [--color-temp-k <kelvin>] [--xy "x,y"]
 
 Examples:
   bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Vibiemme" --on true
   bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Staande lamp" --on true --brightness 30 --color-temp-k 2400
 
 Notes:
-  - Uses Hue Gateway high-level action: light.set (by name).
+  - Uses Hue Gateway v2 high-level action: light.set (by name).
   - Runs base URL selection + ready check via scripts/health_check.sh.
 EOF
 }
@@ -73,7 +73,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 HEALTH_EXPORTS="$(bash "$SCRIPT_DIR/health_check.sh")" || exit $?
 eval "$HEALTH_EXPORTS"
-
 BASE_URL="${BASE_URL%/}"
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -90,19 +89,20 @@ else
   AUTH_HEADER="Authorization: Bearer ${HUE_TOKEN:-dev-token}"
 fi
 
-if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
-  echo "light_set_by_name.sh: need python3 or jq to build/parse JSON (neither found)." >&2
-  exit 127
-fi
+CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 12}"
 
-export HUE_LIGHT_NAME="$NAME"
-export HUE_LIGHT_ON="${ON:-}"
-export HUE_LIGHT_BRIGHTNESS="${BRIGHTNESS:-}"
-export HUE_LIGHT_COLOR_TEMP_K="${COLOR_TEMP_K:-}"
-export HUE_LIGHT_XY="${XY:-}"
+REQ_ID="bash-light-set-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+IDEM_KEY="bash-idem-$REQ_ID"
 
-PAYLOAD=""
 if command -v python3 >/dev/null 2>&1; then
+  export HUE_LIGHT_NAME="$NAME"
+  export HUE_LIGHT_ON="${ON:-}"
+  export HUE_LIGHT_BRIGHTNESS="${BRIGHTNESS:-}"
+  export HUE_LIGHT_COLOR_TEMP_K="${COLOR_TEMP_K:-}"
+  export HUE_LIGHT_XY="${XY:-}"
+  export HUE_REQ_ID="$REQ_ID"
+  export HUE_IDEM_KEY="$IDEM_KEY"
+
   PAYLOAD="$(python3 - <<'PY'
 import json
 import os
@@ -116,15 +116,15 @@ name = (os.environ.get("HUE_LIGHT_NAME") or "").strip()
 if not name:
     die("empty --name")
 
-args = {"name": name}
+state: dict[str, object] = {}
 
 on_raw = (os.environ.get("HUE_LIGHT_ON") or "").strip()
 if on_raw:
     v = on_raw.lower()
     if v in ("1", "true", "yes", "on"):
-        args["on"] = True
+        state["on"] = True
     elif v in ("0", "false", "no", "off"):
-        args["on"] = False
+        state["on"] = False
     else:
         die(f"invalid --on value: {on_raw!r} (expected true/false)")
 
@@ -136,7 +136,7 @@ if brightness_raw:
         die(f"invalid --brightness value: {brightness_raw!r} (expected 0-100)")
     if b < 0 or b > 100:
         die(f"invalid --brightness value: {brightness_raw!r} (expected 0-100)")
-    args["brightness"] = int(b) if b.is_integer() else b
+    state["brightness"] = int(b) if b.is_integer() else b
 
 ct_raw = (os.environ.get("HUE_LIGHT_COLOR_TEMP_K") or "").strip()
 if ct_raw:
@@ -146,7 +146,7 @@ if ct_raw:
         die(f"invalid --color-temp-k value: {ct_raw!r} (expected integer kelvin)")
     if ct <= 0:
         die(f"invalid --color-temp-k value: {ct_raw!r} (expected positive integer)")
-    args["colorTempK"] = ct
+    state["colorTempK"] = ct
 
 xy_raw = (os.environ.get("HUE_LIGHT_XY") or "").strip()
 if xy_raw:
@@ -158,72 +158,93 @@ if xy_raw:
         y = float(parts[1])
     except Exception:
         die(f"invalid --xy value: {xy_raw!r} (expected numeric \"x,y\")")
-    args["xy"] = {"x": x, "y": y}
+    state["xy"] = {"x": x, "y": y}
 
-print(json.dumps({"action": "light.set", "args": args}, separators=(",", ":")))
+if not state:
+    die("state is empty (provide at least one state field)")
+
+req_id = (os.environ.get("HUE_REQ_ID") or "").strip() or "bash-light-set"
+idem = (os.environ.get("HUE_IDEM_KEY") or "").strip() or ("bash-idem-" + req_id)
+
+payload = {
+    "requestId": req_id,
+    "idempotencyKey": idem,
+    "action": "light.set",
+    "args": {
+        "name": name,
+        "match": {"mode": "normalized", "minConfidence": 0.85, "minGap": 0.15, "maxCandidates": 10},
+        "state": state,
+        "verify": {"mode": "none"},
+    },
+}
+print(json.dumps(payload, separators=(",", ":")))
 PY
 )"
-else
-  # jq fallback (limited: on and name only)
-  if [ -z "${ON:-}" ]; then
-    echo "light_set_by_name.sh: jq fallback requires --on (python3 not found)." >&2
-    exit 2
-  fi
-  ON_JSON="false"
-  case "$(echo "$ON" | tr '[:upper:]' '[:lower:]')" in
-    1|true|yes|on) ON_JSON="true" ;;
-    0|false|no|off) ON_JSON="false" ;;
-    *) echo "light_set_by_name.sh: invalid --on value: $ON (expected true/false)" >&2; exit 2 ;;
-  esac
-  PAYLOAD="$(jq -nc --arg name "$NAME" --argjson on "$ON_JSON" '{action:"light.set",args:{name:$name,on:$on}}')"
-fi
 
-CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 8}"
+  RESP_JSON="$($CURL_JSON -X POST "$BASE_URL/v2/actions" \
+    -H 'Content-Type: application/json' \
+    -H "X-Request-Id: $REQ_ID" \
+    -H "Idempotency-Key: $IDEM_KEY" \
+    -H "$AUTH_HEADER" \
+    -d "$PAYLOAD")"
 
-SET_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
-  -H 'Content-Type: application/json' \
-  -H "$AUTH_HEADER" \
-  -d "$PAYLOAD")"
-
-if command -v python3 >/dev/null 2>&1; then
-  PY_CHECK="$(cat <<'PY'
+  python3 - <<'PY' <<<"$RESP_JSON"
 import json
 import sys
-
-def die(msg: str, resp: dict, code: int = 1) -> None:
-    sys.stderr.write(msg.rstrip() + "\n")
-    sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
-    raise SystemExit(code)
 
 resp = json.load(sys.stdin)
 if not resp.get("ok"):
     err = resp.get("error") or {}
     code = (err.get("code") or "unknown_error").strip()
     msg = (err.get("message") or "").strip()
-    die(f"light_set_by_name.sh: gateway action failed ({code}) {msg}".rstrip(), resp, 1)
+    sys.stderr.write(f"light_set_by_name.sh: light.set failed ({code}) {msg}".rstrip() + "\n")
+    sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
+    raise SystemExit(1)
 
-status = ((resp.get("result") or {}).get("status") or 0) or 0
-try:
-    status_i = int(status)
-except Exception:
-    status_i = 0
-if status_i and (status_i < 200 or status_i >= 300):
-    errors = (((resp.get("result") or {}).get("body") or {}).get("errors") or [])
-    msg = f"light_set_by_name.sh: Hue Bridge returned status={status_i}"
-    if errors:
-        msg += " errors=" + json.dumps(errors, ensure_ascii=False)
-    die(msg, resp, 1)
-
-print("ok")
+sys.stdout.write("ok\n")
 PY
-)"
-
-  python3 -c "$PY_CHECK" <<<"$SET_JSON"
   exit 0
 fi
 
-case "$SET_JSON" in
-  *'"ok":true'*|*'"ok": true'*) echo "ok" ;;
-  *) echo "light_set_by_name.sh: unexpected response" >&2; echo "$SET_JSON" >&2; exit 1 ;;
+if ! command -v jq >/dev/null 2>&1; then
+  echo "light_set_by_name.sh: need python3 or jq to build/parse JSON (neither found)." >&2
+  exit 127
+fi
+
+# jq fallback (limited: requires --on; no brightness/ct/xy)
+if [ -z "${ON:-}" ]; then
+  echo "light_set_by_name.sh: jq fallback requires --on (python3 not found)." >&2
+  exit 2
+fi
+
+ON_JSON="false"
+case "$(echo "$ON" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on) ON_JSON="true" ;;
+  0|false|no|off) ON_JSON="false" ;;
+  *) echo "light_set_by_name.sh: invalid --on value: $ON (expected true/false)" >&2; exit 2 ;;
 esac
+
+PAYLOAD="$(jq -nc \
+  --arg requestId "$REQ_ID" \
+  --arg idem "$IDEM_KEY" \
+  --arg name "$NAME" \
+  --argjson on "$ON_JSON" \
+  '{requestId:$requestId,idempotencyKey:$idem,action:"light.set",args:{name:$name,match:{mode:"normalized",minConfidence:0.85,minGap:0.15,maxCandidates:10},state:{on:$on},verify:{mode:"none"}}}')"
+
+RESP_JSON="$($CURL_JSON -X POST "$BASE_URL/v2/actions" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
+  -H "Idempotency-Key: $IDEM_KEY" \
+  -H "$AUTH_HEADER" \
+  -d "$PAYLOAD")"
+
+OK="$(echo "$RESP_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
+if [ "$OK" != "true" ]; then
+  ERR="$(echo "$RESP_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
+  echo "light_set_by_name.sh: light.set failed (${ERR:-unknown error})" >&2
+  echo "$RESP_JSON" >&2
+  exit 1
+fi
+
+echo "ok"
 

@@ -22,36 +22,32 @@ else
   AUTH_HEADER="Authorization: Bearer ${HUE_TOKEN:-dev-token}"
 fi
 
-CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 8}"
+CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 10}"
 
-ROOMS_JSON="$($CURL_JSON -X POST "$BASE_URL/v1/actions" \
+REQ_ID="bash-rooms-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+INVENTORY_JSON="$($CURL_JSON -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
+  -d "$(printf '{"requestId":"%s","action":"inventory.snapshot","args":{}}' "$REQ_ID")")"
 
 if command -v jq >/dev/null 2>&1; then
-  OK="$(echo "$ROOMS_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
+  OK="$(echo "$INVENTORY_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
   if [ "$OK" != "true" ]; then
-    ERR="$(echo "$ROOMS_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
-    echo "list_rooms.sh: gateway action failed at BASE_URL=$BASE_URL (${ERR:-unknown error})" >&2
-    echo "$ROOMS_JSON" >&2
+    ERR="$(echo "$INVENTORY_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
+    echo "list_rooms.sh: inventory.snapshot failed at BASE_URL=$BASE_URL (${ERR:-unknown error})" >&2
+    echo "$INVENTORY_JSON" >&2
     exit 1
   fi
 
-  STATUS="$(echo "$ROOMS_JSON" | jq -r '.result.status // empty' 2>/dev/null || true)"
-  if [[ -n "$STATUS" && "$STATUS" =~ ^[0-9]+$ ]]; then
-    if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
-      ERRORS="$(echo "$ROOMS_JSON" | jq -c '.result.body.errors // []' 2>/dev/null || true)"
-      echo "list_rooms.sh: Hue Bridge returned status=$STATUS at BASE_URL=$BASE_URL" >&2
-      if [ -n "$ERRORS" ] && [ "$ERRORS" != "[]" ]; then
-        echo "errors: $ERRORS" >&2
-      fi
-      echo "$ROOMS_JSON" >&2
-      exit 1
-    fi
+  NOT_MODIFIED="$(echo "$INVENTORY_JSON" | jq -r '.result.notModified // empty' 2>/dev/null || true)"
+  if [ "$NOT_MODIFIED" = "true" ]; then
+    REV="$(echo "$INVENTORY_JSON" | jq -r '.result.revision // empty' 2>/dev/null || true)"
+    echo "list_rooms.sh: inventory.snapshot returned notModified=true (revision=${REV:-unknown})" >&2
+    exit 1
   fi
 
-  echo "$ROOMS_JSON" | jq -r '(.result.body.data // [])[] | "\(.metadata.name)\t\(.services[]? | select(.rtype=="grouped_light") | .rid)\t\(.id)"' \
+  echo "$INVENTORY_JSON" | jq -r '(.result.rooms // [])[] | "\(.name)\t\(.groupedLightRid)\t\(.rid)"' \
   | awk -F'\t' 'NF>=2 && $1!="" && $2!="" {print}' \
   | sort -f
   exit 0
@@ -66,43 +62,32 @@ resp = json.load(sys.stdin)
 if not resp.get("ok"):
     err = resp.get("error") or {}
     msg = (err.get("message") or err.get("code") or "unknown error").strip()
-    sys.stderr.write(f"list_rooms.sh: gateway action failed ({msg})\n")
+    sys.stderr.write(f"list_rooms.sh: inventory.snapshot failed ({msg})\n")
     sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
     raise SystemExit(1)
 
-status = ((resp.get("result") or {}).get("status") or 0) or 0
-try:
-    status_i = int(status)
-except Exception:
-    status_i = 0
-if status_i and (status_i < 200 or status_i >= 300):
-    errors = (((resp.get("result") or {}).get("body") or {}).get("errors") or [])
-    sys.stderr.write(f"list_rooms.sh: Hue Bridge returned status={status_i}\n")
-    if errors:
-        sys.stderr.write("errors: " + json.dumps(errors, ensure_ascii=False) + "\n")
+result = resp.get("result") or {}
+if result.get("notModified") is True:
+    sys.stderr.write("list_rooms.sh: inventory.snapshot returned notModified=true\n")
     sys.stderr.write(json.dumps(resp, ensure_ascii=False) + "\n")
     raise SystemExit(1)
 
-rooms = ((resp.get("result") or {}).get("body") or {}).get("data") or []
+rooms = result.get("rooms") or []
 
 rows = []
 for r in rooms:
-    name = ((r.get("metadata") or {}).get("name") or "").strip()
-    rid = ""
-    for s in (r.get("services") or []):
-        if (s.get("rtype") or "") == "grouped_light" and (s.get("rid") or ""):
-            rid = s.get("rid")
-            break
-    room_id = (r.get("id") or "").strip()
-    if name and rid:
-        rows.append((name, rid, room_id))
+    name = str(r.get("name") or "").strip()
+    gl = str(r.get("groupedLightRid") or "").strip()
+    rid = str(r.get("rid") or "").strip()
+    if name and gl and rid:
+        rows.append((name, gl, rid))
 
-for name, rid, room_id in sorted(rows, key=lambda t: t[0].lower()):
-    sys.stdout.write(f"{name}\t{rid}\t{room_id}\n")
+for name, gl, rid in sorted(rows, key=lambda t: t[0].lower()):
+    sys.stdout.write(f"{name}\t{gl}\t{rid}\n")
 PY
 )"
 
-  python3 -c "$PY_CODE" <<<"$ROOMS_JSON"
+  python3 -c "$PY_CODE" <<<"$INVENTORY_JSON"
   exit 0
 fi
 

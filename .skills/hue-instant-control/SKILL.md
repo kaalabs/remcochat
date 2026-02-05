@@ -13,21 +13,35 @@ compatibility: |
 allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.3.4"
+  version: "0.4.0"
   purpose: hue-gateway-instant-control
 ---
 
-# Hue Instant Control (Hue Gateway)
+# Hue Instant Control (Hue Gateway v2)
 
 You control Philips Hue **only** via the already-running Hue Gateway service.
 
 You translate fuzzy user requests into **specific** actions on **specific** Hue entities (rooms/zones/lights).
 Keep the interaction short, confident, and “assistant-y”.
 
+## Preferred execution path (when available)
+
+If you have access to the server-side tool **`hueGateway`**, use it.
+
+- It calls Hue Gateway **v2** (`POST /v2/actions`) directly from the server (no bash/curl).
+- It applies safe defaults and deterministic correlation/idempotency keys.
+- Use it for: `inventory.snapshot`, `room.set`, `zone.set`, `light.set`, `grouped_light.set`, `scene.activate`, `resolve.by_name`, `actions.batch`.
+- `clipv2.request` is an escape hatch but should be **GET/HEAD/OPTIONS only**.
+
+Only use Bash/curl when:
+- the user explicitly asks for bash/curl,
+- tool calling is unavailable, or
+- Hue Gateway tooling is disabled by config / access policy.
+
 ## Performance goal (always)
 
 - **Goal:** operate the Hue Gateway with near-zero errors and minimal latency.
-- **Default:** 1 Bash tool call per user request (bundle multiple curl calls in the same Bash invocation).
+- **Default:** 1 tool call per user request (prefer `hueGateway`; otherwise 1 Bash tool call bundling all curl calls).
 - **Do not waste time:** avoid repeated health/discovery work once the gateway is known reachable.
 - **Always use tight timeouts** on curl so fallbacks are instant.
 
@@ -46,7 +60,7 @@ Keep the interaction short, confident, and “assistant-y”.
 ## Gateway connection (defaults)
 
 - Base URL (default): `http://hue-gateway:8000` (recommended when using docker sandboxd + shared network)
-- Auth header (either works for `/v1/*`):
+- Auth header (either works for `/v2/*`):
   - `Authorization: Bearer dev-token`
   - `X-API-Key: dev-key`
 
@@ -71,7 +85,7 @@ If `BASE_URL` is not provided, try these in order until health succeeds:
 
 - Do not use `localhost:8000` from a sandboxed Bash tool unless you know the gateway is in the same network namespace.
 - Do not parse `result.data` for `clipv2.request`; Hue resources are at `result.body.data`.
-- Do not use `curl -f` for `/v1/actions` calls (it hides useful JSON error bodies); use `curl -sS`.
+- Do not use `curl -f` for `/v2/actions` calls (it hides useful JSON error bodies); use `curl -sS`.
 - Prefer RID-based `grouped_light.set` (names are often missing/ambiguous for grouped lights).
 - Do not try to parse curl JSON with `python3 - <<'PY' ... json.load(sys.stdin) ... PY` (stdin is already used for the
   Python program). Use `python3 -c ... <<<"$JSON"` (or `jq`) instead.
@@ -115,13 +129,14 @@ if [ -z "$AUTH_HEADER" ]; then
 fi
 ```
 
-2) **Discover rooms** (room name → controllable grouped-light RID):
+2) **Discover inventory** (normalized read model; preferred over raw CLIP resources):
 
 ```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: demo-rooms-1" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}'
+  -d '{"requestId":"demo-rooms-1","action":"inventory.snapshot","args":{}}'
 ```
 
 Optional helper: if this skill is installed under `./.skills` (RemcoChat default), you can get a parsed list as:
@@ -132,36 +147,38 @@ bash ./.skills/hue-instant-control/scripts/list_rooms.sh
 
 This prints: `<room-name>\t<grouped_light_rid>\t<room_rid>`.
 
-3) **Set the room** using `grouped_light.set` (RID-based; no guessing):
+3) **Set a named room (fast + verified)** using a single v2 action:
 
 ```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+bash ./.skills/hue-instant-control/scripts/room_set_by_name.sh --room "Woonkamer" --brightness 35 --color-temp-k 2400
+```
+
+4) (Optional) **Set a room by grouped-light RID** using `grouped_light.set` (RID-based; no guessing):
+
+```bash
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: demo-gl-1" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","on":true,"brightness":35,"colorTempK":2400}}'
+  -d '{"requestId":"demo-gl-1","action":"grouped_light.set","args":{"rid":"<GROUPED_LIGHT_RID>","state":{"on":true,"brightness":35,"colorTempK":2400}}}'
 ```
 
 Note: for `clipv2.request` responses, Hue resources are at `result.body.data` (not `result.data`).
 
-4) **Set a named lamp / plug** using `light.set` (fast; no discovery needed):
+5) **Set a named lamp / plug** using `light.set` (fast; no discovery needed):
 
 ```bash
-curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v1/actions" \
+curl -sS --connect-timeout 1 --max-time 8 -X POST "$BASE_URL/v2/actions" \
   -H 'Content-Type: application/json' \
+  -H "X-Request-Id: demo-light-1" \
   -H "$AUTH_HEADER" \
-  -d '{"action":"light.set","args":{"name":"Vibiemme","on":true}}'
+  -d '{"requestId":"demo-light-1","action":"light.set","args":{"name":"Vibiemme","state":{"on":true}}}'
 ```
 
 Optional helper script (handles base URL selection + readiness + auth):
 
 ```bash
 bash ./.skills/hue-instant-control/scripts/light_set_by_name.sh --name "Vibiemme" --on true
-```
-
-5) **Set a named room (fast + verified)** using `resolve.by_name` → RID-based `grouped_light.set`:
-
-```bash
-bash ./.skills/hue-instant-control/scripts/room_set_by_name.sh --room "Woonkamer" --brightness 35 --color-temp-k 2400
 ```
 
 6) **Apply a deterministic “vibe” preset** (reduces LLM variability):
@@ -183,7 +200,7 @@ bash ./.skills/hue-instant-control/scripts/zone_set_by_name.sh --zone "Downstair
 bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --print-ok
 ```
 
-9) **List individual lamps in a named room (read-only; first-time-right)**:
+9) **List lights in a named room (read-only; first-time-right)**:
 
 ```bash
 bash ./.skills/hue-instant-control/scripts/room_list_lamps.sh --room "Woonkamer" --print-ok

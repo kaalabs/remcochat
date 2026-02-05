@@ -13,13 +13,13 @@ Examples:
   # Names only + trailing "ok" sentinel (useful for chat/E2E)
   bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --print-ok
 
-  # TSV with room mapping (best-effort)
+  # TSV with room mapping (best-effort, from inventory snapshot)
   bash ./.skills/hue-instant-control/scripts/zone_list_lights.sh --zone "Beneden" --format tsv
 
 Notes:
-  - Read-only: uses only clipv2.request + resolve.by_name (rtype=zone).
+  - Read-only: uses a single v2 `inventory.snapshot` call.
   - Uses scripts/health_check.sh for base URL selection + ready check.
-  - Prefers python3 parsing to avoid complex jq programs.
+  - Prefers python3 parsing for the TSV format.
 EOF
 }
 
@@ -80,12 +80,6 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 127
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "zone_list_lights.sh: missing required dependency: python3" >&2
-  echo "zone_list_lights.sh: install python3 or use a simpler flow with jq (not recommended)." >&2
-  exit 127
-fi
-
 AUTH_HEADER=""
 if [ -n "${HUE_AUTH_HEADER:-}" ]; then
   AUTH_HEADER="$HUE_AUTH_HEADER"
@@ -97,39 +91,100 @@ fi
 
 CURL_JSON="${CURL_JSON:-curl -sS --connect-timeout 1 --max-time 10}"
 
-post_actions() {
-  local payload="$1"
-  $CURL_JSON -X POST "$BASE_URL/v1/actions" \
-    -H 'Content-Type: application/json' \
-    -H "$AUTH_HEADER" \
-    -d "$payload"
-}
+REQ_ID="bash-zone-lights-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+INVENTORY_JSON="$($CURL_JSON -X POST "$BASE_URL/v2/actions" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-Id: $REQ_ID" \
+  -H "$AUTH_HEADER" \
+  -d "$(printf '{"requestId":"%s","action":"inventory.snapshot","args":{}}' "$REQ_ID")")"
 
-export HUE_ZONE_NAME="$ZONE"
-export HUE_ZONE_FORMAT="$FORMAT"
-export HUE_ZONE_PRINT_OK="$PRINT_OK"
+if [ "$FORMAT" = "names" ] && command -v jq >/dev/null 2>&1; then
+  OK="$(echo "$INVENTORY_JSON" | jq -r '.ok // empty' 2>/dev/null || true)"
+  if [ "$OK" != "true" ]; then
+    ERR="$(echo "$INVENTORY_JSON" | jq -r '.error.message // .error.code // "unknown error"' 2>/dev/null || true)"
+    echo "zone_list_lights.sh: inventory.snapshot failed at BASE_URL=$BASE_URL (${ERR:-unknown error})" >&2
+    echo "$INVENTORY_JSON" >&2
+    exit 1
+  fi
 
-RESOLVE_JSON="$(post_actions "$(python3 - <<'PY'
-import json, os
-name=(os.environ.get("HUE_ZONE_NAME") or "").strip()
-print(json.dumps({"action":"resolve.by_name","args":{"rtype":"zone","name":name}}, separators=(",",":")))
-PY
-)")"
+  NOT_MODIFIED="$(echo "$INVENTORY_JSON" | jq -r '.result.notModified // empty' 2>/dev/null || true)"
+  if [ "$NOT_MODIFIED" = "true" ]; then
+    REV="$(echo "$INVENTORY_JSON" | jq -r '.result.revision // empty' 2>/dev/null || true)"
+    echo "zone_list_lights.sh: inventory.snapshot returned notModified=true (revision=${REV:-unknown})" >&2
+    exit 1
+  fi
 
-ZONES_JSON="$(post_actions '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/zone"}}')"
-ROOMS_JSON="$(post_actions '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/room"}}')"
-LIGHTS_JSON="$(post_actions '{"action":"clipv2.request","args":{"method":"GET","path":"/clip/v2/resource/light"}}')"
+  ZONE_RIDS="$(echo "$INVENTORY_JSON" | jq -r --arg zone "$ZONE" '
+    def norm: gsub("^\\s+|\\s+$";"") | ascii_downcase;
+    (.result.zones // []) | map(select((.name // "" | norm) == ($zone | norm))) | map(.rid) | .[]
+  ' 2>/dev/null || true)"
 
-export RESOLVE_JSON ZONES_JSON ROOMS_JSON LIGHTS_JSON
+  ZONE_MATCH_COUNT="$(echo "$ZONE_RIDS" | awk 'NF{c++} END{print c+0}')"
+  if [ "$ZONE_MATCH_COUNT" -eq 0 ]; then
+    CANDIDATES="$(echo "$INVENTORY_JSON" | jq -r '(.result.zones // [])[]?.name // empty' 2>/dev/null || true | head -n 12 | paste -sd ', ' -)"
+    echo "zone_list_lights.sh: zone not found: $ZONE" >&2
+    if [ -n "$CANDIDATES" ]; then
+      echo "zone_list_lights.sh: candidates: $CANDIDATES" >&2
+    fi
+    exit 1
+  fi
+  if [ "$ZONE_MATCH_COUNT" -gt 1 ]; then
+    MATCHES="$(echo "$INVENTORY_JSON" | jq -r --arg zone "$ZONE" '
+      def norm: gsub("^\\s+|\\s+$";"") | ascii_downcase;
+      (.result.zones // []) | map(select((.name // "" | norm) == ($zone | norm))) | map(.name) | .[]
+    ' 2>/dev/null || true | head -n 12 | paste -sd ', ' -)"
+    echo "zone_list_lights.sh: zone name is ambiguous: $ZONE" >&2
+    if [ -n "$MATCHES" ]; then
+      echo "zone_list_lights.sh: matches: $MATCHES" >&2
+    fi
+    exit 1
+  fi
 
-python3 - <<'PY'
+  ZONE_RID="$(echo "$ZONE_RIDS" | awk 'NF{print; exit}')"
+  if [ -z "$ZONE_RID" ]; then
+    echo "zone_list_lights.sh: missing zone rid after match" >&2
+    exit 1
+  fi
+
+  ROOM_RIDS="$(echo "$INVENTORY_JSON" | jq -r --arg rid "$ZONE_RID" '
+    (.result.zones // []) | map(select((.rid // "") == $rid)) | .[0].roomRids // [] | .[]
+  ' 2>/dev/null || true)"
+
+  if [ -z "$ROOM_RIDS" ]; then
+    if [ "$PRINT_OK" -eq 1 ]; then
+      echo "ok"
+    fi
+    exit 0
+  fi
+
+  echo "$INVENTORY_JSON" | jq -r --argjson roomRids "$(printf '%s\n' "$ROOM_RIDS" | jq -R . | jq -s .)" '
+    (.result.lights // [])[]
+    | select(((.roomRid // "") as $r | ($roomRids | index($r)) != null))
+    | (.name // empty)
+  ' 2>/dev/null \
+  | awk 'NF>0 {print}' \
+  | sort -f \
+  | uniq
+
+  if [ "$PRINT_OK" -eq 1 ]; then
+    echo "ok"
+  fi
+  exit 0
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  export HUE_ZONE_NAME="$ZONE"
+  export HUE_ZONE_FORMAT="$FORMAT"
+  export HUE_ZONE_PRINT_OK="$PRINT_OK"
+
+  PY_CODE="$(cat <<'PY'
 import json
 import os
 import sys
 
 zone_name = (os.environ.get("HUE_ZONE_NAME") or "").strip()
 fmt = (os.environ.get("HUE_ZONE_FORMAT") or "names").strip().lower()
-print_ok = (os.environ.get("HUE_ZONE_PRINT_OK") or "0").strip() in ("1", "true", "yes", "on")
+print_ok = (os.environ.get("HUE_ZONE_PRINT_OK") or "0").strip().lower() in ("1", "true", "yes", "on")
 
 def eprint(msg: str) -> None:
     sys.stderr.write(msg.rstrip() + "\n")
@@ -138,141 +193,67 @@ def die(msg: str, code: int = 1) -> None:
     eprint(f"zone_list_lights.sh: {msg}")
     raise SystemExit(code)
 
-def load_env_json(key: str) -> dict:
-    raw = os.environ.get(key, "") or ""
-    try:
-        return json.loads(raw)
-    except Exception:
-        die(f"invalid JSON in env {key}")
-        return {}
+resp = json.load(sys.stdin)
+if not resp.get("ok"):
+    err = resp.get("error") or {}
+    msg = (err.get("message") or err.get("code") or "unknown error").strip()
+    die(f"inventory.snapshot failed ({msg})")
 
-def unwrap_clip(resp: dict, what: str) -> list:
-    if not resp.get("ok"):
-        err = resp.get("error") or {}
-        code = (err.get("code") or "unknown_error").strip()
-        msg = (err.get("message") or "").strip()
-        die(f"{what} failed ({code}) {msg}".rstrip(), 1)
-    status = ((resp.get("result") or {}).get("status") or 0) or 0
-    try:
-        status_i = int(status)
-    except Exception:
-        status_i = 0
-    if status_i and (status_i < 200 or status_i >= 300):
-        errors = (((resp.get("result") or {}).get("body") or {}).get("errors") or [])
-        extra = ""
-        if errors:
-            extra = " errors=" + json.dumps(errors, ensure_ascii=False)
-        die(f"{what} returned status={status_i}{extra}", 1)
-    return (((resp.get("result") or {}).get("body") or {}).get("data") or [])
+result = resp.get("result") or {}
+if result.get("notModified") is True:
+    die("inventory.snapshot returned notModified=true")
 
-resolve = load_env_json("RESOLVE_JSON")
-zones_resp = load_env_json("ZONES_JSON")
-rooms_resp = load_env_json("ROOMS_JSON")
-lights_resp = load_env_json("LIGHTS_JSON")
+def norm(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
 
-zone_rid = ""
-if not resolve.get("ok"):
-    err = resolve.get("error") or {}
-    code = (err.get("code") or "").strip()
-    # If ambiguous, print candidates to guide the follow-up question.
-    if code == "ambiguous_name":
-        zones = unwrap_clip(zones_resp, "clipv2.request(zone)")
-        names = sorted(
-            {str((z.get("metadata") or {}).get("name") or "").strip() for z in zones if (z.get("metadata") or {}).get("name")},
-            key=lambda s: s.lower(),
-        )
-        die(f'zone name "{zone_name}" is ambiguous. Candidates: ' + ", ".join(names[:12]) + (" ..." if len(names) > 12 else ""))
-    msg = (err.get("message") or "").strip()
-    die(f"resolve.by_name failed ({code or 'unknown_error'}) {msg}".rstrip(), 1)
+zones = result.get("zones") or []
+matches = [z for z in zones if norm(str(z.get("name") or "")) == norm(zone_name)]
+if not matches:
+    candidates = [str(z.get("name") or "").strip() for z in zones if (z.get("name") or "").strip()]
+    candidates = sorted(set(candidates), key=lambda s: s.lower())
+    extra = ""
+    if candidates:
+        extra = " Candidates: " + ", ".join(candidates[:12]) + (" ..." if len(candidates) > 12 else "")
+    die(f'zone not found: "{zone_name}".{extra}')
 
-matched = (resolve.get("result") or {}).get("matched") or {}
-zone_rid = str(matched.get("rid") or "").strip()
-if not zone_rid:
-    die("resolve.by_name returned empty rid", 1)
+if len(matches) > 1:
+    names = sorted({str(z.get("name") or "").strip() for z in matches if (z.get("name") or "").strip()}, key=lambda s: s.lower())
+    extra = " Matches: " + ", ".join(names[:12]) + (" ..." if len(names) > 12 else "")
+    die(f'zone name is ambiguous: "{zone_name}".{extra}')
 
-zones = unwrap_clip(zones_resp, "clipv2.request(zone)")
-target = next((z for z in zones if str(z.get("id") or "").strip() == zone_rid), None)
-if not target:
-    die(f'zone "{zone_name}" not found after resolve (rid={zone_rid})', 1)
+room_rids = matches[0].get("roomRids") or []
+room_rids = [str(r).strip() for r in room_rids if str(r).strip()]
+room_rids_set = set(room_rids)
 
-zone_child_lights = {
-    str(c.get("rid") or "").strip()
-    for c in (target.get("children") or [])
-    if str(c.get("rtype") or "") == "light" and str(c.get("rid") or "").strip()
-}
-zone_child_rooms = {
-    str(c.get("rid") or "").strip()
-    for c in (target.get("children") or [])
-    if str(c.get("rtype") or "") == "room" and str(c.get("rid") or "").strip()
-}
-zone_child_devices = {
-    str(c.get("rid") or "").strip()
-    for c in (target.get("children") or [])
-    if str(c.get("rtype") or "") == "device" and str(c.get("rid") or "").strip()
-}
-
-rooms = unwrap_clip(rooms_resp, "clipv2.request(room)")
-
-# Build device -> room name map (best-effort) from *all* rooms so we can map zone->lights->owner->room even when
-# the zone children are direct light resources (common).
-device_to_room: dict[str, str] = {}
+rooms = result.get("rooms") or []
+room_name_by_rid = {}
 for r in rooms:
-    room_name = str(((r.get("metadata") or {}).get("name") or "")).strip() or "(unnamed room)"
-    for c in (r.get("children") or []):
-        if str(c.get("rtype") or "") != "device":
-            continue
-        drid = str(c.get("rid") or "").strip()
-        if not drid:
-            continue
-        device_to_room.setdefault(drid, room_name)
+    rid = str(r.get("rid") or "").strip()
+    name = str(r.get("name") or "").strip()
+    if rid and name:
+        room_name_by_rid[rid] = name
 
-# If the zone includes room children, collect their device ids so we can match lights via owner.rid.
-zone_room_device_ids: set[str] = set()
-if zone_child_rooms:
-    for r in rooms:
-        if str(r.get("id") or "").strip() not in zone_child_rooms:
-            continue
-        for c in (r.get("children") or []):
-            if str(c.get("rtype") or "") != "device":
-                continue
-            drid = str(c.get("rid") or "").strip()
-            if drid:
-                zone_room_device_ids.add(drid)
-
-lights = unwrap_clip(lights_resp, "clipv2.request(light)")
-
+lights = result.get("lights") or []
 rows = []
 names = []
 for l in lights:
-    owner = l.get("owner") or {}
-    owner_rid = str(owner.get("rid") or "").strip()
-    light_rid = str(l.get("id") or "").strip()
-
-    selected = False
-    if light_rid and light_rid in zone_child_lights:
-        selected = True
-    elif owner_rid and owner_rid in zone_child_devices:
-        selected = True
-    elif owner_rid and owner_rid in zone_room_device_ids:
-        selected = True
-    if not selected:
+    room_rid = str(l.get("roomRid") or "").strip()
+    if not room_rid or room_rid not in room_rids_set:
         continue
-
-    light_name = str(((l.get("metadata") or {}).get("name") or "")).strip() or "(unnamed light)"
-    room_name = device_to_room.get(owner_rid, "") if owner_rid else ""
-    product = ""
-    pd = l.get("product_data") or {}
-    product = str(pd.get("product_name") or pd.get("archetype") or "").strip()
-    rows.append((light_name, room_name, light_rid, product))
+    light_name = str(l.get("name") or "").strip()
+    light_rid = str(l.get("rid") or "").strip()
+    owner = str(l.get("ownerDeviceRid") or "").strip()
+    room_name = room_name_by_rid.get(room_rid, "")
+    rows.append((light_name or light_rid or "(unnamed)", room_name, light_rid, room_rid, owner))
     if light_name:
-        # Prefer names, but keep unnamed placeholders so the list isn't mysteriously empty.
-        names.append(light_name if light_name != "(unnamed light)" else (light_rid or light_name))
+        names.append(light_name)
+    elif light_rid:
+        names.append(light_rid)
 
 if fmt == "tsv":
-    # Header first
-    sys.stdout.write("Name\tRoom\tLightRID\tProduct\n")
-    for name, room, rid, product in sorted(rows, key=lambda t: (t[0].lower(), t[1].lower())):
-        sys.stdout.write(f"{name}\t{room}\t{rid}\t{product}\n")
+    sys.stdout.write("Name\tRoom\tLightRID\tRoomRID\tOwnerDeviceRID\n")
+    for name, room, lrid, rrid, owner in sorted(rows, key=lambda t: (t[0].lower(), t[1].lower(), t[2].lower())):
+        sys.stdout.write(f"{name}\t{room}\t{lrid}\t{rrid}\t{owner}\n")
 else:
     for name in sorted(set(names), key=lambda s: s.lower()):
         sys.stdout.write(name + "\n")
@@ -280,3 +261,11 @@ else:
 if print_ok:
     sys.stdout.write("ok\n")
 PY
+)"
+
+  python3 -c "$PY_CODE" <<<"$INVENTORY_JSON"
+  exit 0
+fi
+
+echo "zone_list_lights.sh: need python3 (for tsv) or jq (for names) to parse JSON." >&2
+exit 127
