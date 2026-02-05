@@ -63,5 +63,49 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
 
   const jsonSchema = await Promise.resolve(asSchema(hueGateway.inputSchema).jsonSchema);
   assert.equal(jsonSchema.type, "object");
-});
+  assert.equal(jsonSchema.properties?.args?.type, "object");
 
+  function* walkSchemaNodes(schema: any, at: string): Generator<[string, any]> {
+    yield [at, schema];
+    if (!schema || typeof schema !== "object") return;
+
+    if (schema.properties && typeof schema.properties === "object") {
+      for (const [key, child] of Object.entries(schema.properties)) {
+        yield* walkSchemaNodes(child, `${at}.properties.${key}`);
+      }
+    }
+
+    if (schema.items) {
+      yield* walkSchemaNodes(schema.items, `${at}.items`);
+    }
+
+    if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
+      yield* walkSchemaNodes(schema.additionalProperties, `${at}.additionalProperties`);
+    }
+
+    for (const keyword of ["oneOf", "anyOf", "allOf"] as const) {
+      const arr = schema[keyword];
+      if (Array.isArray(arr)) {
+        for (let i = 0; i < arr.length; i++) {
+          yield* walkSchemaNodes(arr[i], `${at}.${keyword}[${i}]`);
+        }
+      }
+    }
+
+    for (const keyword of ["not", "if", "then", "else", "contains"] as const) {
+      const child = schema[keyword];
+      if (child && typeof child === "object") {
+        yield* walkSchemaNodes(child, `${at}.${keyword}`);
+      }
+    }
+  }
+
+  const emptyNodes: string[] = [];
+  for (const [at, node] of walkSchemaNodes(jsonSchema, "$")) {
+    if (node && typeof node === "object" && !Array.isArray(node) && Object.keys(node).length === 0) {
+      emptyNodes.push(at);
+    }
+  }
+
+  assert.deepEqual(emptyNodes, []);
+});

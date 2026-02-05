@@ -13,7 +13,7 @@ compatibility: |
 allowed-tools: Read Bash
 metadata:
   author: remcochat
-  version: "0.4.0"
+  version: "0.4.1"
   purpose: hue-gateway-instant-control
 ---
 
@@ -32,6 +32,10 @@ If you have access to the server-side tool **`hueGateway`**, use it.
 - It applies safe defaults and deterministic correlation/idempotency keys.
 - Use it for: `inventory.snapshot`, `room.set`, `zone.set`, `light.set`, `grouped_light.set`, `scene.activate`, `resolve.by_name`, `actions.batch`.
 - `clipv2.request` is an escape hatch but should be **GET/HEAD/OPTIONS only**.
+
+**Read-only rule (important):**
+- For “list/what’s in …” requests, do **exactly 1** `hueGateway` call: `inventory.snapshot`, then answer from the snapshot.
+- Avoid chaining `resolve.by_name` for simple listing; you can match names directly in `result.rooms[]` / `result.zones[]` and filter `result.lights[]`.
 
 Only use Bash/curl when:
 - the user explicitly asks for bash/curl,
@@ -56,6 +60,23 @@ Only use Bash/curl when:
 4) **Be honest about execution.**
    - Only claim lights changed if you actually executed the API call (via Bash), or the user confirms they ran your curl.
 5) **Prefer room-level control** (`grouped_light`) unless the user asks for a specific individual light.
+
+## Rooms vs zones (do not confuse these)
+
+Hue has **rooms** and **zones**:
+- A **room** contains lights.
+- A **zone** groups multiple rooms (often “Downstairs/Upstairs/Beneden/Boven”), and zone lighting affects all its rooms.
+
+Users often say “room” or “in <name>” when they really mean an **area** that could be either a room or a zone. Treat room/zone naming as interchangeable user language.
+
+When the user gives a name (e.g. “Keuken”):
+1) Call `inventory.snapshot` (one tool call).
+2) Normalize-match the name against **both** `result.rooms[].name` and `result.zones[].name`.
+3) If it matches exactly one → proceed using the correct concept:
+   - room match → filter lights by `light.roomRid == room.rid`
+   - zone match → collect `zone.roomRids[]`, then filter lights where `light.roomRid` is in that set
+4) If it matches **both** a room and a zone → ask which they meant.
+5) If it matches **neither** → ask a quick follow-up and show a few candidates from rooms + zones.
 
 ## Gateway connection (defaults)
 

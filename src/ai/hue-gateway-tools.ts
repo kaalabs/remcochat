@@ -43,7 +43,7 @@ const MatchOptionsSchema = z
     minGap: z.number().min(0).max(1).optional(),
     maxCandidates: z.number().int().min(1).max(50).optional(),
   })
-  .strict();
+  .strip();
 
 const VerifyOptionsSchema = z
   .object({
@@ -55,17 +55,17 @@ const VerifyOptionsSchema = z
         brightness: z.number().min(0).optional(),
         colorTempK: z.number().int().min(0).optional(),
       })
-      .strict()
+      .strip()
       .optional(),
   })
-  .strict();
+  .strip();
 
 const XYColorSchema = z
   .object({
     x: z.number(),
     y: z.number(),
   })
-  .strict();
+  .strip();
 
 const LightStateSchema = z
   .object({
@@ -74,13 +74,13 @@ const LightStateSchema = z
     colorTempK: z.number().int().min(1).optional(),
     xy: XYColorSchema.optional(),
   })
-  .strict();
+  .strip();
 
 const InventorySnapshotArgsSchema = z
   .object({
     ifRevision: z.number().int().min(0).optional(),
   })
-  .strict();
+  .strip();
 
 const ResolveByNameArgsSchema = z
   .object({
@@ -88,7 +88,7 @@ const ResolveByNameArgsSchema = z
     name: z.string().min(1),
     match: MatchOptionsSchema.optional(),
   })
-  .strict();
+  .strip();
 
 const ClipV2RequestArgsSchema = z
   .object({
@@ -101,7 +101,7 @@ const ClipV2RequestArgsSchema = z
     body: z.unknown().optional(),
     retry: z.boolean().optional(),
   })
-  .strict();
+  .strip();
 
 const LightSetArgsSchema = z
   .object({
@@ -111,7 +111,7 @@ const LightSetArgsSchema = z
     state: LightStateSchema,
     verify: VerifyOptionsSchema.optional(),
   })
-  .strict()
+  .strip()
   .refine((v) => Boolean(v.rid || v.name), "light.set requires rid or name");
 
 const GroupedLightSetArgsSchema = z
@@ -122,7 +122,7 @@ const GroupedLightSetArgsSchema = z
     state: LightStateSchema,
     verify: VerifyOptionsSchema.optional(),
   })
-  .strict()
+  .strip()
   .refine((v) => Boolean(v.rid || v.name), "grouped_light.set requires rid or name");
 
 const SceneActivateArgsSchema = z
@@ -132,7 +132,7 @@ const SceneActivateArgsSchema = z
     match: MatchOptionsSchema.optional(),
     verify: VerifyOptionsSchema.optional(),
   })
-  .strict()
+  .strip()
   .refine((v) => Boolean(v.rid || v.name), "scene.activate requires rid or name");
 
 const RoomSetArgsSchema = z
@@ -143,7 +143,7 @@ const RoomSetArgsSchema = z
     state: LightStateSchema,
     verify: VerifyOptionsSchema.optional(),
   })
-  .strict()
+  .strip()
   .refine((v) => Boolean(v.roomRid || v.roomName), "room.set requires roomRid or roomName");
 
 const ZoneSetArgsSchema = z
@@ -155,18 +155,18 @@ const ZoneSetArgsSchema = z
     state: LightStateSchema.optional(),
     verify: VerifyOptionsSchema.optional(),
   })
-  .strict()
+  .strip()
   .refine((v) => Boolean(v.zoneRid || v.zoneName), "zone.set requires zoneRid or zoneName");
 
 const BatchStepSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("inventory.snapshot"), args: InventorySnapshotArgsSchema }).strict(),
-  z.object({ action: z.literal("room.set"), args: RoomSetArgsSchema }).strict(),
-  z.object({ action: z.literal("zone.set"), args: ZoneSetArgsSchema }).strict(),
-  z.object({ action: z.literal("light.set"), args: LightSetArgsSchema }).strict(),
-  z.object({ action: z.literal("grouped_light.set"), args: GroupedLightSetArgsSchema }).strict(),
-  z.object({ action: z.literal("scene.activate"), args: SceneActivateArgsSchema }).strict(),
-  z.object({ action: z.literal("resolve.by_name"), args: ResolveByNameArgsSchema }).strict(),
-  z.object({ action: z.literal("clipv2.request"), args: ClipV2RequestArgsSchema }).strict(),
+  z.object({ action: z.literal("inventory.snapshot"), args: InventorySnapshotArgsSchema }).strip(),
+  z.object({ action: z.literal("room.set"), args: RoomSetArgsSchema }).strip(),
+  z.object({ action: z.literal("zone.set"), args: ZoneSetArgsSchema }).strip(),
+  z.object({ action: z.literal("light.set"), args: LightSetArgsSchema }).strip(),
+  z.object({ action: z.literal("grouped_light.set"), args: GroupedLightSetArgsSchema }).strip(),
+  z.object({ action: z.literal("scene.activate"), args: SceneActivateArgsSchema }).strip(),
+  z.object({ action: z.literal("resolve.by_name"), args: ResolveByNameArgsSchema }).strip(),
+  z.object({ action: z.literal("clipv2.request"), args: ClipV2RequestArgsSchema }).strip(),
 ]);
 
 const ActionsBatchArgsSchema = z
@@ -174,20 +174,74 @@ const ActionsBatchArgsSchema = z
     continueOnError: z.boolean().optional(),
     actions: z.array(BatchStepSchema).min(1),
   })
+  .strip();
+
+const HueGatewayToolWireBatchStepActionSchema = z.enum([
+  "inventory.snapshot",
+  "room.set",
+  "zone.set",
+  "light.set",
+  "grouped_light.set",
+  "scene.activate",
+  "resolve.by_name",
+  "clipv2.request",
+]);
+
+// NOTE: Some tool-calling providers reject JSON Schemas containing "empty schema"
+// nodes like `{}` (which Zod emits for `z.unknown()` / `z.any()`), even though
+// that is valid JSON Schema. The `ai` SDK also forces `additionalProperties:false`
+// on object schemas for compatibility, so `passthrough()` isn't an option.
+//
+// To maximize cross-provider compatibility, we register a "wire" schema that:
+// - always serializes to `type:"object"` at the top level
+// - avoids `{}` schema nodes
+// - uses a typed superset for `args` (runtime validation remains strict)
+const ClipV2WirePathSchema = z.string().min(1).regex(/^\/clip\/v2\/.*/);
+
+const HueGatewayToolWireBatchStepArgsSchema = z
+  .object({
+    ifRevision: z.number().int().min(0).optional(),
+
+    rtype: z.string().min(1).optional(),
+    rid: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+
+    roomRid: z.string().min(1).optional(),
+    roomName: z.string().min(1).optional(),
+
+    zoneRid: z.string().min(1).optional(),
+    zoneName: z.string().min(1).optional(),
+    dryRun: z.boolean().optional(),
+
+    match: MatchOptionsSchema.optional(),
+    state: LightStateSchema.optional(),
+    verify: VerifyOptionsSchema.optional(),
+
+    method: z.enum(["GET", "HEAD", "OPTIONS"]).optional(),
+    path: ClipV2WirePathSchema.optional(),
+    retry: z.boolean().optional(),
+  })
   .strict();
 
-// NOTE: Several tool-calling providers require the top-level JSON Schema to have
-// `type: "object"`. Zod discriminated unions can serialize to JSON Schema
-// without a top-level type, which breaks those providers. We therefore expose a
-// "wire" schema (simple object) for tool registration, and validate the full
-// discriminated union ourselves inside `execute`.
+const HueGatewayToolWireArgsSchema = HueGatewayToolWireBatchStepArgsSchema.extend({
+  continueOnError: z.boolean().optional(),
+  actions: z
+    .array(
+      z
+        .object({
+          action: HueGatewayToolWireBatchStepActionSchema,
+          args: HueGatewayToolWireBatchStepArgsSchema.optional(),
+        })
+        .strict()
+    )
+    .min(1)
+    .optional(),
+}).strict();
+
 const HueGatewayToolWireInputSchema = z
   .object({
     action: HueGatewayToolActionSchema,
-    // Intentionally broad: providers require top-level `type:"object"` for tool schemas,
-    // and the AI SDK forces `additionalProperties:false` on object schemas for
-    // compatibility. We therefore validate the detailed discriminated union at runtime.
-    args: z.unknown().optional(),
+    args: HueGatewayToolWireArgsSchema.optional(),
   })
   .strict();
 

@@ -22,6 +22,29 @@ Tool input shape:
 
 Do **not** generate `requestId` / `idempotencyKey` yourself when using the tool.
 
+#### Read-only listing (important; avoid loops)
+
+For “list / what’s in / show me the lights in …” requests:
+- Do **exactly 1** tool call: `inventory.snapshot`.
+- Answer from `result.rooms[]`, `result.zones[]`, and `result.lights[]`.
+- Avoid chaining `resolve.by_name` for basic listing; it is rarely needed and increases the chance of tool-call loops.
+
+#### Rooms vs zones (treat user language as interchangeable)
+
+Hue has **rooms** and **zones**:
+- **Room**: contains lights.
+- **Zone**: groups multiple rooms (e.g. “Downstairs/Upstairs/Beneden/Boven”).
+
+Users often say “room” or “in <name>” when they mean an **area**. When a user provides a name (e.g. “Keuken”):
+
+1) Call `inventory.snapshot`.
+2) Normalize-match the name against **both** `result.rooms[].name` and `result.zones[].name`.
+3) If it matches exactly one:
+   - room match → list lights where `light.roomRid == room.rid`
+   - zone match → collect `zone.roomRids[]` then list lights where `light.roomRid` is in that set
+4) If it matches **both** a room and a zone → ask which they mean.
+5) If it matches **neither** → ask a quick follow-up and show a few candidates from both rooms + zones.
+
 Recommended actions:
 - Read-only discovery: `inventory.snapshot`
 - Actuation: `room.set`, `zone.set`, `light.set`, `grouped_light.set`, `scene.activate`
@@ -136,6 +159,10 @@ Use inventory for:
 - listing rooms/zones/lights
 - mapping zone → rooms → lights
 - mapping room → lights
+
+Notes:
+- When listing lights “in <name>”, treat `<name>` as a room-or-zone candidate and match both lists.
+- Prefer inventory matching for listing; reserve `resolve.by_name` for actuation or when inventory names are insufficient.
 
 ## Curl templates (v2)
 
