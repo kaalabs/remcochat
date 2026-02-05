@@ -2,10 +2,16 @@
 
 You are integrating with an already-running **Hue Gateway** service. Assume it is reachable and functioning; you are **not** responsible for deploying or operating it. RemcoChat uses this gateway as the single interface to Philips Hue.
 
+## Authoritative v2 docs (in this repo)
+
+- Architecture + locked decisions: `docs/integrations/hue/v2-migration/hue-gateway-api-architecture-0v91.md`
+- OpenAPI skeleton (codegen input): `docs/integrations/hue/v2-migration/openapi-v2.skeleton.yaml`
+- Semantic companion: `docs/integrations/hue/v2-migration/spec-v2.md`
+- Gateway team implementation plan: `docs/integrations/hue/v2-migration/plan-v2.md`
+
 ## Pragmatic connection details (typical dev)
 
 - Gateway base URL: `http://localhost:8000`
-- Interactive docs: `http://localhost:8081`
 - Health: `GET /healthz` → `{ "ok": true }`
 - Readiness: `GET /readyz` → `{ "ready": true }`
   - If `ready=false`, the gateway is not paired/configured; don’t proceed.
@@ -56,12 +62,14 @@ Idempotency (state changes):
 
 ## Inventory + revisions (recommended integration model)
 
-Use the “inventory + SSE cache” pattern:
+Hue Gateway supports an “inventory + SSE cache” pattern:
 
 1) On startup: call `inventory.snapshot` and seed your local cache with `revision`.
 2) Subscribe to `GET /v2/events/stream`, apply deltas, persist the last SSE `id`.
 3) Resume with `Last-Event-ID`.
 4) On `needs_resync`: refresh `inventory.snapshot` and reset cursor tracking.
+
+RemcoChat currently uses `inventory.snapshot` on-demand for discovery and does **not** maintain a persistent SSE cache yet.
 
 ### `inventory.snapshot`
 
@@ -117,6 +125,7 @@ Tool availability rules:
 - For state-changing actions, always sets `Idempotency-Key` (and body `idempotencyKey`) deterministically per turn + payload.
 - Retries at most once on `409 idempotency_in_progress` and `429 rate_limited` / `bridge_rate_limited` using `retryAfterMs` / `Retry-After`.
 - Treats `verified=false` as success-with-warning (the action still returns `ok:true`).
+- In RemcoChat, `clipv2.request` is intentionally restricted to `GET|HEAD|OPTIONS` and paths starting with `/clip/v2/`.
 
 ### Bash fallback (skill)
 
