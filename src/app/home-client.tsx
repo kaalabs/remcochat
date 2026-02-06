@@ -3547,40 +3547,23 @@ export function HomeClient({
             >
               <PlusIcon className="size-4" />
             </Button>
-          </div>
 
-          <div className="mt-3 flex items-center gap-2">
             <Button
-              className="h-9 w-full justify-start gap-2"
+              aria-label="Profile settings"
+              className="h-9 w-9 px-0"
               data-testid="profile:settings-open"
               disabled={status !== "ready"}
               onClick={() => {
                 setSettingsOpen(true);
                 closeIfDrawer();
               }}
+              title="Profile settings"
               type="button"
-              variant="ghost"
+              variant="secondary"
             >
               <SettingsIcon className="size-4" />
-              <span>Settings</span>
             </Button>
           </div>
-
-          {adminEnabled ? (
-            <div className="mt-2">
-              <Button
-                asChild
-                className="h-9 w-full justify-start gap-2"
-                data-testid="admin:open"
-                variant="ghost"
-              >
-                <Link href="/admin">
-                  <ShieldIcon className="size-4" />
-                  <span>Admin</span>
-                </Link>
-              </Button>
-            </div>
-          ) : null}
 
           {appVersion ? (
             <div
@@ -3665,12 +3648,6 @@ export function HomeClient({
                       <span className="hidden md:inline">Admin access</span>
                     </Button>
                   ) : null}
-	                <div className="hidden text-sm text-muted-foreground md:block">
-	                  {isTemporaryChat
-	                    ? "Temporary chat"
-	                    : modelOptions.find((m) => m.id === effectiveModelId)?.label ??
-	                      effectiveModelId}
-	                </div>
 	                <Button
 	                  aria-label={
 	                    isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"
@@ -3693,6 +3670,19 @@ export function HomeClient({
 	                    <LockOpenIcon className="size-4" />
 	                  )}
 	                </Button>
+                  {adminEnabled ? (
+                    <Button
+                      asChild
+                      className="h-8 w-9 px-0"
+                      data-testid="admin:open"
+                      title="Admin"
+                      variant="outline"
+                    >
+                      <Link aria-label="Open admin" href="/admin">
+                        <ShieldIcon className="size-4" />
+                      </Link>
+                    </Button>
+                  ) : null}
 	              </div>
 	            </div>
 	          </header>
