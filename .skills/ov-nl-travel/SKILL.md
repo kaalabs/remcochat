@@ -28,6 +28,7 @@ Use the `ovNlGateway` tool first for Dutch railway questions.
 - `stations.search`: station lookup by name.
 - `stations.nearest`: nearest stations by coordinates.
 - `departures.list`: upcoming departures for a station.
+- `departures.window`: departures for a station within a requested time window (use `fromTime`/`toTime` and optional `date` in Europe/Amsterdam).
 - `arrivals.list`: upcoming arrivals for a station.
 - `trips.search`: trip options from A to B (with optional via + time).
 - `trips.detail`: full details for one trip from `ctxRecon`.

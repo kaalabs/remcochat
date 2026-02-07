@@ -2524,13 +2524,21 @@ export function HomeClient({
 	      rootChats.length > 0 &&
 	      (ownedFolders.length > 0 || sharedFoldersByOwner.length > 0);
 
-    return (
-      <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-          <div className="font-semibold tracking-tight">RemcoChat</div>
-          {mode === "drawer" ? (
-            <DialogClose asChild>
-              <Button
+	    return (
+	      <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
+	        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+	          <div className="flex min-w-0 items-center gap-2">
+	            <img
+	              alt=""
+	              aria-hidden="true"
+	              className="h-6 w-6 shrink-0"
+	              src="/icons/remcochat-sidebar-mark.png"
+	            />
+	            <div className="min-w-0 truncate font-semibold tracking-tight">RemcoChat</div>
+	          </div>
+	          {mode === "drawer" ? (
+	            <DialogClose asChild>
+	              <Button
                 aria-label="Close menu"
                 className="h-8 w-8"
                 size="icon"
@@ -3590,18 +3598,26 @@ export function HomeClient({
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
 	          <header className="border-b">
 	            <div className="flex flex-wrap items-center gap-3 pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
-	              <div className="flex min-w-0 items-center gap-2 md:hidden">
-	                <Button
-	                  aria-label="Open menu"
+		              <div className="flex min-w-0 items-center gap-2 md:hidden">
+		                <Button
+		                  aria-label="Open menu"
 	                  onClick={() => setSidebarOpen(true)}
 	                  size="icon"
 	                  type="button"
 	                  variant="ghost"
-	                >
-	                  <MenuIcon className="size-4" />
-	                </Button>
-	                <div className="truncate font-semibold tracking-tight">RemcoChat</div>
-	              </div>
+		                >
+		                  <MenuIcon className="size-4" />
+		                </Button>
+		                <div className="flex min-w-0 items-center gap-2">
+		                  <img
+		                    alt=""
+		                    aria-hidden="true"
+		                    className="h-5 w-5 shrink-0"
+		                    src="/icons/remcochat-sidebar-mark-20.png"
+		                  />
+		                  <div className="min-w-0 truncate font-semibold tracking-tight">RemcoChat</div>
+		                </div>
+		              </div>
 
 	              <div className="order-last flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
 	                <div className="hidden shrink-0 text-sm text-muted-foreground md:block">

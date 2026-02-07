@@ -147,9 +147,143 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.ok(seenUrls.some((url) => url.includes("/api/v2/departures")));
 });
 
-test("ovNlGateway trips.search resolves unique exact station name without disambiguation", async () => {
+test("ovNlGateway departures.window filters departures to requested time window", async () => {
   const configPath = writeTempConfigToml(`
 version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  const seenUrls: string[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    seenUrls.push(url);
+
+    if (url.includes("/api/v2/stations")) {
+      return new Response(
+        JSON.stringify({
+          payload: [
+            {
+              code: "UT",
+              UICCode: "8400621",
+              namen: { kort: "Utrecht C.", middel: "Utrecht Centraal", lang: "Utrecht Centraal" },
+              land: "NL",
+              lat: 52.089,
+              lng: 5.11,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=60",
+          },
+        }
+      );
+    }
+
+    if (url.includes("/api/v2/departures")) {
+      return new Response(
+        JSON.stringify({
+          payload: {
+            source: "HARP",
+            departures: [
+              {
+                plannedDateTime: "2030-02-07T17:50:00+01:00",
+                direction: "Outside Window (early)",
+                plannedTrack: "1",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "1234", operatorName: "NS" },
+              },
+              {
+                plannedDateTime: "2030-02-07T18:05:00+01:00",
+                direction: "Inside Window",
+                plannedTrack: "2",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "2345", operatorName: "NS" },
+              },
+              {
+                plannedDateTime: "2030-02-07T19:05:00+01:00",
+                direction: "Outside Window (late)",
+                plannedTrack: "3",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "3456", operatorName: "NS" },
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=5",
+          },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const result = await ovNlGateway.execute({
+    action: "departures.window",
+    args: {
+      station: "Utrecht",
+      date: "2030-02-07",
+      fromTime: "18:00",
+      toTime: "19:00",
+      maxJourneys: 80,
+    },
+  }) as {
+    kind: string;
+    departures?: Array<{ destination?: string }>;
+  };
+
+  assert.equal(result.kind, "departures.window");
+  assert.equal(result.departures?.length, 1);
+  assert.equal(result.departures?.[0]?.destination, "Inside Window");
+
+  const departuresUrl = seenUrls.find((u) => u.includes("/api/v2/departures"));
+  assert.ok(departuresUrl);
+  const parsed = new URL(departuresUrl!);
+  assert.equal(parsed.searchParams.get("dateTime"), "2030-02-07T17:00:00.000Z");
+});
+
+test("ovNlGateway trips.search resolves unique exact station name without disambiguation", async () => {
+  const configPath = writeTempConfigToml(`
+	version = 2
 
 [app]
 default_provider_id = "vercel"

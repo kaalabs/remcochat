@@ -1081,6 +1081,7 @@ export async function POST(req: Request) {
       system = [
         system,
         'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
         "Only use web search first when the user explicitly asks for internet/web sources.",
       ].join("\n\n");
     }
@@ -2164,6 +2165,16 @@ export async function POST(req: Request) {
       attachmentsEnabled: config.attachments.enabled,
     }),
   ];
+
+  if (ovNlTools.enabled) {
+    systemParts.push(
+      [
+        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
+        "Only use web search first when the user explicitly asks for internet/web sources.",
+      ].join("\n")
+    );
+  }
 
   if (skillInvocation.explicitSkillName) {
     systemParts.push(

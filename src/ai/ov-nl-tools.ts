@@ -27,6 +27,7 @@ const OV_NL_ACTIONS = [
   "stations.search",
   "stations.nearest",
   "departures.list",
+  "departures.window",
   "arrivals.list",
   "trips.search",
   "trips.detail",
@@ -73,7 +74,7 @@ const DeparturesListArgsSchema = z
     stationCode: StationCodeSchema.optional(),
     uicCode: UicCodeSchema.optional(),
     dateTime: DateTimeInputSchema.optional(),
-    maxJourneys: z.number().int().min(1).max(80).optional(),
+    maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
   })
   .strip()
@@ -82,13 +83,36 @@ const DeparturesListArgsSchema = z
     "departures.list requires station, stationCode, or uicCode"
   );
 
+const DeparturesWindowArgsSchema = z
+  .object({
+    station: z.string().trim().min(1).max(120).optional(),
+    stationCode: StationCodeSchema.optional(),
+    uicCode: UicCodeSchema.optional(),
+    date: z.string().trim().min(1).max(32).optional(),
+    fromTime: z.string().trim().min(1).max(16).optional(),
+    toTime: z.string().trim().min(1).max(16).optional(),
+    fromDateTime: DateTimeInputSchema.optional(),
+    toDateTime: DateTimeInputSchema.optional(),
+    maxJourneys: z.number().int().min(1).max(200).optional(),
+    lang: z.string().trim().min(2).max(12).optional(),
+  })
+  .strip()
+  .refine(
+    (v) => Boolean(v.station || v.stationCode || v.uicCode),
+    "departures.window requires station, stationCode, or uicCode"
+  )
+  .refine(
+    (v) => Boolean((v.fromDateTime && v.toDateTime) || (v.fromTime && v.toTime)),
+    "departures.window requires fromDateTime+toDateTime or fromTime+toTime"
+  );
+
 const ArrivalsListArgsSchema = z
   .object({
     station: z.string().trim().min(1).max(120).optional(),
     stationCode: StationCodeSchema.optional(),
     uicCode: UicCodeSchema.optional(),
     dateTime: DateTimeInputSchema.optional(),
-    maxJourneys: z.number().int().min(1).max(80).optional(),
+    maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
   })
   .strip()
@@ -169,7 +193,11 @@ const OvNlGatewayToolWireArgsSchema = z
     stationCode: LooseString(32),
     uicCode: LooseString(32),
     dateTime: LooseString(64),
-    maxJourneys: z.number().int().min(1).max(80).optional(),
+    fromDateTime: LooseString(64),
+    toDateTime: LooseString(64),
+    fromTime: LooseString(16),
+    toTime: LooseString(16),
+    maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: LooseString(64),
 
     from: LooseString(120),
@@ -207,6 +235,7 @@ const OvNlGatewayToolValidatedInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("stations.search"), args: StationsSearchArgsSchema }).strict(),
   z.object({ action: z.literal("stations.nearest"), args: StationsNearestArgsSchema }).strict(),
   z.object({ action: z.literal("departures.list"), args: DeparturesListArgsSchema }).strict(),
+  z.object({ action: z.literal("departures.window"), args: DeparturesWindowArgsSchema }).strict(),
   z.object({ action: z.literal("arrivals.list"), args: ArrivalsListArgsSchema }).strict(),
   z.object({ action: z.literal("trips.search"), args: TripsSearchArgsSchema }).strict(),
   z.object({ action: z.literal("trips.detail"), args: TripsDetailArgsSchema }).strict(),
@@ -389,6 +418,227 @@ function normalizeDateTimeInput(value: unknown, nowMs = Date.now()): string | un
   }
 
   return Number.isNaN(Date.parse(trimmed)) ? undefined : trimmed;
+}
+
+const OV_NL_TIME_ZONE = "Europe/Amsterdam";
+
+function parseIsoDateInput(value: unknown): { year: number; month: number; day: number } | null {
+  const trimmed = asText(value);
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  return { year, month, day };
+}
+
+function parseLocalTimeInput(value: unknown): { hour: number; minute: number } | null {
+  const trimmed = asText(value);
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(".", ":");
+  const match = normalized.match(/^(\d{1,2})(?::(\d{2}))$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23) return null;
+  if (minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+function addDaysToDateParts(
+  date: { year: number; month: number; day: number },
+  days: number
+): { year: number; month: number; day: number } {
+  const base = new Date(Date.UTC(date.year, date.month - 1, date.day, 12, 0, 0));
+  base.setUTCDate(base.getUTCDate() + Math.floor(days));
+  return {
+    year: base.getUTCFullYear(),
+    month: base.getUTCMonth() + 1,
+    day: base.getUTCDate(),
+  };
+}
+
+function timeZoneOffsetMs(timeZone: string, utcMs: number): number {
+  const date = new Date(utcMs);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "NaN");
+
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const hour = get("hour");
+  const minute = get("minute");
+  const second = get("second");
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return 0;
+  }
+
+  const zonedAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  return zonedAsUtcMs - utcMs;
+}
+
+function zonedLocalDateTimeToUtcMs(input: {
+  timeZone: string;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second?: number;
+}): number {
+  const second = Math.max(0, Math.min(59, Math.floor(Number(input.second ?? 0))));
+  const naiveUtcMs = Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, second);
+  let candidateMs = naiveUtcMs - timeZoneOffsetMs(input.timeZone, naiveUtcMs);
+  // Second pass handles DST boundaries.
+  candidateMs = naiveUtcMs - timeZoneOffsetMs(input.timeZone, candidateMs);
+  return candidateMs;
+}
+
+function currentDatePartsInTimeZone(
+  timeZone: string,
+  nowMs: number
+): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(nowMs));
+
+  const year = Number(parts.find((p) => p.type === "year")?.value ?? "NaN");
+  const month = Number(parts.find((p) => p.type === "month")?.value ?? "NaN");
+  const day = Number(parts.find((p) => p.type === "day")?.value ?? "NaN");
+  return {
+    year: Number.isFinite(year) ? year : new Date(nowMs).getUTCFullYear(),
+    month: Number.isFinite(month) ? month : new Date(nowMs).getUTCMonth() + 1,
+    day: Number.isFinite(day) ? day : new Date(nowMs).getUTCDate(),
+  };
+}
+
+function resolveDepartureWindowOrError(input: {
+  args: {
+    date?: string;
+    fromTime?: string;
+    toTime?: string;
+    fromDateTime?: string;
+    toDateTime?: string;
+  };
+  nowMs: number;
+}):
+  | {
+      ok: true;
+      fromMs: number;
+      toMs: number;
+      fromIso: string;
+      toIso: string;
+    }
+  | { ok: false; error: OvNlToolError } {
+  const requestedFrom = normalizeDateTimeInput(input.args.fromDateTime, input.nowMs);
+  const requestedTo = normalizeDateTimeInput(input.args.toDateTime, input.nowMs);
+  if (requestedFrom && requestedTo) {
+    const fromMs = Date.parse(requestedFrom);
+    const toMs = Date.parse(requestedTo);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      return {
+        ok: false,
+        error: {
+          code: "invalid_tool_input",
+          message: "departures.window requires valid ISO date/time inputs.",
+        },
+      };
+    }
+    if (toMs <= fromMs) {
+      return {
+        ok: false,
+        error: {
+          code: "invalid_tool_input",
+          message: "departures.window requires toDateTime to be after fromDateTime.",
+        },
+      };
+    }
+    return {
+      ok: true,
+      fromMs,
+      toMs,
+      fromIso: new Date(fromMs).toISOString(),
+      toIso: new Date(toMs).toISOString(),
+    };
+  }
+
+  const fromTime = parseLocalTimeInput(input.args.fromTime);
+  const toTime = parseLocalTimeInput(input.args.toTime);
+  if (!fromTime || !toTime) {
+    return {
+      ok: false,
+      error: {
+        code: "invalid_tool_input",
+        message: 'departures.window requires fromTime/toTime in "HH:MM" format when ISO datetimes are not provided.',
+      },
+    };
+  }
+
+  const dateParts =
+    parseIsoDateInput(input.args.date) ??
+    currentDatePartsInTimeZone(OV_NL_TIME_ZONE, input.nowMs);
+
+  const fromMs = zonedLocalDateTimeToUtcMs({
+    timeZone: OV_NL_TIME_ZONE,
+    ...dateParts,
+    ...fromTime,
+  });
+
+  let toDateParts = dateParts;
+  const fromTotalMinutes = fromTime.hour * 60 + fromTime.minute;
+  const toTotalMinutes = toTime.hour * 60 + toTime.minute;
+  if (toTotalMinutes <= fromTotalMinutes) {
+    toDateParts = addDaysToDateParts(dateParts, 1);
+  }
+
+  const toMs = zonedLocalDateTimeToUtcMs({
+    timeZone: OV_NL_TIME_ZONE,
+    ...toDateParts,
+    ...toTime,
+  });
+
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) {
+    return {
+      ok: false,
+      error: {
+        code: "invalid_tool_input",
+        message: "departures.window could not resolve a valid time window.",
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    fromMs,
+    toMs,
+    fromIso: new Date(fromMs).toISOString(),
+    toIso: new Date(toMs).toISOString(),
+  };
 }
 
 const TRIPS_SEARCH_FUTURE_GRACE_MS = 2 * 60 * 1000;
@@ -1242,6 +1492,203 @@ async function executeAction(
         latitude: lat,
         longitude: lng,
         stations,
+        cacheTtlSeconds,
+        fetchedAt,
+        cached: false,
+      },
+      cacheTtlSeconds,
+    };
+  }
+
+  if (action === "departures.window") {
+    const stationResult = await resolveStationFromArgs(ctx, {
+      action,
+      station: validatedInput.args.station,
+      stationCode: validatedInput.args.stationCode,
+      uicCode: validatedInput.args.uicCode,
+    });
+
+    if (stationResult.kind === "error") {
+      return {
+        output: makeErrorOutput({
+          action,
+          code: stationResult.error.code,
+          message: stationResult.error.message,
+          details: stationResult.error.details,
+        }),
+        cacheTtlSeconds: null,
+      };
+    }
+
+    if (stationResult.kind === "disambiguation") {
+      return makeDisambiguationCandidates(
+        action,
+        stationResult.query,
+        stationResult.candidates.map((candidate) => candidate.station)
+      );
+    }
+
+    const nowMs = Date.now();
+    const window = resolveDepartureWindowOrError({
+      args: validatedInput.args,
+      nowMs,
+    });
+    if (!window.ok) {
+      return {
+        output: makeErrorOutput({
+          action,
+          code: window.error.code,
+          message: window.error.message,
+          details: window.error.details,
+        }),
+        cacheTtlSeconds: null,
+      };
+    }
+
+    // If the requested window is fully in the past, return a clear error instead of an empty board.
+    if (window.toMs <= nowMs - 60_000) {
+      return {
+        output: makeErrorOutput({
+          action,
+          code: "invalid_tool_input",
+          message:
+            "Het gevraagde tijdvenster ligt in het verleden. Geef een tijdvenster dat (deels) in de toekomst ligt.",
+          details: {
+            fromDateTime: window.fromIso,
+            toDateTime: window.toIso,
+          },
+        }),
+        cacheTtlSeconds: null,
+      };
+    }
+
+    const station = stationResult.station;
+    const lang = normalizeLanguage(validatedInput.args.lang);
+
+    const requestedMaxJourneys =
+      typeof validatedInput.args.maxJourneys === "number" ? validatedInput.args.maxJourneys : null;
+    const maxJourneys = Math.max(1, Math.min(200, Math.floor(requestedMaxJourneys ?? 80)));
+    const maxFetches = 4;
+
+    const departures: OvNlDeparture[] = [];
+    const seen = new Set<string>();
+    let firstBatchMinMs: number | null = null;
+    let firstBatchMaxMs: number | null = null;
+    let cursorMs = window.fromMs;
+
+    for (let fetchIndex = 0; fetchIndex < maxFetches; fetchIndex += 1) {
+      const response = await callOvNlJson(ctx, {
+        path: "/api/v2/departures",
+        query: {
+          lang,
+          station: station.code || undefined,
+          uicCode: station.uicCode || undefined,
+          dateTime: new Date(cursorMs).toISOString(),
+          maxJourneys,
+        },
+      });
+      if (!response.ok) {
+        return {
+          output: makeErrorOutput({
+            action,
+            code: response.error.code,
+            message: response.error.message,
+            details: response.error.details,
+          }),
+          cacheTtlSeconds: null,
+        };
+      }
+
+      const payload = (response.json as { payload?: Record<string, unknown> } | null)?.payload;
+      if (!payload || typeof payload !== "object") {
+        return {
+          output: makeErrorOutput({
+            action,
+            code: "upstream_invalid_response",
+            message: "NS departures response did not include payload.",
+          }),
+          cacheTtlSeconds: null,
+        };
+      }
+
+      const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
+      if (departuresRaw.length === 0) break;
+
+      let maxSeenMs: number | null = null;
+      const normalized = departuresRaw.map((departure, index) => normalizeDeparture(departure, index));
+      for (const dep of normalized) {
+        const dtMs = Date.parse(dep.plannedDateTime);
+        if (Number.isFinite(dtMs)) {
+          maxSeenMs = Math.max(maxSeenMs ?? dtMs, dtMs);
+          if (fetchIndex === 0) {
+            firstBatchMinMs = Math.min(firstBatchMinMs ?? dtMs, dtMs);
+            firstBatchMaxMs = Math.max(firstBatchMaxMs ?? dtMs, dtMs);
+          }
+          if (dtMs >= window.fromMs && dtMs < window.toMs) {
+            const dedupeKey =
+              dep.journeyDetailRef ||
+              `${dep.plannedDateTime}|${dep.destination}|${dep.trainCategory}|${dep.trainNumber}`;
+            if (!seen.has(dedupeKey)) {
+              seen.add(dedupeKey);
+              departures.push({ ...dep, id: dedupeKey });
+            }
+          }
+        }
+      }
+
+      if (maxSeenMs == null) break;
+      if (maxSeenMs >= window.toMs) break;
+
+      const nextCursorMs = Math.max(cursorMs + 1000, maxSeenMs + 1000);
+      if (nextCursorMs <= cursorMs) break;
+      cursorMs = nextCursorMs;
+    }
+
+    // Detect likely unsupported dateTime filtering (some API docs claim this only works for foreign stations).
+    if (
+      departures.length === 0 &&
+      window.fromMs > nowMs + 30 * 60_000 &&
+      firstBatchMinMs != null &&
+      firstBatchMinMs < window.fromMs - 5 * 60_000
+    ) {
+      return {
+        output: makeErrorOutput({
+          action,
+          code: "upstream_invalid_response",
+          message:
+            "NS Reisinformatie kon geen vertrekken ophalen voor dit tijdvenster. Mogelijk ondersteunt de API geen vertrekborden op een toekomstige starttijd voor dit station.",
+          details: {
+            fromDateTime: window.fromIso,
+            toDateTime: window.toIso,
+            station: station.code,
+            firstBatchMinDateTime:
+              firstBatchMinMs != null ? new Date(firstBatchMinMs).toISOString() : null,
+            firstBatchMaxDateTime:
+              firstBatchMaxMs != null ? new Date(firstBatchMaxMs).toISOString() : null,
+          },
+        }),
+        cacheTtlSeconds: null,
+      };
+    }
+
+    departures.sort((a, b) => {
+      const aMs = Date.parse(a.plannedDateTime);
+      const bMs = Date.parse(b.plannedDateTime);
+      if (Number.isFinite(aMs) && Number.isFinite(bMs) && aMs !== bMs) return aMs - bMs;
+      return a.destination.localeCompare(b.destination);
+    });
+
+    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+    return {
+      output: {
+        kind: "departures.window",
+        station,
+        window: {
+          fromDateTime: window.fromIso,
+          toDateTime: window.toIso,
+          timeZone: OV_NL_TIME_ZONE,
+        },
+        departures,
         cacheTtlSeconds,
         fetchedAt,
         cached: false,

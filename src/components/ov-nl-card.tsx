@@ -134,7 +134,7 @@ function viewFromKind(kind: OvNlToolOutput["kind"]): "trips" | "board" | "alerts
   if (kind === "trips.search" || kind === "trips.detail" || kind === "journey.detail") {
     return "trips";
   }
-  if (kind === "departures.list" || kind === "arrivals.list") return "board";
+  if (kind === "departures.list" || kind === "departures.window" || kind === "arrivals.list") return "board";
   if (
     kind === "disruptions.list" ||
     kind === "disruptions.by_station" ||
@@ -151,6 +151,24 @@ function HeaderContent({ output }: { output: OvNlToolOutput }) {
       <>
         <h3 className={styles.title}>Vertrekbord</h3>
         <p className={styles.subtitle}>{stationLabel(output.station)}</p>
+      </>
+    );
+  }
+  if (output.kind === "departures.window") {
+    const fromDate = formatDate(output.window.fromDateTime);
+    const toDate = formatDate(output.window.toDateTime);
+    const fromTime = formatTime(output.window.fromDateTime);
+    const toTime = formatTime(output.window.toDateTime);
+    const windowLabel =
+      fromDate && toDate && fromDate !== toDate
+        ? `${fromDate} ${fromTime} → ${toDate} ${toTime}`
+        : `${fromDate || ""} · ${fromTime}–${toTime}`.trim();
+    return (
+      <>
+        <h3 className={styles.title}>Vertrekbord</h3>
+        <p className={styles.subtitle}>
+          {stationLabel(output.station)} {windowLabel ? `· ${windowLabel}` : ""}
+        </p>
       </>
     );
   }
@@ -249,10 +267,20 @@ function HeaderContent({ output }: { output: OvNlToolOutput }) {
 }
 
 function renderBoardRows(output: OvNlToolOutput) {
-  if (output.kind !== "departures.list" && output.kind !== "arrivals.list") return null;
+  if (
+    output.kind !== "departures.list" &&
+    output.kind !== "departures.window" &&
+    output.kind !== "arrivals.list"
+  ) {
+    return null;
+  }
 
-  const rows = output.kind === "departures.list" ? output.departures : output.arrivals;
-  const destinationTitle = output.kind === "departures.list" ? "Bestemming" : "Herkomst";
+  const isDepartures = output.kind === "departures.list" || output.kind === "departures.window";
+  const rows = isDepartures ? output.departures : output.arrivals;
+  const destinationTitle = isDepartures ? "Bestemming" : "Herkomst";
+  const emptyLabel = isDepartures
+    ? "Geen data beschikbaar, vraag om een meer actueel tijdswindow"
+    : "Geen ritten beschikbaar.";
 
   return (
     <div className={styles.boardWrap} data-testid="ov-nl-card:board">
@@ -263,7 +291,7 @@ function renderBoardRows(output: OvNlToolOutput) {
         <span>Status</span>
       </div>
       {rows.length === 0 ? (
-        <div className={styles.emptyState}>Geen ritten beschikbaar.</div>
+        <div className={styles.emptyState}>{emptyLabel}</div>
       ) : (
         rows.map((row) => (
           <div className={styles.boardRow} key={row.id}>

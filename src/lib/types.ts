@@ -163,6 +163,7 @@ export type OvNlToolAction =
   | "stations.search"
   | "stations.nearest"
   | "departures.list"
+  | "departures.window"
   | "arrivals.list"
   | "trips.search"
   | "trips.detail"
@@ -320,6 +321,19 @@ export type OvNlToolOutput =
   | {
       kind: "departures.list";
       station: OvNlStation | null;
+      departures: OvNlDeparture[];
+      cacheTtlSeconds: number;
+      fetchedAt: string;
+      cached: boolean;
+    }
+  | {
+      kind: "departures.window";
+      station: OvNlStation | null;
+      window: {
+        fromDateTime: string;
+        toDateTime: string;
+        timeZone: string;
+      };
       departures: OvNlDeparture[];
       cacheTtlSeconds: number;
       fetchedAt: string;
