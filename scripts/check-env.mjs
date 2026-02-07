@@ -287,6 +287,8 @@ if (routerEnabled) {
 
 const bashTools = parsedConfig?.app?.bash_tools;
 const bashToolsEnabled = bashTools?.enabled === true;
+const ovNl = parsedConfig?.app?.ov_nl;
+const ovNlEnabled = ovNl?.enabled === true;
 
 function isProbablyWeakAdminToken(token) {
   const t = String(token ?? "").trim();
@@ -475,6 +477,25 @@ if (bashToolsEnabled) {
       );
       process.exit(1);
     }
+  }
+}
+
+if (ovNlEnabled) {
+  const subscriptionKeyEnv =
+    typeof ovNl?.subscription_key_env === "string" && ovNl.subscription_key_env.trim()
+      ? ovNl.subscription_key_env.trim()
+      : "NS_APP_SUBSCRIPTION_KEY";
+  const subscriptionKey = String(process.env[subscriptionKeyEnv] ?? "").trim();
+  if (!subscriptionKey) {
+    console.error(
+      [
+        `OV NL tool is enabled in config.toml (app.ov_nl.enabled=true), but ${subscriptionKeyEnv} is missing.`,
+        "",
+        "Set in your shell before starting RemcoChat:",
+        `  export ${subscriptionKeyEnv}='...'`,
+      ].join("\n")
+    );
+    process.exit(1);
   }
 }
 

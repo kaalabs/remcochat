@@ -36,6 +36,7 @@ test("discovers repo skills in .skills", () => {
 
   assert.ok(res.skills.some((s) => s.name === "skills-system-validation"));
   assert.ok(res.skills.some((s) => s.name === "hue-instant-control"));
+  assert.ok(res.skills.some((s) => s.name === "ov-nl-travel"));
   assert.deepEqual(res.invalid, []);
 });
 

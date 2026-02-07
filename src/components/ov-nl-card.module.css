@@ -1,0 +1,448 @@
+.cardRoot {
+  --ov-ns-yellow: #ffc917;
+  --ov-ns-blue: #003082;
+  --ov-ns-blue-strong: #0050c8;
+  --ov-ns-surface: #f3f4f6;
+  --ov-ns-line: #d7dbe2;
+  --ov-ns-text: #1e2a3a;
+
+  width: 100%;
+  max-width: 980px;
+  overflow: hidden;
+  border: 1px solid var(--ov-ns-line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgb(10 30 80 / 10%);
+  color: var(--ov-ns-text);
+  font-family:
+    "Avenir Next",
+    "Segoe UI",
+    "Helvetica Neue",
+    "Noto Sans",
+    sans-serif;
+}
+
+.headerBand {
+  border-bottom: 1px solid color-mix(in srgb, var(--ov-ns-line) 70%, transparent);
+  background: var(--ov-ns-yellow);
+  padding: 16px 20px;
+}
+
+.headerTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.title {
+  margin: 0;
+  color: var(--ov-ns-blue);
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: color-mix(in srgb, var(--ov-ns-blue) 85%, white);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.body {
+  background: var(--ov-ns-surface);
+}
+
+.boardWrap {
+  padding: 0;
+}
+
+.boardHeader {
+  display: grid;
+  grid-template-columns: minmax(100px, 120px) 1fr minmax(72px, 86px) minmax(92px, 110px);
+  gap: 8px;
+  padding: 14px 16px;
+  color: color-mix(in srgb, var(--ov-ns-blue) 72%, black);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--ov-ns-line);
+  background: #fff;
+}
+
+.boardRow {
+  display: grid;
+  grid-template-columns: minmax(100px, 120px) 1fr minmax(72px, 86px) minmax(92px, 110px);
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--ov-ns-line);
+  background: #fff;
+  padding: 13px 16px;
+}
+
+.bigTime {
+  color: var(--ov-ns-blue);
+  font-size: 1.22rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.smallTime {
+  color: color-mix(in srgb, var(--ov-ns-text) 68%, white);
+  font-size: 0.74rem;
+  margin-top: 2px;
+}
+
+.primaryText {
+  color: var(--ov-ns-blue);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.secondaryText {
+  color: color-mix(in srgb, var(--ov-ns-text) 72%, white);
+  font-size: 0.82rem;
+  margin-top: 3px;
+}
+
+.platformCell {
+  color: var(--ov-ns-blue);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ov-ns-blue-strong) 38%, white);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--ov-ns-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgb(0 80 200 / 8%);
+}
+
+.tripsLayout {
+  display: grid;
+  grid-template-columns: minmax(280px, 38%) 1fr;
+  min-height: 330px;
+}
+
+.optionsColumn {
+  border-right: 1px solid var(--ov-ns-line);
+  background: #fff;
+}
+
+.optionRow {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  border: 0;
+  border-bottom: 1px solid var(--ov-ns-line);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  padding: 15px 16px;
+}
+
+.optionRow:hover {
+  background: rgb(0 80 200 / 4%);
+}
+
+.optionRowSelected {
+  outline: 2px solid var(--ov-ns-blue-strong);
+  outline-offset: -2px;
+  background: rgb(0 80 200 / 8%);
+}
+
+.optionMain {
+  min-width: 0;
+}
+
+.optionTimes {
+  color: var(--ov-ns-blue);
+  font-size: 1.12rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.badgeStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 0.48rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badgePrimary {
+  background: var(--ov-ns-blue-strong);
+  color: #fff;
+  box-shadow: 0 5px 10px rgb(0 48 130 / 18%);
+}
+
+.badgeSecondary {
+  border: 1px solid color-mix(in srgb, var(--ov-ns-blue-strong) 38%, white);
+  background: rgb(255 255 255 / 92%);
+  color: var(--ov-ns-blue);
+}
+
+.optionDate {
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--ov-ns-text) 68%, white);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.optionSubline {
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--ov-ns-text) 72%, white);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.detailPanel {
+  padding: 16px 18px 18px;
+  background: #fff;
+}
+
+.detailTop {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ov-ns-line);
+}
+
+.detailLabel {
+  color: color-mix(in srgb, var(--ov-ns-text) 66%, white);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.detailValue {
+  margin-top: 4px;
+  color: var(--ov-ns-blue);
+  font-size: 1.26rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.detailSubline {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  color: var(--ov-ns-blue);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.timeline {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.timelineItem {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+}
+
+.timelineRail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.timelineDot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 2px solid var(--ov-ns-blue);
+  background: #fff;
+}
+
+.timelineLine {
+  width: 2px;
+  flex: 1;
+  margin-top: 4px;
+  background: color-mix(in srgb, var(--ov-ns-blue) 36%, white);
+}
+
+.timelineItem:last-child .timelineLine {
+  display: none;
+}
+
+.timelineMain {
+  border: 1px solid var(--ov-ns-line);
+  border-radius: 10px;
+  padding: 10px 11px;
+  background: #fefefe;
+}
+
+.legHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.legName {
+  color: var(--ov-ns-blue);
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+
+.legRoute {
+  margin-top: 5px;
+  color: color-mix(in srgb, var(--ov-ns-text) 92%, white);
+  font-size: 0.85rem;
+}
+
+.legMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 7px;
+  color: color-mix(in srgb, var(--ov-ns-text) 66%, white);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.disruptionList {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.disruptionCard {
+  border: 1px solid var(--ov-ns-line);
+  border-left: 6px solid var(--ov-ns-blue-strong);
+  border-radius: 12px;
+  padding: 12px 13px;
+  background: #fff;
+}
+
+.disruptionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.disruptionType {
+  color: var(--ov-ns-blue);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.disruptionStatus {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ov-ns-blue-strong) 42%, white);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--ov-ns-blue);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.disruptionTitle {
+  margin: 7px 0 4px;
+  color: var(--ov-ns-blue);
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.disruptionTopic {
+  margin: 0;
+  color: color-mix(in srgb, var(--ov-ns-text) 70%, white);
+  font-size: 0.86rem;
+}
+
+.stationList {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  background: #fff;
+}
+
+.stationRow {
+  border-bottom: 1px solid var(--ov-ns-line);
+  padding: 12px 15px;
+}
+
+.emptyState {
+  border-bottom: 1px solid var(--ov-ns-line);
+  padding: 16px;
+  color: color-mix(in srgb, var(--ov-ns-text) 70%, white);
+  font-size: 0.9rem;
+}
+
+.errorState {
+  border-top: 1px solid var(--ov-ns-line);
+  padding: 16px;
+  background: #fff;
+  color: #8b1a1a;
+  font-size: 0.92rem;
+}
+
+.errorCode {
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+@media (width <= 900px) {
+  .headerTop {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tripsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .optionsColumn {
+    border-right: 0;
+    border-bottom: 1px solid var(--ov-ns-line);
+  }
+
+  .detailTop {
+    grid-template-columns: repeat(2, minmax(90px, 1fr));
+  }
+
+  .boardHeader,
+  .boardRow {
+    grid-template-columns: 92px 1fr 66px;
+  }
+
+  .boardHeader span:last-child,
+  .boardRow > div:last-child {
+    display: none;
+  }
+}

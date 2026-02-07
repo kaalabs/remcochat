@@ -80,6 +80,28 @@ Hue control is implemented via:
 
 Docs: `docs/integrations/hue/hue.md`
 
+## OV NL / NS Reisinformatie (optional)
+
+Train travel data is exposed through:
+- server tool: `ovNlGateway` (stations, departures, arrivals, trips, journey detail, disruptions)
+- optional skill: `.skills/ov-nl-travel` (explicit `/ov-nl-travel ...` activation)
+- UI card: NS-style OV card rendered from `tool-ovNlGateway` output
+
+Setup:
+1) Enable in `config.toml`:
+- `[app.ov_nl]`
+- `enabled = true`
+- `access = "localhost"` (or `"lan"` with admin-token policy)
+- `base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]`
+- `subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"`
+
+2) Export your NS subscription key:
+- `export NS_APP_SUBSCRIPTION_KEY='...'`
+
+Notes:
+- No runtime dependency on `NS-App-API-keys.md`; only environment variables are used at runtime.
+- Responses are normalized and cached with short TTL capped by `app.ov_nl.cache_max_ttl_seconds`.
+
 ## Tools & security
 
 This project is intended for trusted machines / LAN. There is no built-in auth.
