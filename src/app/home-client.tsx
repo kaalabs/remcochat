@@ -257,7 +257,7 @@ function ComposerAttachmentsCountBridge(props: {
 export type HomeClientProps = {
   adminEnabled: boolean;
   appVersion: string;
-  bashToolsLanAccessEnabled: boolean;
+  lanAdminAccessEnabled: boolean;
   initialActiveProfileId: string;
   initialProfiles: Profile[];
   initialChats: Chat[];
@@ -266,7 +266,7 @@ export type HomeClientProps = {
 export function HomeClient({
   adminEnabled,
   appVersion,
-  bashToolsLanAccessEnabled,
+  lanAdminAccessEnabled,
   initialActiveProfileId,
   initialProfiles,
   initialChats,
@@ -364,7 +364,7 @@ export function HomeClient({
   >(null);
 
   useEffect(() => {
-    if (!bashToolsLanAccessEnabled) return;
+    if (!lanAdminAccessEnabled) return;
     const token = readLanAdminToken();
     setHasLanAdminToken(Boolean(token));
     setLanAdminTokenDraft(token);
@@ -375,7 +375,7 @@ export function HomeClient({
       );
       setLanAdminTokenRemember(remember);
     }
-  }, [bashToolsLanAccessEnabled, readLanAdminToken]);
+  }, [lanAdminAccessEnabled, readLanAdminToken]);
 
   const instrumentedChatFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -395,13 +395,13 @@ export function HomeClient({
         const headers: Record<string, string> = {};
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (tz) headers["x-remcochat-viewer-timezone"] = tz;
-        if (!bashToolsLanAccessEnabled) return headers;
+        if (!lanAdminAccessEnabled) return headers;
         const token = readLanAdminToken();
         if (token) headers["x-remcochat-admin-token"] = token;
         return headers;
       },
     });
-  }, [bashToolsLanAccessEnabled, instrumentedChatFetch, readLanAdminToken]);
+  }, [lanAdminAccessEnabled, instrumentedChatFetch, readLanAdminToken]);
 
   type ProvidersResponse = {
     defaultProviderId: string;
@@ -3649,7 +3649,7 @@ export function HomeClient({
 	                <div className="md:hidden">
 	                  <ThemeToggle />
 	                </div>
-                  {bashToolsLanAccessEnabled ? (
+                  {lanAdminAccessEnabled ? (
                     <Button
                       className="h-9 w-9 justify-start gap-2 px-0 md:w-auto md:px-3"
                       onClick={() => setLanAdminTokenOpen(true)}
@@ -5478,7 +5478,7 @@ export function HomeClient({
             <DialogTitle>Admin access</DialogTitle>
           </DialogHeader>
 
-          {!bashToolsLanAccessEnabled ? (
+          {!lanAdminAccessEnabled ? (
             <div className="text-sm text-muted-foreground">
               Admin access is not configured for LAN access.
             </div>
@@ -5487,7 +5487,7 @@ export function HomeClient({
               <div className="text-sm text-muted-foreground">
                 For safety, some admin features are protected by a shared admin token when you
                 access RemcoChat over the network. Enter the token for this server to unlock
-                admin-only features in this browser (including Bash tool access).
+                admin-only features in this browser (including LAN-only tools).
               </div>
 
               <div className="space-y-2">
