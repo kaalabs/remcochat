@@ -130,6 +130,18 @@ auth_header_env = "HUE_AUTH_HEADER" # full header line (e.g. "Authorization: Bea
 bearer_token_env = "HUE_TOKEN"      # used when auth_header_env is unset
 api_key_env = "HUE_API_KEY"         # used when auth_header_env is unset (preferred over bearer)
 
+# OV NL (NS Reisinformatie) integration (optional).
+#
+# This enables the server-side `ovNlGateway` tool for departures/arrivals/trips/disruptions.
+# Auth is read from an environment variable set in subscription_key_env.
+[app.ov_nl]
+enabled = false
+access = "localhost" # "localhost" (localhost requests only) | "lan" (requires admin policy / token)
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+timeout_ms = 8000
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+cache_max_ttl_seconds = 60
+
 # Providers configure only:
 # - how to connect (base_url + api_key_env)
 # - which models are allowed (allowed_model_ids + default_model_id)

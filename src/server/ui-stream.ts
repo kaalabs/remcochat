@@ -15,6 +15,47 @@ function safeErrorText(value: unknown, fallback: string) {
   return fallback;
 }
 
+function isChunkType(value: unknown, type: string): boolean {
+  if (!isRecord(value)) return false;
+  return value.type === type;
+}
+
+export function stripUIMessageChunks<T>(
+  chunks: T[],
+  opts: { dropStart?: boolean; dropFinish?: boolean }
+): T[] {
+  const dropStart = Boolean(opts.dropStart);
+  const dropFinish = Boolean(opts.dropFinish);
+  if (!dropStart && !dropFinish) return chunks;
+
+  return chunks.filter((chunk) => {
+    const value = chunk as unknown;
+    if (dropStart && isChunkType(value, "start")) return false;
+    if (dropFinish && isChunkType(value, "finish")) return false;
+    return true;
+  });
+}
+
+export function stripUIMessageStream<T>(
+  stream: ReadableStream<T>,
+  opts: { dropStart?: boolean; dropFinish?: boolean }
+): ReadableStream<T> {
+  const dropStart = Boolean(opts.dropStart);
+  const dropFinish = Boolean(opts.dropFinish);
+  if (!dropStart && !dropFinish) return stream;
+
+  return stream.pipeThrough(
+    new TransformStream<T, T>({
+      transform(chunk, controller) {
+        const value = chunk as unknown;
+        if (dropStart && isChunkType(value, "start")) return;
+        if (dropFinish && isChunkType(value, "finish")) return;
+        controller.enqueue(chunk);
+      },
+    })
+  );
+}
+
 export function createBufferedUIMessageStream<T>(chunks: T[]): ReadableStream<T> {
   return new ReadableStream({
     start(controller) {

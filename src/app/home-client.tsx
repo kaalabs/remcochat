@@ -45,6 +45,8 @@ import type {
   AgendaToolOutput,
   ListsOverviewToolOutput,
   MemoryItem,
+  NotesToolOutput,
+  OvNlToolOutput,
   Profile,
   RemcoChatMessageMetadata,
   TaskList,
@@ -101,13 +103,13 @@ import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
 import { SkillsToolCard } from "@/components/skills-tool-card";
+import { OvNlCard } from "@/components/ov-nl-card";
 import { ConversationScrollButton } from "@/components/ai-elements/conversation";
 	import type { WeatherToolOutput } from "@/ai/weather";
 	import type { WeatherForecastToolOutput } from "@/ai/weather";
 	import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
 	import type { TimezonesToolOutput } from "@/ai/timezones";
 	import type { UrlSummaryToolOutput } from "@/ai/url-summary";
-import type { NotesToolOutput } from "@/lib/types";
 import {
 		  ArchiveIcon,
 		  BookmarkIcon,
@@ -4198,6 +4200,43 @@ export function HomeClient({
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
                                         Notes error: {part.errorText}
+                                      </div>
+                                    </div>
+                                  );
+                                default:
+                                  return null;
+                              }
+                            }
+
+                            if (part.type === "tool-ovNlGateway") {
+                              switch (part.state) {
+                                case "input-streaming":
+                                case "input-available":
+                                  return (
+                                    <ToolCallLine
+                                      key={`${id}-${index}`}
+                                      state={part.state}
+                                      type={part.type}
+                                    />
+                                  );
+                                case "output-available": {
+                                  const output = part.output as
+                                    | OvNlToolOutput
+                                    | undefined;
+                                  if (!output || typeof output !== "object") return null;
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <OvNlCard output={output} />
+                                    </div>
+                                  );
+                                }
+                                case "output-error":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+                                        OV NL error: {part.errorText}
                                       </div>
                                     </div>
                                   );

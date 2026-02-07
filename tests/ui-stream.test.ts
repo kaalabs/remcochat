@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readUIMessageStream } from "ai";
 import {
+  concatUIMessageStreams,
   createBufferedUIMessageStream,
   createUIMessageStreamWithToolErrorContinuation,
+  stripUIMessageChunks,
+  stripUIMessageStream,
   type ToolStreamError,
 } from "../src/server/ui-stream";
 
@@ -138,4 +142,47 @@ test("createUIMessageStreamWithToolErrorContinuation continues when finishReason
   assert.equal(output[7].type, "start");
   assert.equal(output[8].type, "text-delta");
   assert.equal(output[8].delta, "continued");
+});
+
+test("stripUIMessage* helpers prevent duplicate assistant messages when stitching continuations", async () => {
+  const base: Chunk[] = [
+    { type: "start", messageId: "m1" },
+    {
+      type: "tool-input-available",
+      toolCallId: "tc_1",
+      toolName: "ovNlGateway",
+      input: { action: "trips.search", args: { from: "Almere Centrum", to: "Groningen" } },
+    },
+    {
+      type: "tool-output-available",
+      toolCallId: "tc_1",
+      output: { kind: "trips.search", trips: [] },
+    },
+    { type: "finish", finishReason: "tool-calls" },
+  ];
+
+  const followup: Chunk[] = [
+    { type: "start", messageId: "m2" },
+    { type: "text-start", id: "m2" },
+    { type: "text-delta", id: "m2", delta: "after" },
+    { type: "text-end", id: "m2" },
+    { type: "finish", finishReason: "stop" },
+  ];
+
+  const stitched = concatUIMessageStreams(
+    stripUIMessageChunks(base, { dropFinish: true }),
+    stripUIMessageStream(createBufferedUIMessageStream(followup), { dropStart: true })
+  );
+
+  const finalById = new Map<string, any>();
+  for await (const msg of readUIMessageStream({ stream: stitched as any })) {
+    finalById.set(msg.id, msg);
+  }
+
+  assert.equal(finalById.size, 1);
+  const message = Array.from(finalById.values())[0] as { parts: Array<{ type: string; [key: string]: unknown }> };
+  const toolParts = message.parts.filter((p) => p.type === "tool-ovNlGateway");
+  const textParts = message.parts.filter((p) => p.type === "text");
+  assert.equal(toolParts.length, 1);
+  assert.ok(textParts.some((p) => String(p.text ?? "").includes("after")));
 });

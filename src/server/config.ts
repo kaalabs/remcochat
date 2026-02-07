@@ -116,6 +116,17 @@ const HueGatewaySchema = z
   })
   .optional();
 
+const OvNlSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    access: z.enum(["localhost", "lan"]).optional(),
+    base_urls: z.array(z.string().min(1)).optional(),
+    timeout_ms: z.number().int().min(1_000).max(120_000).optional(),
+    subscription_key_env: z.string().min(1).optional(),
+    cache_max_ttl_seconds: z.number().int().min(1).max(3_600).optional(),
+  })
+  .optional();
+
 const AttachmentsSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -152,6 +163,7 @@ const RawConfigSchema = z.object({
     reasoning: ReasoningSchema,
     bash_tools: BashToolsSchema,
     hue_gateway: HueGatewaySchema,
+    ov_nl: OvNlSchema,
     attachments: AttachmentsSchema,
   }),
   providers: z.record(z.string(), ProviderSchema),
@@ -237,6 +249,14 @@ export type RemcoChatConfig = {
     authHeaderEnv: string;
     bearerTokenEnv: string;
     apiKeyEnv: string;
+  } | null;
+  ovNl: {
+    enabled: boolean;
+    access: "localhost" | "lan";
+    baseUrls: string[];
+    timeoutMs: number;
+    subscriptionKeyEnv: string;
+    cacheMaxTtlSeconds: number;
   } | null;
   attachments: {
     enabled: boolean;
@@ -751,6 +771,93 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     };
   }
 
+  let ovNl: RemcoChatConfig["ovNl"] = null;
+  const rawOvNl = raw.app.ov_nl ?? {};
+  const ovNlEnabled = Boolean(rawOvNl.enabled ?? false);
+  if (ovNlEnabled) {
+    const access = rawOvNl.access ?? "localhost";
+    const defaultBaseUrls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"];
+    const baseUrlsRaw = Array.isArray(rawOvNl.base_urls)
+      ? rawOvNl.base_urls.map((u) => String(u).trim()).filter(Boolean)
+      : [];
+    const baseUrlsInput = baseUrlsRaw.length > 0 ? baseUrlsRaw : defaultBaseUrls;
+
+    const seenBaseUrls = new Set<string>();
+    const baseUrls: string[] = [];
+    for (const rawUrl of baseUrlsInput) {
+      const trimmed = String(rawUrl ?? "").trim().replace(/\/+$/, "");
+      if (!trimmed) continue;
+
+      let parsed: URL;
+      try {
+        parsed = new URL(trimmed);
+      } catch {
+        throw new Error(
+          `config.toml: app.ov_nl.base_urls contains an invalid URL: ${JSON.stringify(trimmed)}`
+        );
+      }
+
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error(
+          `config.toml: app.ov_nl.base_urls must use http(s): ${JSON.stringify(trimmed)}`
+        );
+      }
+      if (parsed.username || parsed.password) {
+        throw new Error(
+          `config.toml: app.ov_nl.base_urls must not include credentials: ${JSON.stringify(trimmed)}`
+        );
+      }
+      if (parsed.search || parsed.hash) {
+        throw new Error(
+          `config.toml: app.ov_nl.base_urls must not include a query/hash: ${JSON.stringify(trimmed)}`
+        );
+      }
+
+      const normalized = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(
+        /\/+$/,
+        ""
+      );
+      if (!normalized) continue;
+      if (seenBaseUrls.has(normalized)) continue;
+      seenBaseUrls.add(normalized);
+      baseUrls.push(normalized);
+    }
+
+    if (baseUrls.length === 0) {
+      throw new Error(
+        "config.toml: app.ov_nl.base_urls must include at least one base URL"
+      );
+    }
+
+    const timeoutMs = Math.min(
+      120_000,
+      Math.max(1_000, Math.floor(Number(rawOvNl.timeout_ms ?? 8_000)))
+    );
+
+    const subscriptionKeyEnv = String(
+      rawOvNl.subscription_key_env ?? "NS_APP_SUBSCRIPTION_KEY"
+    ).trim();
+    if (!subscriptionKeyEnv) {
+      throw new Error(
+        "config.toml: app.ov_nl.subscription_key_env must be a non-empty environment variable name"
+      );
+    }
+
+    const cacheMaxTtlSeconds = Math.min(
+      3_600,
+      Math.max(1, Math.floor(Number(rawOvNl.cache_max_ttl_seconds ?? 60)))
+    );
+
+    ovNl = {
+      enabled: true,
+      access,
+      baseUrls,
+      timeoutMs,
+      subscriptionKeyEnv,
+      cacheMaxTtlSeconds,
+    };
+  }
+
   const defaultAllowedMediaTypes = [
     "text/plain",
     "text/markdown",
@@ -840,6 +947,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     },
     bashTools,
     hueGateway,
+    ovNl,
     attachments: {
       enabled: attachmentsEnabled,
       allowedMediaTypes,
