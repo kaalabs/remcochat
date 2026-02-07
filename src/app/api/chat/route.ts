@@ -206,6 +206,13 @@ function extractExplicitBashCommand(text: string): string | null {
   return null;
 }
 
+function explicitSkillNameCandidate(text: string): string | null {
+  const raw = String(text ?? "");
+  if (!raw.startsWith("/")) return null;
+  const match = raw.match(/^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+|$)/);
+  return match?.[1] ?? null;
+}
+
 function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
   if (lastUserIndex <= 0) return {};
@@ -1004,15 +1011,39 @@ export async function POST(req: Request) {
       ? explicitBashCommandFromUser
       : null;
 
-    const skillsRegistry = getSkillsRegistry();
-    const skillsTools = createSkillsTools({ enabled: Boolean(skillsRegistry) });
-    const ovNlTools = createOvNlTools({
-      request: req,
-    });
-    const availableSkills =
-      skillsRegistry == null
-        ? []
-        : ovNlTools.enabled
+	    const skillsRegistry = getSkillsRegistry();
+	    const skillsTools = createSkillsTools({ enabled: Boolean(skillsRegistry) });
+	    const ovNlTools = createOvNlTools({
+	      request: req,
+	    });
+      const explicitSkillCandidate = explicitSkillNameCandidate(lastUserText);
+      if (
+        explicitSkillCandidate === "ov-nl-travel" &&
+        skillsRegistry?.get("ov-nl-travel") &&
+        !ovNlTools.enabled
+      ) {
+        return uiTextResponse({
+          text:
+            'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
+            "Dit gebeurt meestal wanneer je RemcoChat via LAN gebruikt zonder admin-token. Klik op het sleutel-icoon (Admin access) en vul REMCOCHAT_ADMIN_TOKEN in, en probeer daarna opnieuw.\n\n" +
+            "Als je geen sleutel-icoon ziet: controleer dat je actieve config app.ov_nl.enabled=true en app.ov_nl.access=\"lan\" heeft.",
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+          },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "1",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-ov-nl-tools-enabled": "0",
+            "x-remcochat-ov-nl-tools": "",
+          },
+        });
+      }
+	    const availableSkills =
+	      skillsRegistry == null
+	        ? []
+	        : ovNlTools.enabled
           ? skillsRegistry.list()
           : skillsRegistry.list().filter((skill) => skill.name !== "ov-nl-travel");
     const skillNames = new Set(availableSkills.map((s) => s.name));
@@ -1137,10 +1168,10 @@ export async function POST(req: Request) {
       reasoning: reasoningSelection.effectiveReasoning,
     });
 
-    const headers = {
-      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
-      "x-remcochat-temporary": "1",
-      "x-remcochat-profile-id": profile.id,
+	    const headers = {
+	      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+	      "x-remcochat-temporary": "1",
+	      "x-remcochat-profile-id": profile.id,
       "x-remcochat-provider-id": resolved.providerId,
       "x-remcochat-model-type": resolved.modelType,
       "x-remcochat-provider-model-id": resolved.providerModelId,
@@ -1166,11 +1197,13 @@ export async function POST(req: Request) {
       "x-remcochat-profile-instructions-hash": hash8(profileInstructions),
       "x-remcochat-chat-instructions-len": "0",
       "x-remcochat-chat-instructions-hash": hash8(""),
-      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
-      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
-      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
-      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
-    };
+	      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
+	      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+	      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
+	      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
+        "x-remcochat-ov-nl-tools-enabled": ovNlTools.enabled ? "1" : "0",
+        "x-remcochat-ov-nl-tools": Object.keys(ovNlTools.tools).join(","),
+	    };
 
     const baseMessageMetadata = {
       createdAt: now,
@@ -2019,13 +2052,39 @@ export async function POST(req: Request) {
       })
     : { enabled: false, tools: {} };
 
-  const skillsRegistry = getSkillsRegistry();
-  const ovNlTools = createOvNlTools({
-    request: req,
-  });
-  const availableSkills =
-    skillsRegistry == null
-      ? []
+	  const skillsRegistry = getSkillsRegistry();
+	  const ovNlTools = createOvNlTools({
+	    request: req,
+	  });
+    const explicitSkillCandidate = explicitSkillNameCandidate(lastUserText);
+    if (
+      explicitSkillCandidate === "ov-nl-travel" &&
+      skillsRegistry?.get("ov-nl-travel") &&
+      !ovNlTools.enabled
+    ) {
+      return uiTextResponse({
+        text:
+          'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
+          "Dit gebeurt meestal wanneer je RemcoChat via LAN gebruikt zonder admin-token. Klik op het sleutel-icoon (Admin access) en vul REMCOCHAT_ADMIN_TOKEN in, en probeer daarna opnieuw.\n\n" +
+          "Als je geen sleutel-icoon ziet: controleer dat je actieve config app.ov_nl.enabled=true en app.ov_nl.access=\"lan\" heeft.",
+        messageMetadata: {
+          createdAt: now,
+          turnUserMessageId: lastUserMessageId || undefined,
+          profileInstructionsRevision: currentProfileRevision,
+          chatInstructionsRevision: currentChatRevision,
+        },
+        headers: {
+          "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+          "x-remcochat-temporary": "0",
+          "x-remcochat-profile-id": profile.id,
+          "x-remcochat-ov-nl-tools-enabled": "0",
+          "x-remcochat-ov-nl-tools": "",
+        },
+      });
+    }
+	  const availableSkills =
+	    skillsRegistry == null
+	      ? []
       : ovNlTools.enabled
         ? skillsRegistry.list()
         : skillsRegistry.list().filter((skill) => skill.name !== "ov-nl-travel");
@@ -2344,10 +2403,10 @@ export async function POST(req: Request) {
       : { stopWhen: [stepCountIs(5)] }),
   });
 
-  const headers = {
-      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
-      "x-remcochat-temporary": "0",
-      "x-remcochat-profile-id": profile.id,
+	  const headers = {
+	    "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+	    "x-remcochat-temporary": "0",
+	    "x-remcochat-profile-id": profile.id,
       "x-remcochat-chat-id": effectiveChat.id,
       "x-remcochat-provider-id": resolved.providerId,
       "x-remcochat-model-type": resolved.modelType,
@@ -2381,11 +2440,13 @@ export async function POST(req: Request) {
       "x-remcochat-profile-instructions-stored-hash": hash8(
         storedProfileInstructions
       ),
-      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
-      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
-      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
-      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
-    };
+	    "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
+	    "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+	    "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
+	    "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
+      "x-remcochat-ov-nl-tools-enabled": ovNlTools.enabled ? "1" : "0",
+      "x-remcochat-ov-nl-tools": Object.keys(ovNlTools.tools).join(","),
+	  };
 
   const baseMessageMetadata = {
     createdAt: now,
