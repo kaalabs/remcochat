@@ -160,6 +160,14 @@ import {
 const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
 const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
 
+type AdminAccessResponse = {
+  isLocalhost: boolean;
+  requiredConfigured: boolean;
+  tokenProvided: boolean;
+  allowed: boolean;
+  reason: string;
+};
+
 function chatIsPinned(chat: Pick<Chat, "pinnedAt">): boolean {
   return typeof chat.pinnedAt === "string" && chat.pinnedAt.trim().length > 0;
 }
@@ -359,15 +367,61 @@ export function HomeClient({
   const [lanAdminTokenRemember, setLanAdminTokenRemember] = useState(false);
   const [lanAdminTokenVisible, setLanAdminTokenVisible] = useState(false);
   const [hasLanAdminToken, setHasLanAdminToken] = useState(false);
+  const [lanAdminTokenAllowed, setLanAdminTokenAllowed] = useState<
+    boolean | null
+  >(null);
+  const [lanAdminTokenAllowedReason, setLanAdminTokenAllowedReason] =
+    useState("");
   const [bashToolsEnabledHeader, setBashToolsEnabledHeader] = useState<
     "0" | "1" | null
   >(null);
 
+  const verifyLanAdminToken = useCallback(async () => {
+    if (!lanAdminAccessEnabled) {
+      setLanAdminTokenAllowed(null);
+      setLanAdminTokenAllowedReason("");
+      return;
+    }
+
+    const token = readLanAdminToken();
+    if (!token) {
+      setLanAdminTokenAllowed(null);
+      setLanAdminTokenAllowedReason("");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/admin/access", {
+        cache: "no-store",
+        headers: { "x-remcochat-admin-token": token },
+      });
+      const json = (await res.json().catch(() => null)) as AdminAccessResponse | null;
+      if (!json || typeof json.allowed !== "boolean") {
+        setLanAdminTokenAllowed(null);
+        setLanAdminTokenAllowedReason("invalid_response");
+        return;
+      }
+
+      setLanAdminTokenAllowed(json.allowed);
+      setLanAdminTokenAllowedReason(typeof json.reason === "string" ? json.reason : "");
+    } catch {
+      setLanAdminTokenAllowed(null);
+      setLanAdminTokenAllowedReason("network_error");
+    }
+  }, [lanAdminAccessEnabled, readLanAdminToken]);
+
   useEffect(() => {
-    if (!lanAdminAccessEnabled) return;
+    if (!lanAdminAccessEnabled) {
+      setHasLanAdminToken(false);
+      setLanAdminTokenDraft("");
+      setLanAdminTokenAllowed(null);
+      setLanAdminTokenAllowedReason("");
+      return;
+    }
     const token = readLanAdminToken();
     setHasLanAdminToken(Boolean(token));
     setLanAdminTokenDraft(token);
+    verifyLanAdminToken().catch(() => {});
     if (typeof window !== "undefined") {
       const remember = Boolean(
         !window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY) &&
@@ -375,7 +429,7 @@ export function HomeClient({
       );
       setLanAdminTokenRemember(remember);
     }
-  }, [lanAdminAccessEnabled, readLanAdminToken]);
+  }, [lanAdminAccessEnabled, readLanAdminToken, verifyLanAdminToken]);
 
   const instrumentedChatFetch = useCallback(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3656,13 +3710,17 @@ export function HomeClient({
                       type="button"
                       variant="ghost"
                     >
-                      <KeyIcon
-                        className={
-                          hasLanAdminToken
-                            ? "size-4 text-emerald-600 dark:text-emerald-400"
-                            : "size-4"
-                        }
-                      />
+	                      <KeyIcon
+	                        className={
+	                          hasLanAdminToken
+	                            ? lanAdminTokenAllowed === false
+	                              ? "size-4 text-amber-600 dark:text-amber-400"
+	                              : lanAdminTokenAllowed === true
+	                                ? "size-4 text-emerald-600 dark:text-emerald-400"
+	                                : "size-4 text-muted-foreground"
+	                            : "size-4"
+	                        }
+	                      />
                       <span className="hidden md:inline">Admin access</span>
                     </Button>
                   ) : null}
@@ -5510,11 +5568,13 @@ export function HomeClient({
                     {lanAdminTokenVisible ? "Hide" : "Show"}
                   </Button>
                   <Button
-                    onClick={() => {
-                      clearLanAdminToken();
-                      setLanAdminTokenDraft("");
-                      setHasLanAdminToken(false);
-                    }}
+	                    onClick={() => {
+	                      clearLanAdminToken();
+	                      setLanAdminTokenDraft("");
+	                      setHasLanAdminToken(false);
+	                      setLanAdminTokenAllowed(null);
+	                      setLanAdminTokenAllowedReason("");
+	                    }}
                     type="button"
                     variant="ghost"
                   >
@@ -5557,21 +5617,31 @@ export function HomeClient({
                 </div>
               </div>
 
-              <div className="rounded-md border bg-card p-3">
-                <div className="text-sm font-medium">Verification</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Bash tools verification (from the last <code>/api/chat</code> response header):
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                  <code className="rounded bg-muted px-2 py-1">
-                    x-remcochat-bash-tools-enabled=
-                    {bashToolsEnabledHeader ?? "?"}
-                  </code>
-                  <code className="rounded bg-muted px-2 py-1">
-                    token={hasLanAdminToken ? "present" : "absent"}
-                  </code>
-                </div>
-              </div>
+	              <div className="rounded-md border bg-card p-3">
+	                <div className="text-sm font-medium">Verification</div>
+	                <div className="mt-1 text-xs text-muted-foreground">
+	                  LAN admin access check + bash tools header (from the last{" "}
+	                  <code>/api/chat</code> response):
+	                </div>
+	                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+	                  <code className="rounded bg-muted px-2 py-1">
+	                    x-remcochat-bash-tools-enabled=
+	                    {bashToolsEnabledHeader ?? "?"}
+	                  </code>
+	                  <code className="rounded bg-muted px-2 py-1">
+	                    token={hasLanAdminToken ? "present" : "absent"}
+	                  </code>
+	                  <code className="rounded bg-muted px-2 py-1">
+	                    admin=
+	                    {lanAdminTokenAllowed === true
+	                      ? "allowed"
+	                      : lanAdminTokenAllowed === false
+	                        ? "denied"
+	                        : "?"}
+	                    {lanAdminTokenAllowedReason ? ` (${lanAdminTokenAllowedReason})` : ""}
+	                  </code>
+	                </div>
+	              </div>
 
               <div className="flex justify-end gap-2">
                 <Button
@@ -5582,12 +5652,13 @@ export function HomeClient({
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => {
-                    writeLanAdminToken(lanAdminTokenDraft, lanAdminTokenRemember);
-                    const token = readLanAdminToken();
-                    setHasLanAdminToken(Boolean(token));
-                    setLanAdminTokenOpen(false);
-                  }}
+	                  onClick={() => {
+	                    writeLanAdminToken(lanAdminTokenDraft, lanAdminTokenRemember);
+	                    const token = readLanAdminToken();
+	                    setHasLanAdminToken(Boolean(token));
+	                    verifyLanAdminToken().catch(() => {});
+	                    setLanAdminTokenOpen(false);
+	                  }}
                   type="button"
                 >
                   Save locally

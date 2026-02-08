@@ -54,6 +54,7 @@ import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
+import { adminTokenFromRequest } from "@/server/request-auth";
 import {
   isCurrentDateTimeUserQuery,
   isTimezonesUserQuery,
@@ -1022,11 +1023,17 @@ export async function POST(req: Request) {
         skillsRegistry?.get("ov-nl-travel") &&
         !ovNlTools.enabled
       ) {
+        const required = String(process.env.REMCOCHAT_ADMIN_TOKEN ?? "").trim();
+        const provided = String(adminTokenFromRequest(req) ?? "").trim();
+        const hint = !required
+          ? "Server-side REMCOCHAT_ADMIN_TOKEN ontbreekt. Zet REMCOCHAT_ADMIN_TOKEN in je productie .env en herstart de stack."
+          : !provided
+            ? "Je request bevat geen admin-token. Klik op het sleutel-icoon (Admin access), plak REMCOCHAT_ADMIN_TOKEN, en klik op 'Save locally'."
+            : "Je request bevat wel een admin-token, maar die wordt niet geaccepteerd (token mismatch). Klik op het sleutel-icoon (Admin access), 'Clear', plak opnieuw de server token, en klik op 'Save locally'.";
         return uiTextResponse({
           text:
             'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
-            "Dit gebeurt meestal wanneer je RemcoChat via LAN gebruikt zonder admin-token. Klik op het sleutel-icoon (Admin access) en vul REMCOCHAT_ADMIN_TOKEN in, en probeer daarna opnieuw.\n\n" +
-            "Als je geen sleutel-icoon ziet: controleer dat je actieve config app.ov_nl.enabled=true en app.ov_nl.access=\"lan\" heeft.",
+            hint,
           messageMetadata: {
             createdAt: now,
             turnUserMessageId: lastUserMessageId || undefined,
@@ -2057,20 +2064,26 @@ export async function POST(req: Request) {
 	    request: req,
 	  });
     const explicitSkillCandidate = explicitSkillNameCandidate(lastUserText);
-    if (
-      explicitSkillCandidate === "ov-nl-travel" &&
-      skillsRegistry?.get("ov-nl-travel") &&
-      !ovNlTools.enabled
-    ) {
-      return uiTextResponse({
-        text:
-          'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
-          "Dit gebeurt meestal wanneer je RemcoChat via LAN gebruikt zonder admin-token. Klik op het sleutel-icoon (Admin access) en vul REMCOCHAT_ADMIN_TOKEN in, en probeer daarna opnieuw.\n\n" +
-          "Als je geen sleutel-icoon ziet: controleer dat je actieve config app.ov_nl.enabled=true en app.ov_nl.access=\"lan\" heeft.",
-        messageMetadata: {
-          createdAt: now,
-          turnUserMessageId: lastUserMessageId || undefined,
-          profileInstructionsRevision: currentProfileRevision,
+	    if (
+	      explicitSkillCandidate === "ov-nl-travel" &&
+	      skillsRegistry?.get("ov-nl-travel") &&
+	      !ovNlTools.enabled
+	    ) {
+	      const required = String(process.env.REMCOCHAT_ADMIN_TOKEN ?? "").trim();
+	      const provided = String(adminTokenFromRequest(req) ?? "").trim();
+	      const hint = !required
+	        ? "Server-side REMCOCHAT_ADMIN_TOKEN ontbreekt. Zet REMCOCHAT_ADMIN_TOKEN in je productie .env en herstart de stack."
+	        : !provided
+	          ? "Je request bevat geen admin-token. Klik op het sleutel-icoon (Admin access), plak REMCOCHAT_ADMIN_TOKEN, en klik op 'Save locally'."
+	          : "Je request bevat wel een admin-token, maar die wordt niet geaccepteerd (token mismatch). Klik op het sleutel-icoon (Admin access), 'Clear', plak opnieuw de server token, en klik op 'Save locally'.";
+	      return uiTextResponse({
+	        text:
+	          'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
+	          hint,
+	        messageMetadata: {
+	          createdAt: now,
+	          turnUserMessageId: lastUserMessageId || undefined,
+	          profileInstructionsRevision: currentProfileRevision,
           chatInstructionsRevision: currentChatRevision,
         },
         headers: {
