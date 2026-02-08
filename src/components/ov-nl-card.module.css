@@ -352,6 +352,7 @@
 
 .legRouteEmphasis {
   font-weight: 800;
+  font-size: calc(0.85rem - 0.5pt);
 }
 
 .legMeta {
