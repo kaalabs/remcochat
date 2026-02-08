@@ -626,10 +626,12 @@ function TripsView({
                 </div>
               </div>
             </div>
-            <div className={styles.detailSubline}>
-              {tripDateLabel(selectedTrip) ? `${tripDateLabel(selectedTrip)} • ` : ""}
-              {selectedTrip.departureName} → {selectedTrip.arrivalName} • {selectedTrip.transfers}x overstap
-            </div>
+            {output.kind !== "trips.detail" ? (
+              <div className={styles.detailSubline}>
+                {tripDateLabel(selectedTrip) ? `${tripDateLabel(selectedTrip)} • ` : ""}
+                {selectedTrip.departureName} → {selectedTrip.arrivalName} • {selectedTrip.transfers}x overstap
+              </div>
+            ) : null}
             {output.kind === "trips.search" ? (
               <div className={styles.detailActions}>
                 <button
