@@ -242,6 +242,15 @@ export type OvNlArrival = {
   journeyDetailRef: string | null;
 };
 
+export type OvNlTripLegStop = {
+  name: string;
+  plannedDateTime: string | null;
+  actualDateTime: string | null;
+  plannedTrack: string | null;
+  actualTrack: string | null;
+  cancelled: boolean;
+};
+
 export type OvNlTripLeg = {
   index: string;
   mode:
@@ -268,6 +277,7 @@ export type OvNlTripLeg = {
   destinationActualTrack: string | null;
   journeyDetailRef: string | null;
   stopCount: number;
+  stops?: OvNlTripLegStop[];
 };
 
 export type OvNlTripSummary = {

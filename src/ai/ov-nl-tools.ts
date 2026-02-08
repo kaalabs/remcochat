@@ -15,6 +15,7 @@ import type {
   OvNlToolError,
   OvNlToolOutput,
   OvNlTripLeg,
+  OvNlTripLegStop,
   OvNlTripSummary,
 } from "@/lib/types";
 
@@ -900,7 +901,222 @@ function toKnownTravelType(value: unknown): OvNlTripLeg["mode"] {
   return "UNKNOWN";
 }
 
-function normalizeTripLeg(raw: unknown, index: number): OvNlTripLeg {
+function normalizeTripLegStop(raw: unknown): OvNlTripLegStop {
+  const stop = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const arrivalsRaw = Array.isArray(stop.arrivals) ? stop.arrivals : [];
+  const departuresRaw = Array.isArray(stop.departures) ? stop.departures : [];
+  const arrival0 =
+    arrivalsRaw[0] && typeof arrivalsRaw[0] === "object"
+      ? (arrivalsRaw[0] as Record<string, unknown>)
+      : {};
+  const departure0 =
+    departuresRaw[0] && typeof departuresRaw[0] === "object"
+      ? (departuresRaw[0] as Record<string, unknown>)
+      : {};
+
+  const pickLooseScalarText = (value: unknown): string | null => {
+    if (typeof value === "string") return value.trim() || null;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const picked = pickLooseScalarText(item);
+        if (picked) return picked;
+      }
+      return null;
+    }
+    if (value && typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      const keys = [
+        "track",
+        "platform",
+        "spoor",
+        "trackNumber",
+        "platformNumber",
+        "spoorNumber",
+        "trackNo",
+        "platformNo",
+        "spoorNo",
+        "number",
+        "value",
+        "label",
+        "name",
+        "code",
+      ];
+      for (const key of keys) {
+        const picked = pickLooseScalarText(obj[key]);
+        if (picked) return picked;
+      }
+    }
+    return null;
+  };
+
+  const nestedStop =
+    stop.stop && typeof stop.stop === "object" ? (stop.stop as Record<string, unknown>) : {};
+
+  const name =
+    asText(stop.name) ||
+    asText(stop.stationName) ||
+    asText(stop.locationName) ||
+    asText(nestedStop.name) ||
+    asText(nestedStop.rawLocationName) ||
+    asText(stop.rawLocationName) ||
+    "Stop";
+
+  const plannedDateTime =
+    asNullableText(stop.plannedDateTime) ||
+    asNullableText(stop.plannedDepartureDateTime) ||
+    asNullableText(stop.plannedArrivalDateTime) ||
+    asNullableText(stop.plannedTime) ||
+    asNullableText(arrival0.plannedDateTime) ||
+    asNullableText(arrival0.plannedTime) ||
+    asNullableText(departure0.plannedDateTime) ||
+    asNullableText(departure0.plannedTime);
+
+  const actualDateTime =
+    asNullableText(stop.actualDateTime) ||
+    asNullableText(stop.actualDepartureDateTime) ||
+    asNullableText(stop.actualArrivalDateTime) ||
+    asNullableText(stop.actualTime) ||
+    asNullableText(arrival0.actualDateTime) ||
+    asNullableText(arrival0.actualTime) ||
+    asNullableText(departure0.actualDateTime) ||
+    asNullableText(departure0.actualTime);
+
+  const plannedTrack =
+    pickLooseScalarText(stop.plannedTrack) ||
+    pickLooseScalarText(stop.plannedArrivalTrack) ||
+    pickLooseScalarText(stop.plannedArrivalPlatform) ||
+    pickLooseScalarText(stop.plannedArrivalSpoor) ||
+    pickLooseScalarText(stop.plannedDepartureTrack) ||
+    pickLooseScalarText(stop.plannedDeparturePlatform) ||
+    pickLooseScalarText(stop.plannedDepartureSpoor) ||
+    pickLooseScalarText(stop.plannedPlatform) ||
+    pickLooseScalarText(stop.plannedSpoor) ||
+    pickLooseScalarText(stop.platform) ||
+    pickLooseScalarText(stop.spoor) ||
+    pickLooseScalarText(stop.track) ||
+    pickLooseScalarText(stop.arrivalTrack) ||
+    pickLooseScalarText(stop.arrivalPlatform) ||
+    pickLooseScalarText(stop.arrivalSpoor) ||
+    pickLooseScalarText(stop.departureTrack) ||
+    pickLooseScalarText(stop.departurePlatform) ||
+    pickLooseScalarText(stop.departureSpoor) ||
+    pickLooseScalarText(arrival0.plannedTrack) ||
+    pickLooseScalarText(arrival0.plannedPlatform) ||
+    pickLooseScalarText(arrival0.plannedSpoor) ||
+    pickLooseScalarText(arrival0.plannedArrivalTrack) ||
+    pickLooseScalarText(arrival0.plannedArrivalPlatform) ||
+    pickLooseScalarText(arrival0.plannedArrivalSpoor) ||
+    pickLooseScalarText(arrival0.plannedDepartureTrack) ||
+    pickLooseScalarText(arrival0.plannedDeparturePlatform) ||
+    pickLooseScalarText(arrival0.plannedDepartureSpoor) ||
+    pickLooseScalarText(arrival0.platform) ||
+    pickLooseScalarText(arrival0.spoor) ||
+    pickLooseScalarText(arrival0.track) ||
+    pickLooseScalarText(arrival0.arrivalTrack) ||
+    pickLooseScalarText(arrival0.arrivalPlatform) ||
+    pickLooseScalarText(arrival0.arrivalSpoor) ||
+    pickLooseScalarText(arrival0.departureTrack) ||
+    pickLooseScalarText(arrival0.departurePlatform) ||
+    pickLooseScalarText(arrival0.departureSpoor) ||
+    pickLooseScalarText(departure0.plannedTrack) ||
+    pickLooseScalarText(departure0.plannedPlatform) ||
+    pickLooseScalarText(departure0.plannedSpoor) ||
+    pickLooseScalarText(departure0.plannedArrivalTrack) ||
+    pickLooseScalarText(departure0.plannedArrivalPlatform) ||
+    pickLooseScalarText(departure0.plannedArrivalSpoor) ||
+    pickLooseScalarText(departure0.plannedDepartureTrack) ||
+    pickLooseScalarText(departure0.plannedDeparturePlatform) ||
+    pickLooseScalarText(departure0.plannedDepartureSpoor) ||
+    pickLooseScalarText(departure0.platform) ||
+    pickLooseScalarText(departure0.spoor) ||
+    pickLooseScalarText(departure0.track) ||
+    pickLooseScalarText(departure0.arrivalTrack) ||
+    pickLooseScalarText(departure0.arrivalPlatform) ||
+    pickLooseScalarText(departure0.arrivalSpoor) ||
+    pickLooseScalarText(departure0.departureTrack) ||
+    pickLooseScalarText(departure0.departurePlatform) ||
+    pickLooseScalarText(departure0.departureSpoor);
+
+  const actualTrack =
+    pickLooseScalarText(stop.actualTrack) ||
+    pickLooseScalarText(stop.actualArrivalTrack) ||
+    pickLooseScalarText(stop.actualArrivalPlatform) ||
+    pickLooseScalarText(stop.actualArrivalSpoor) ||
+    pickLooseScalarText(stop.actualDepartureTrack) ||
+    pickLooseScalarText(stop.actualDeparturePlatform) ||
+    pickLooseScalarText(stop.actualDepartureSpoor) ||
+    pickLooseScalarText(stop.actualPlatform) ||
+    pickLooseScalarText(stop.actualSpoor) ||
+    pickLooseScalarText(stop.track) ||
+    pickLooseScalarText(stop.platform) || // fallback if provider only emits platform
+    pickLooseScalarText(stop.spoor) ||
+    pickLooseScalarText(stop.arrivalTrack) ||
+    pickLooseScalarText(stop.arrivalPlatform) ||
+    pickLooseScalarText(stop.arrivalSpoor) ||
+    pickLooseScalarText(stop.departureTrack) ||
+    pickLooseScalarText(stop.departurePlatform) ||
+    pickLooseScalarText(stop.departureSpoor) ||
+    pickLooseScalarText(arrival0.actualTrack) ||
+    pickLooseScalarText(arrival0.actualPlatform) ||
+    pickLooseScalarText(arrival0.actualSpoor) ||
+    pickLooseScalarText(arrival0.actualArrivalTrack) ||
+    pickLooseScalarText(arrival0.actualArrivalPlatform) ||
+    pickLooseScalarText(arrival0.actualArrivalSpoor) ||
+    pickLooseScalarText(arrival0.actualDepartureTrack) ||
+    pickLooseScalarText(arrival0.actualDeparturePlatform) ||
+    pickLooseScalarText(arrival0.actualDepartureSpoor) ||
+    pickLooseScalarText(arrival0.track) ||
+    pickLooseScalarText(arrival0.platform) || // fallback if provider only emits platform
+    pickLooseScalarText(arrival0.spoor) ||
+    pickLooseScalarText(arrival0.arrivalTrack) ||
+    pickLooseScalarText(arrival0.arrivalPlatform) ||
+    pickLooseScalarText(arrival0.arrivalSpoor) ||
+    pickLooseScalarText(arrival0.departureTrack) ||
+    pickLooseScalarText(arrival0.departurePlatform) ||
+    pickLooseScalarText(arrival0.departureSpoor) ||
+    pickLooseScalarText(departure0.actualTrack) ||
+    pickLooseScalarText(departure0.actualPlatform) ||
+    pickLooseScalarText(departure0.actualSpoor) ||
+    pickLooseScalarText(departure0.actualArrivalTrack) ||
+    pickLooseScalarText(departure0.actualArrivalPlatform) ||
+    pickLooseScalarText(departure0.actualArrivalSpoor) ||
+    pickLooseScalarText(departure0.actualDepartureTrack) ||
+    pickLooseScalarText(departure0.actualDeparturePlatform) ||
+    pickLooseScalarText(departure0.actualDepartureSpoor) ||
+    pickLooseScalarText(departure0.track) ||
+    pickLooseScalarText(departure0.platform) || // fallback if provider only emits platform
+    pickLooseScalarText(departure0.spoor) ||
+    pickLooseScalarText(departure0.arrivalTrack) ||
+    pickLooseScalarText(departure0.arrivalPlatform) ||
+    pickLooseScalarText(departure0.arrivalSpoor) ||
+    pickLooseScalarText(departure0.departureTrack) ||
+    pickLooseScalarText(departure0.departurePlatform) ||
+    pickLooseScalarText(departure0.departureSpoor);
+
+  return {
+    name,
+    plannedDateTime,
+    actualDateTime,
+    plannedTrack,
+    actualTrack,
+    cancelled: asBoolean(stop.cancelled),
+  };
+}
+
+function hasStopTime(stop: OvNlTripLegStop): boolean {
+  const planned = asText(stop.plannedDateTime);
+  const actual = asText(stop.actualDateTime);
+  if (actual && Number.isFinite(Date.parse(actual))) return true;
+  if (planned && Number.isFinite(Date.parse(planned))) return true;
+  return false;
+}
+
+function normalizeTripLeg(
+  raw: unknown,
+  index: number,
+  opts?: { includeStops?: boolean }
+): OvNlTripLeg {
   const leg = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const origin =
     leg.origin && typeof leg.origin === "object"
@@ -917,6 +1133,13 @@ function normalizeTripLeg(raw: unknown, index: number): OvNlTripLeg {
 
   const originName = asText(origin.name) || asText(origin.rawLocationName);
   const destinationName = asText(destination.name) || asText(destination.rawLocationName);
+
+  const stopsRaw = Array.isArray(leg.stops) ? leg.stops : [];
+  const stops = opts?.includeStops
+    ? stopsRaw
+        .map((stop) => normalizeTripLegStop(stop))
+        .filter((stop) => hasStopTime(stop))
+    : undefined;
 
   return {
     index: asText(leg.idx) || String(index),
@@ -935,14 +1158,19 @@ function normalizeTripLeg(raw: unknown, index: number): OvNlTripLeg {
     destinationPlannedTrack: asNullableText(destination.plannedTrack),
     destinationActualTrack: asNullableText(destination.actualTrack),
     journeyDetailRef: asNullableText(leg.journeyDetailRef),
-    stopCount: Array.isArray(leg.stops) ? leg.stops.length : 0,
+    stopCount: stops ? stops.length : stopsRaw.length,
+    ...(stops ? { stops } : {}),
   };
 }
 
-function normalizeTripSummary(raw: unknown, source: string): OvNlTripSummary {
+function normalizeTripSummary(
+  raw: unknown,
+  source: string,
+  opts?: { includeStops?: boolean }
+): OvNlTripSummary {
   const trip = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const legsRaw = Array.isArray(trip.legs) ? trip.legs : [];
-  const legs = legsRaw.map((leg, index) => normalizeTripLeg(leg, index));
+  const legs = legsRaw.map((leg, index) => normalizeTripLeg(leg, index, opts));
 
   const firstLeg = legs[0];
   const lastLeg = legs[legs.length - 1];
@@ -1971,7 +2199,7 @@ async function executeAction(
       };
     }
 
-    const trip = normalizeTripSummary(response.json, "trip.detail");
+    const trip = normalizeTripSummary(response.json, "trip.detail", { includeStops: true });
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
       output: {

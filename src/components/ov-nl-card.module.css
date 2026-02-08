@@ -22,6 +22,11 @@
     sans-serif;
 }
 
+/* Trips (search/detail) should be visually tighter than boards/alerts. */
+.cardRoot:global(.ov-nl-card--trips) {
+  max-width: 690px;
+}
+
 .headerBand {
   border-bottom: 1px solid color-mix(in srgb, var(--ov-ns-line) 70%, transparent);
   background: var(--ov-ns-yellow);
@@ -128,8 +133,12 @@
 
 .tripsLayout {
   display: grid;
-  grid-template-columns: minmax(280px, 38%) 1fr;
+  grid-template-columns: 1fr 1fr;
   min-height: 330px;
+}
+
+.tripsLayoutSingle {
+  grid-template-columns: 1fr;
 }
 
 .optionsColumn {
@@ -204,13 +213,6 @@
   color: var(--ov-ns-blue);
 }
 
-.optionDate {
-  margin-top: 2px;
-  color: color-mix(in srgb, var(--ov-ns-text) 68%, white);
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-
 .optionSubline {
   margin-top: 4px;
   color: color-mix(in srgb, var(--ov-ns-text) 72%, white);
@@ -253,6 +255,36 @@
   color: var(--ov-ns-blue);
   font-size: 0.92rem;
   font-weight: 700;
+}
+
+.detailActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.detailButton {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--ov-ns-blue-strong);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 8px 16px rgb(0 48 130 / 18%);
+}
+
+.detailButton:hover {
+  filter: brightness(1.05);
+}
+
+.detailButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
 }
 
 .timeline {
@@ -326,6 +358,87 @@
   color: color-mix(in srgb, var(--ov-ns-text) 66%, white);
   font-size: 0.74rem;
   font-weight: 600;
+}
+
+.legStops {
+  margin-top: 10px;
+  border: 1px solid var(--ov-ns-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.legStopsSummary {
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--ov-ns-blue);
+  font-size: 0.82rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.legStopsSummary::-webkit-details-marker {
+  display: none;
+}
+
+.legStopsList {
+  border-top: 1px solid var(--ov-ns-line);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.legStopsRow {
+  display: grid;
+  grid-template-columns: 84px 1fr 92px;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ov-ns-surface) 55%, white);
+}
+
+.legStopsTime {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--ov-ns-blue);
+  font-weight: 800;
+  font-size: 0.82rem;
+}
+
+.legStopsPlanned {
+  color: color-mix(in srgb, var(--ov-ns-text) 62%, white);
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+
+.legStopsName {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--ov-ns-text) 92%, white);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.legStopsStatusInline {
+  color: #8b1a1a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.legStopsTrackCell {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--ov-ns-text) 66%, white);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
 .disruptionList {

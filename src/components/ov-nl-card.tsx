@@ -12,6 +12,8 @@ import styles from "./ov-nl-card.module.css";
 
 type OvNlCardProps = {
   output: OvNlToolOutput;
+  canRequestTripDetails?: boolean;
+  onRequestTripDetails?: (ctxRecon: string) => void;
 };
 
 const OV_NL_TIME_ZONE = "Europe/Amsterdam";
@@ -181,20 +183,28 @@ function HeaderContent({ output }: { output: OvNlToolOutput }) {
     );
   }
   if (output.kind === "trips.search") {
+    const recommended = pickRecommendedTrip(output.trips);
+    const dateLabel = recommended ? tripDateLabel(recommended) : "";
+    const routeLabel = recommended
+      ? `${recommended.departureName} → ${recommended.arrivalName}`
+      : `${stationLabel(output.from)} → ${stationLabel(output.to)}`;
+    const summary = [dateLabel, routeLabel].filter(Boolean).join(" • ");
     return (
       <>
         <h3 className={styles.title}>Reisadvies</h3>
-        <p className={styles.subtitle}>
-          {stationLabel(output.from)} → {stationLabel(output.to)}
-        </p>
+        <p className={styles.subtitle}>{summary}</p>
       </>
     );
   }
   if (output.kind === "trips.detail") {
+    const trip = output.trip;
+    const dateLabel = trip ? tripDateLabel(trip) : "";
+    const routeLabel = trip ? `${trip.departureName} → ${trip.arrivalName}` : "Onbekende route";
+    const summary = [dateLabel, routeLabel].filter(Boolean).join(" • ");
     return (
       <>
         <h3 className={styles.title}>Trip detail</h3>
-        <p className={styles.subtitle}>Context: {output.trip?.ctxRecon || "onbekend"}</p>
+        <p className={styles.subtitle}>{summary}</p>
       </>
     );
   }
@@ -318,10 +328,26 @@ function renderBoardRows(output: OvNlToolOutput) {
   );
 }
 
-function renderTripTimeline(legs: OvNlTripLeg[]) {
+function renderTripTimeline(legs: OvNlTripLeg[], opts?: { openStopsByDefault?: boolean }) {
   if (legs.length === 0) {
     return <div className={styles.emptyState}>Geen trajectdetails beschikbaar.</div>;
   }
+
+  const stationKey = (value: unknown) =>
+    String(value ?? "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const stationMatches = (a: string, b: string) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    // Handle common abbreviations like "Almere C" vs "Almere Centrum".
+    if (a.startsWith(b) || b.startsWith(a)) return true;
+    return false;
+  };
 
   return (
     <div className={styles.timeline} data-testid="ov-nl-card:timeline">
@@ -341,10 +367,74 @@ function renderTripTimeline(legs: OvNlTripLeg[]) {
               {leg.destinationName} ({formatTime(leg.destinationActualDateTime || leg.destinationPlannedDateTime)})
             </div>
             <div className={styles.legMeta}>
-              <span>Spoor {leg.originActualTrack || leg.originPlannedTrack || "-"}</span>
-              <span>Spoor {leg.destinationActualTrack || leg.destinationPlannedTrack || "-"}</span>
-              <span>{leg.cancelled ? "Geannuleerd" : "Actief"}</span>
+              {leg.stopCount > 0 ? <span>Stops: {leg.stopCount}</span> : null}
+              {leg.cancelled ? <span>Geannuleerd</span> : null}
             </div>
+            {Array.isArray(leg.stops) && leg.stops.length > 0 ? (
+              <details className={styles.legStops} open={Boolean(opts?.openStopsByDefault)}>
+                {(() => {
+                  const displayStops = leg.stops.filter((stop) => {
+                    const planned = stop.plannedDateTime;
+                    const actual = stop.actualDateTime;
+                    if (actual && !Number.isNaN(new Date(actual).getTime())) return true;
+                    if (planned && !Number.isNaN(new Date(planned).getTime())) return true;
+                    return false;
+                  });
+                  if (displayStops.length === 0) return null;
+
+                  return (
+                    <>
+                      <summary className={styles.legStopsSummary}>
+                        Show stops ({displayStops.length})
+                      </summary>
+                      <div className={styles.legStopsList} data-testid="ov-nl-card:leg-stops">
+                        {displayStops.map((stop, idx) => {
+                          const planned = stop.plannedDateTime;
+                          const actual = stop.actualDateTime;
+                          const showPlanned =
+                            Boolean(actual && planned) &&
+                      formatTime(actual) !== "--:--" &&
+                      formatTime(planned) !== "--:--" &&
+                      formatTime(actual) !== formatTime(planned);
+                          const stopNameKey = stationKey(stop.name);
+                          const originKey = stationKey(leg.originName);
+                          const destinationKey = stationKey(leg.destinationName);
+                          const inferredTrack =
+                            stationMatches(stopNameKey, originKey)
+                              ? leg.originActualTrack || leg.originPlannedTrack || ""
+                              : stationMatches(stopNameKey, destinationKey)
+                                ? leg.destinationActualTrack || leg.destinationPlannedTrack || ""
+                                : "";
+
+                          const track = stop.actualTrack || stop.plannedTrack || inferredTrack || "";
+                          return (
+                            <div className={styles.legStopsRow} key={`${stop.name}-${idx}`}>
+                              <div className={styles.legStopsTime}>
+                                <span>{formatTime(actual || planned)}</span>
+                          {showPlanned ? (
+                            <span className={styles.legStopsPlanned}>
+                              {formatTime(planned)}
+                            </span>
+                          ) : null}
+                              </div>
+                              <div className={styles.legStopsName}>
+                                <span>{stop.name}</span>
+                                {stop.cancelled ? (
+                                  <span className={styles.legStopsStatusInline}>Geannuleerd</span>
+                                ) : null}
+                              </div>
+                              <div className={styles.legStopsTrackCell}>
+                                {track ? `Spoor ${track}` : ""}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+              </details>
+            ) : null}
           </div>
         </div>
       ))}
@@ -352,7 +442,15 @@ function renderTripTimeline(legs: OvNlTripLeg[]) {
   );
 }
 
-function TripsView({ output }: { output: OvNlToolOutput }) {
+function TripsView({
+  output,
+  canRequestTripDetails,
+  onRequestTripDetails,
+}: {
+  output: OvNlToolOutput;
+  canRequestTripDetails?: boolean;
+  onRequestTripDetails?: (ctxRecon: string) => void;
+}) {
   const tripOptions: OvNlTripSummary[] =
     output.kind === "trips.search"
       ? output.trips
@@ -361,6 +459,7 @@ function TripsView({ output }: { output: OvNlToolOutput }) {
         : [];
   const journeyLegs = output.kind === "journey.detail" ? output.legs : [];
 
+  const isTripDetail = output.kind === "trips.detail";
   const hasTrips = tripOptions.length > 0;
   const [selectedTripUid, setSelectedTripUid] = useState("");
   const recommendedTrip = useMemo(() => pickRecommendedTrip(tripOptions), [tripOptions]);
@@ -416,68 +515,71 @@ function TripsView({ output }: { output: OvNlToolOutput }) {
     : null;
 
   return (
-    <div className={styles.tripsLayout} data-testid="ov-nl-card:trips">
-      <div className={styles.optionsColumn}>
-        {output.kind === "journey.detail" ? (
-          <div className={styles.optionRow}>
-            <div className={styles.optionTimes}>Journey detail</div>
-            <div className={styles.optionSubline}>
-              {output.trainNumber ? `Trein ${output.trainNumber}` : output.journeyId}
+    <div
+      className={`${styles.tripsLayout} ${isTripDetail ? styles.tripsLayoutSingle : ""}`}
+      data-testid="ov-nl-card:trips"
+    >
+      {!isTripDetail ? (
+        <div className={styles.optionsColumn}>
+          {output.kind === "journey.detail" ? (
+            <div className={styles.optionRow}>
+              <div className={styles.optionTimes}>Journey detail</div>
+              <div className={styles.optionSubline}>
+                {output.trainNumber ? `Trein ${output.trainNumber}` : output.journeyId}
+              </div>
             </div>
-          </div>
-        ) : tripOptions.length === 0 ? (
-          <div className={styles.emptyState}>Geen reisopties gevonden.</div>
-        ) : (
-          tripOptions.map((trip, index) => {
-            const selected = selectedTrip?.uid === trip.uid;
-            const isRecommended = trip.uid === recommendedTripUid;
-            const isDirect = tripBadges.directTripUids.has(trip.uid);
-            const isFastest = tripBadges.fastestTripUids.has(trip.uid);
-            const isMinTransfers = tripBadges.minTransfersTripUids.has(trip.uid);
-            const dateLabel = tripDateLabel(trip);
-            const badges: Array<{ label: string; tone: "primary" | "secondary" }> = [];
-            if (isRecommended) badges.push({ label: "Beste optie", tone: "primary" });
-            if (isDirect) badges.push({ label: "Direct", tone: "secondary" });
-            if (isFastest) badges.push({ label: "Snelste", tone: "secondary" });
-            if (isMinTransfers && !isDirect) {
-              badges.push({ label: "Min. overstappen", tone: "secondary" });
-            }
+          ) : tripOptions.length === 0 ? (
+            <div className={styles.emptyState}>Geen reisopties gevonden.</div>
+          ) : (
+            tripOptions.map((trip, index) => {
+              const selected = selectedTrip?.uid === trip.uid;
+              const isRecommended = trip.uid === recommendedTripUid;
+              const isDirect = tripBadges.directTripUids.has(trip.uid);
+              const isFastest = tripBadges.fastestTripUids.has(trip.uid);
+              const isMinTransfers = tripBadges.minTransfersTripUids.has(trip.uid);
+              const badges: Array<{ label: string; tone: "primary" | "secondary" }> = [];
+              if (isRecommended) badges.push({ label: "Beste optie", tone: "primary" });
+              if (isDirect) badges.push({ label: "Direct", tone: "secondary" });
+              if (isFastest) badges.push({ label: "Snelste", tone: "secondary" });
+              if (isMinTransfers && !isDirect) {
+                badges.push({ label: "Min. overstappen", tone: "secondary" });
+              }
 
-            return (
-              <button
-                className={`${styles.optionRow} ${selected ? styles.optionRowSelected : ""}`}
-                data-testid={`ov-nl-card:trip-option:${index}`}
-                key={trip.uid || index}
-                onClick={() => setSelectedTripUid(trip.uid)}
-                type="button"
-              >
+              return (
+                <button
+                  className={`${styles.optionRow} ${selected ? styles.optionRowSelected : ""}`}
+                  data-testid={`ov-nl-card:trip-option:${index}`}
+                  key={trip.uid || index}
+                  onClick={() => setSelectedTripUid(trip.uid)}
+                  type="button"
+                >
                 <div className={styles.optionMain}>
                   <div className={styles.optionTimes}>
                     {formatTime(trip.departureActualDateTime || trip.departurePlannedDateTime)} →{" "}
                     {formatTime(trip.arrivalActualDateTime || trip.arrivalPlannedDateTime)}
                   </div>
-                  {dateLabel ? <div className={styles.optionDate}>{dateLabel}</div> : null}
                   <div className={styles.optionSubline}>
                     {trip.transfers}x overstap • {formatDuration(trip.actualDurationMinutes || trip.plannedDurationMinutes)}
                   </div>
                 </div>
-                {badges.length > 0 ? (
-                  <div className={styles.badgeStack} aria-label="Reisoptie badges">
-                    {badges.map((badge) => (
-                      <span
-                        className={`${styles.badge} ${badge.tone === "primary" ? styles.badgePrimary : styles.badgeSecondary}`}
-                        key={badge.label}
-                      >
-                        {badge.label}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </button>
-            );
-          })
-        )}
-      </div>
+                  {badges.length > 0 ? (
+                    <div className={styles.badgeStack} aria-label="Reisoptie badges">
+                      {badges.map((badge) => (
+                        <span
+                          className={`${styles.badge} ${badge.tone === "primary" ? styles.badgePrimary : styles.badgeSecondary}`}
+                          key={badge.label}
+                        >
+                          {badge.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      ) : null}
       <div className={styles.detailPanel}>
         {output.kind === "journey.detail" ? (
           <>
@@ -492,7 +594,11 @@ function TripsView({ output }: { output: OvNlToolOutput }) {
             {renderTripTimeline(journeyLegs)}
           </>
         ) : !selectedTrip ? (
-          <div className={styles.emptyState}>Geen gekozen route.</div>
+          <div className={styles.emptyState}>
+            {output.kind === "trips.detail"
+              ? "No trip details available. Try again or run a new trip search."
+              : "Geen gekozen route."}
+          </div>
         ) : (
           <>
             <div className={styles.detailTop}>
@@ -519,7 +625,24 @@ function TripsView({ output }: { output: OvNlToolOutput }) {
               {tripDateLabel(selectedTrip) ? `${tripDateLabel(selectedTrip)} • ` : ""}
               {selectedTrip.departureName} → {selectedTrip.arrivalName} • {selectedTrip.transfers}x overstap
             </div>
-            {renderTripTimeline(selectedTrip.legs)}
+            {output.kind === "trips.search" ? (
+              <div className={styles.detailActions}>
+                <button
+                  className={styles.detailButton}
+                  data-testid="ov-nl-card:load-details"
+                  disabled={
+                    !canRequestTripDetails ||
+                    !onRequestTripDetails ||
+                    !selectedTrip.ctxRecon
+                  }
+                  onClick={() => onRequestTripDetails?.(selectedTrip.ctxRecon)}
+                  type="button"
+                >
+                  Load detailed legs
+                </button>
+              </div>
+            ) : null}
+            {renderTripTimeline(selectedTrip.legs, { openStopsByDefault: output.kind === "trips.detail" })}
           </>
         )}
       </div>
@@ -616,7 +739,7 @@ function renderSimple(output: OvNlToolOutput) {
   );
 }
 
-export function OvNlCard({ output }: OvNlCardProps) {
+export function OvNlCard({ output, canRequestTripDetails, onRequestTripDetails }: OvNlCardProps) {
   const view = viewFromKind(output.kind);
 
   return (
@@ -633,7 +756,13 @@ export function OvNlCard({ output }: OvNlCardProps) {
 
       <div className={styles.body}>
         {view === "board" ? renderBoardRows(output) : null}
-        {view === "trips" ? <TripsView output={output} /> : null}
+        {view === "trips" ? (
+          <TripsView
+            canRequestTripDetails={canRequestTripDetails}
+            onRequestTripDetails={onRequestTripDetails}
+            output={output}
+          />
+        ) : null}
         {view === "alerts" ? renderDisruptions(output) : null}
         {view === "simple" ? renderSimple(output) : null}
       </div>

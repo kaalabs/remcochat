@@ -1034,6 +1034,167 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   }
 });
 
+test("ovNlGateway trips.detail parses per-leg stops when available", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v3/trips/trip")) {
+      return new Response(
+        JSON.stringify({
+          uid: "trip-detail-1",
+          ctxRecon: "ctx-detail-1",
+          transfers: 1,
+          plannedDurationInMinutes: 42,
+          optimal: true,
+          realtime: true,
+          legs: [
+            {
+              idx: "0",
+              travelType: "PUBLIC_TRANSIT",
+              journeyDetailRef: "journey-abc",
+              product: { displayName: "IC 1234" },
+              direction: "Rotterdam",
+              cancelled: false,
+              origin: {
+                name: "Amsterdam Centraal",
+                plannedDateTime: "2026-02-08T17:30:00.000+01:00",
+                actualDateTime: "2026-02-08T17:31:00.000+01:00",
+                plannedTrack: "5",
+                actualTrack: "5",
+              },
+              destination: {
+                name: "Rotterdam Centraal",
+                plannedDateTime: "2026-02-08T18:12:00.000+01:00",
+                actualDateTime: "2026-02-08T18:13:00.000+01:00",
+                plannedTrack: "7",
+                actualTrack: "8",
+              },
+              stops: [
+                {
+                  name: "Amsterdam Centraal",
+                  plannedDateTime: "2026-02-08T17:30:00.000+01:00",
+                  actualDateTime: "2026-02-08T17:31:00.000+01:00",
+                  plannedTrack: "5",
+                  actualTrack: "5",
+                  cancelled: false,
+                },
+                {
+                  name: "Pass-through station",
+                  plannedDateTime: null,
+                  actualDateTime: null,
+                  plannedTrack: null,
+                  actualTrack: null,
+                  cancelled: false,
+                },
+                {
+                  name: "Schiphol",
+                  plannedDateTime: "2026-02-08T17:45:00.000+01:00",
+                  actualDateTime: null,
+                  plannedTrack: "3",
+                  actualTrack: null,
+                  cancelled: false,
+                },
+                {
+                  stop: { name: "Den Haag HS" },
+                  arrivals: [
+                    {
+                      plannedDateTime: "2026-02-08T18:00:00.000+01:00",
+                      actualDateTime: "2026-02-08T18:01:00.000+01:00",
+                      plannedTrack: null,
+                      actualTrack: null,
+                      platform: "6",
+                      track: "7",
+                    },
+                  ],
+                },
+                {
+                  name: "Zwolle",
+                  plannedArrivalDateTime: "2026-02-08T20:16:00.000+01:00",
+                  actualArrivalDateTime: "2026-02-08T20:17:00.000+01:00",
+                  plannedArrivalTrack: { platformNumber: 5 },
+                  actualArrivalTrack: { trackNumber: 6 },
+                },
+                {
+                  name: "Rotterdam Centraal",
+                  plannedDateTime: "2026-02-08T18:12:00.000+01:00",
+                  actualDateTime: "2026-02-08T18:13:00.000+01:00",
+                  plannedTrack: "7",
+                  actualTrack: "8",
+                  cancelled: false,
+                },
+              ],
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json", "cache-control": "max-age=20" },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const result = (await ovNlGateway.execute({
+    action: "trips.detail",
+    args: { ctxRecon: "ctx-detail-1" },
+  })) as any;
+
+  assert.equal(result.kind, "trips.detail");
+  assert.equal(result.trip?.ctxRecon, "ctx-detail-1");
+  assert.equal(result.trip?.legs?.[0]?.stopCount, 5);
+  assert.equal(result.trip?.legs?.[0]?.stops?.length, 5);
+  assert.equal(result.trip?.legs?.[0]?.stops?.[0]?.name, "Amsterdam Centraal");
+  assert.equal(result.trip?.legs?.[0]?.stops?.some((stop: any) => stop?.name === "Schiphol"), true);
+  assert.equal(
+    result.trip?.legs?.[0]?.stops?.some(
+      (stop: any) => stop?.name === "Den Haag HS" && stop?.actualTrack === "7" && stop?.plannedTrack === "6"
+    ),
+    true
+  );
+  assert.equal(
+    result.trip?.legs?.[0]?.stops?.some(
+      (stop: any) => stop?.name === "Zwolle" && stop?.actualTrack === "6" && stop?.plannedTrack === "5"
+    ),
+    true
+  );
+});
+
 test("ovNlGateway stations.search ignores irrelevant invalid date fields", async () => {
   const configPath = writeTempConfigToml(`
 version = 2

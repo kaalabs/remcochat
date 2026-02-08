@@ -1133,14 +1133,16 @@ export async function POST(req: Request) {
       ].join("\n\n");
     }
 
-    if (ovNlTools.enabled) {
-      system = [
-        system,
-        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
-        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
-        "Only use web search first when the user explicitly asks for internet/web sources.",
-      ].join("\n\n");
-    }
+	    if (ovNlTools.enabled) {
+	      system = [
+	        system,
+	        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+	        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
+	        'If the user asks for more detail about a specific trip option (for example "details for option 2" after a trips.search), call ovNlGateway with action="trips.detail" and args { ctxRecon } taken from that option.',
+	        'If the user provides a ctxRecon and asks to show detailed trip legs, call ovNlGateway with action="trips.detail" and args { ctxRecon }.',
+	        "Only use web search first when the user explicitly asks for internet/web sources.",
+	      ].join("\n\n");
+	    }
 
     if (skillInvocation.explicitSkillName && !resolved.capabilities.tools) {
       const record = skillsRegistry?.get(skillInvocation.explicitSkillName) ?? null;
@@ -2256,15 +2258,17 @@ export async function POST(req: Request) {
     }),
   ];
 
-  if (ovNlTools.enabled) {
-    systemParts.push(
-      [
-        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
-        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
-        "Only use web search first when the user explicitly asks for internet/web sources.",
-      ].join("\n")
-    );
-  }
+	  if (ovNlTools.enabled) {
+	    systemParts.push(
+	      [
+	        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+	        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
+	        'If the user asks for more detail about a specific trip option (for example "details for option 2" after a trips.search), call ovNlGateway with action="trips.detail" and args { ctxRecon } taken from that option.',
+	        'If the user provides a ctxRecon and asks to show detailed trip legs, call ovNlGateway with action="trips.detail" and args { ctxRecon }.',
+	        "Only use web search first when the user explicitly asks for internet/web sources.",
+	      ].join("\n")
+	    );
+	  }
 
   if (skillInvocation.explicitSkillName) {
     systemParts.push(
