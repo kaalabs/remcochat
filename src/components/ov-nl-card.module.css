@@ -48,6 +48,11 @@
   letter-spacing: 0.01em;
 }
 
+.titleTripDetail {
+  font-weight: 700;
+  font-size: calc(1.4rem - 0.5pt);
+}
+
 .subtitle {
   margin: 4px 0 0;
   color: color-mix(in srgb, var(--ov-ns-blue) 85%, white);
