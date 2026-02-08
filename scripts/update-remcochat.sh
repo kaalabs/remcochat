@@ -203,6 +203,7 @@ local_sha="$(git rev-parse HEAD)"
 remote_sha="$(git rev-parse "$remote_ref")"
 
 if [[ "$local_sha" == "$remote_sha" ]]; then
+  preflight_validate_configs
   log "Up to date: $local_sha"
   exit 0
 fi
