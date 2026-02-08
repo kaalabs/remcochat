@@ -57,6 +57,85 @@ compose() {
   die "docker compose not available (need docker compose v2 or docker-compose)"
 }
 
+validate_toml_syntax() {
+  local path="$1"
+  [[ -f "$path" ]] || die "TOML file not found: $path"
+
+  # Use docker so the host doesn't need python/node/toml tooling installed.
+  # tomllib gives clear row/col errors for corrupted files.
+  if ! docker run --rm -v "$path":/cfg.toml:ro python:3.12-alpine \
+    python - <<'PY'
+import sys, tomllib
+path="/cfg.toml"
+try:
+  with open(path, "rb") as f:
+    data = tomllib.load(f)
+except Exception as e:
+  print(str(e), file=sys.stderr)
+  raise SystemExit(1)
+if not isinstance(data, dict):
+  print("TOML root is not an object.", file=sys.stderr)
+  raise SystemExit(1)
+PY
+  then
+    die "Invalid TOML syntax: $path"
+  fi
+}
+
+compose_seed_config_source() {
+  # Find the bind-mount source for /app/config.seed.toml.
+  # Use a simple scan because /app/config.seed.toml should be unique in the compose output.
+  compose "${COMPOSE_ARGS[@]}" config | awk '
+    /^[[:space:]]*source:[[:space:]]*/ { src=$0; sub(/^[[:space:]]*source:[[:space:]]*/, "", src); last_src=src }
+    /^[[:space:]]*target:[[:space:]]*\/app\/config\.seed\.toml[[:space:]]*$/ { print last_src; exit }
+  '
+}
+
+compose_volume_name() {
+  local logical="$1"
+  compose "${COMPOSE_ARGS[@]}" config | awk -v logical="^[[:space:]]*"logical":[[:space:]]*$" '
+    /^volumes:[[:space:]]*$/ { in_vols=1; next }
+    in_vols && $0 ~ logical { in_one=1; next }
+    in_vols && in_one && /^[[:space:]]*name:[[:space:]]*/ {
+      name=$0
+      sub(/^[[:space:]]*name:[[:space:]]*/, "", name)
+      print name
+      exit
+    }
+  '
+}
+
+preflight_validate_configs() {
+  log "Preflight: validating docker config TOML files"
+
+  local seed_src
+  seed_src="$(compose_seed_config_source)"
+  [[ -n "${seed_src:-}" ]] || die "Could not resolve config seed source (mount for /app/config.seed.toml)"
+  validate_toml_syntax "$seed_src"
+
+  # Validate the persisted config in the config volume (if present).
+  local vol_name
+  vol_name="$(compose_volume_name remcochat_config || true)"
+  if [[ -n "${vol_name:-}" ]] && docker volume inspect "$vol_name" >/dev/null 2>&1; then
+    if ! docker run --rm -v "$vol_name":/cfg:ro python:3.12-alpine \
+      python - <<'PY'
+import sys, tomllib, os
+path="/cfg/config.toml"
+if not os.path.exists(path):
+  raise SystemExit(0)
+try:
+  with open(path, "rb") as f:
+    tomllib.load(f)
+except Exception as e:
+  print(str(e), file=sys.stderr)
+  raise SystemExit(1)
+PY
+    then
+      die "Invalid TOML syntax in docker config volume ($vol_name:/config.toml). Fix it or delete the volume before updating."
+    fi
+  fi
+}
+
 is_truthy() {
   local v
   v="$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
@@ -130,6 +209,8 @@ fi
 
 log "Update available: $local_sha -> $remote_sha"
 git pull --ff-only "$REMOTE" "$BRANCH"
+
+preflight_validate_configs
 
 log "Rebuilding & restarting via docker compose"
 REMOVE_ARGS=()
