@@ -334,6 +334,7 @@ function renderTripTimeline(
     openStopsByDefault?: boolean;
     showStopCountLabel?: boolean;
     emphasizeLegRoute?: boolean;
+    showLegRouteTimes?: boolean;
   }
 ) {
   if (legs.length === 0) {
@@ -356,6 +357,8 @@ function renderTripTimeline(
     return false;
   };
 
+  const showLegRouteTimes = opts?.showLegRouteTimes !== false;
+
   return (
     <div className={styles.timeline} data-testid="ov-nl-card:timeline">
       {legs.map((leg) => (
@@ -371,9 +374,19 @@ function renderTripTimeline(
             <div
               className={`${styles.legRoute} ${opts?.emphasizeLegRoute ? styles.legRouteEmphasis : ""}`}
             >
-              {leg.originName} ({formatTime(leg.originActualDateTime || leg.originPlannedDateTime)})
-              {" → "}
-              {leg.destinationName} ({formatTime(leg.destinationActualDateTime || leg.destinationPlannedDateTime)})
+              {showLegRouteTimes ? (
+                <>
+                  {leg.originName} ({formatTime(leg.originActualDateTime || leg.originPlannedDateTime)})
+                  {" → "}
+                  {leg.destinationName} ({formatTime(leg.destinationActualDateTime || leg.destinationPlannedDateTime)})
+                </>
+              ) : (
+                <>
+                  {leg.originName}
+                  {" → "}
+                  {leg.destinationName}
+                </>
+              )}
             </div>
             <div className={styles.legMeta}>
               {opts?.showStopCountLabel !== false && leg.stopCount > 0 ? (
@@ -659,6 +672,7 @@ function TripsView({
               openStopsByDefault: output.kind === "trips.detail",
               showStopCountLabel: output.kind !== "trips.detail",
               emphasizeLegRoute: output.kind === "trips.detail",
+              showLegRouteTimes: output.kind !== "trips.detail",
             })}
           </>
         )}
