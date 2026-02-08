@@ -350,6 +350,10 @@
   font-size: 0.85rem;
 }
 
+.legRouteEmphasis {
+  font-weight: 800;
+}
+
 .legMeta {
   display: flex;
   flex-wrap: wrap;

@@ -330,7 +330,11 @@ function renderBoardRows(output: OvNlToolOutput) {
 
 function renderTripTimeline(
   legs: OvNlTripLeg[],
-  opts?: { openStopsByDefault?: boolean; showStopCountLabel?: boolean }
+  opts?: {
+    openStopsByDefault?: boolean;
+    showStopCountLabel?: boolean;
+    emphasizeLegRoute?: boolean;
+  }
 ) {
   if (legs.length === 0) {
     return <div className={styles.emptyState}>Geen trajectdetails beschikbaar.</div>;
@@ -364,7 +368,9 @@ function renderTripTimeline(
             <div className={styles.legHead}>
               <span className={styles.legName}>{leg.name}</span>
             </div>
-            <div className={styles.legRoute}>
+            <div
+              className={`${styles.legRoute} ${opts?.emphasizeLegRoute ? styles.legRouteEmphasis : ""}`}
+            >
               {leg.originName} ({formatTime(leg.originActualDateTime || leg.originPlannedDateTime)})
               {" → "}
               {leg.destinationName} ({formatTime(leg.destinationActualDateTime || leg.destinationPlannedDateTime)})
@@ -652,6 +658,7 @@ function TripsView({
             {renderTripTimeline(selectedTrip.legs, {
               openStopsByDefault: output.kind === "trips.detail",
               showStopCountLabel: output.kind !== "trips.detail",
+              emphasizeLegRoute: output.kind === "trips.detail",
             })}
           </>
         )}
