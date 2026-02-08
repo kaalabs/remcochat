@@ -328,7 +328,10 @@ function renderBoardRows(output: OvNlToolOutput) {
   );
 }
 
-function renderTripTimeline(legs: OvNlTripLeg[], opts?: { openStopsByDefault?: boolean }) {
+function renderTripTimeline(
+  legs: OvNlTripLeg[],
+  opts?: { openStopsByDefault?: boolean; showStopCountLabel?: boolean }
+) {
   if (legs.length === 0) {
     return <div className={styles.emptyState}>Geen trajectdetails beschikbaar.</div>;
   }
@@ -367,7 +370,9 @@ function renderTripTimeline(legs: OvNlTripLeg[], opts?: { openStopsByDefault?: b
               {leg.destinationName} ({formatTime(leg.destinationActualDateTime || leg.destinationPlannedDateTime)})
             </div>
             <div className={styles.legMeta}>
-              {leg.stopCount > 0 ? <span>Stops: {leg.stopCount}</span> : null}
+              {opts?.showStopCountLabel !== false && leg.stopCount > 0 ? (
+                <span>Stops: {leg.stopCount}</span>
+              ) : null}
               {leg.cancelled ? <span>Geannuleerd</span> : null}
             </div>
             {Array.isArray(leg.stops) && leg.stops.length > 0 ? (
@@ -642,7 +647,10 @@ function TripsView({
                 </button>
               </div>
             ) : null}
-            {renderTripTimeline(selectedTrip.legs, { openStopsByDefault: output.kind === "trips.detail" })}
+            {renderTripTimeline(selectedTrip.legs, {
+              openStopsByDefault: output.kind === "trips.detail",
+              showStopCountLabel: output.kind !== "trips.detail",
+            })}
           </>
         )}
       </div>
