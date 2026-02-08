@@ -72,6 +72,12 @@ if [[ -n "$COMPOSE_FILES" ]]; then
   IFS=',' read -r -a compose_files <<<"$COMPOSE_FILES"
 else
   compose_files=("$COMPOSE_FILE")
+
+  # If a proxy container already exists, default to including the proxy compose file to avoid
+  # accidentally deleting it via --remove-orphans when COMPOSE_FILES isn't set.
+  if [[ -f "docker-compose.proxy.yml" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'remcochat-proxy'; then
+    compose_files+=("docker-compose.proxy.yml")
+  fi
 fi
 
 COMPOSE_ARGS=()
