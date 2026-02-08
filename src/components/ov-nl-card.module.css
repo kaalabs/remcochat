@@ -332,11 +332,11 @@
 
 .timelineRail::before {
   top: calc(-1 * var(--timeline-gap));
-  height: calc(var(--timeline-gap) + var(--timeline-dot-top) + 2px);
+  height: calc(var(--timeline-gap) + var(--timeline-dot-top) + 6px);
 }
 
 .timelineRail::after {
-  top: calc(var(--timeline-dot-top) + var(--timeline-dot-outer) - 2px);
+  top: calc(var(--timeline-dot-top) + var(--timeline-dot-outer) - 6px);
   bottom: calc(-1 * var(--timeline-gap));
 }
 
