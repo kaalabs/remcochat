@@ -203,7 +203,7 @@ function HeaderContent({ output }: { output: OvNlToolOutput }) {
     const summary = [dateLabel, routeLabel].filter(Boolean).join(" • ");
     return (
       <>
-        <h3 className={styles.title}>Trip detail</h3>
+        <h3 className={styles.title}>Reisoverzicht - gedetailleerd</h3>
         <p className={styles.subtitle}>{summary}</p>
       </>
     );
