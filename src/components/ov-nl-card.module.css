@@ -298,7 +298,7 @@
 
 .timeline {
   display: grid;
-  gap: 12px;
+  gap: 0;
   margin-top: 8px;
 }
 
@@ -306,12 +306,36 @@
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 10px;
+  padding-bottom: 12px;
+  --timeline-dot-outer: 15px;
+  --timeline-dot-top: calc(10px + (0.98rem * 0.55) - (var(--timeline-dot-outer) * 0.5));
+}
+
+.timelineItem:last-child {
+  padding-bottom: 0;
 }
 
 .timelineRail {
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+}
+
+.timelineRail::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: var(--timeline-dot-top);
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--ov-ns-blue) 36%, white);
+  border-radius: 1px;
+}
+
+.timelineItem:first-child .timelineRail::before {
+  content: none;
 }
 
 .timelineDot {
@@ -320,13 +344,15 @@
   border-radius: 999px;
   border: 2px solid var(--ov-ns-blue);
   background: #fff;
+  margin-top: var(--timeline-dot-top);
 }
 
 .timelineLine {
   width: 2px;
   flex: 1;
-  margin-top: 4px;
+  margin-top: 0;
   background: color-mix(in srgb, var(--ov-ns-blue) 36%, white);
+  border-radius: 1px;
 }
 
 .timelineItem:last-child .timelineLine {
