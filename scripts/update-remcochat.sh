@@ -78,7 +78,7 @@ if not isinstance(data, dict):
   raise SystemExit(1)
 PY
   then
-    die "Invalid TOML syntax: $path"
+    die "Invalid TOML syntax (seed): $path"
   fi
 }
 
@@ -131,7 +131,7 @@ except Exception as e:
   raise SystemExit(1)
 PY
     then
-      die "Invalid TOML syntax in docker config volume ($vol_name:/config.toml). Fix it or delete the volume before updating."
+      die "Invalid TOML syntax (volume): $vol_name:/config.toml (fix it or delete the volume before updating)"
     fi
   fi
 }
