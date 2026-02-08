@@ -10,6 +10,20 @@ if [[ ! -f "$config_path" && -f "$seed_path" ]]; then
   cp "$seed_path" "$config_path"
 fi
 
+has_section_header() {
+  local file="$1"
+  local header="$2"
+  awk -v header="$header" '
+    {
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (line == header) { found=1; exit }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file"
+}
+
 append_section_if_missing() {
   local section="$1" # e.g. "app.ov_nl"
   local header="[$section]"
@@ -18,16 +32,16 @@ append_section_if_missing() {
   [[ -f "$config_path" ]] || return 0
 
   # Don't overwrite existing config. Only append missing sections from the seed.
-  if grep -Fq "$header" "$config_path"; then
+  if has_section_header "$config_path" "$header"; then
     return 0
   fi
-  if ! grep -Fq "$header" "$seed_path"; then
+  if ! has_section_header "$seed_path" "$header"; then
     return 0
   fi
 
   {
     printf "\n\n"
-    printf "# Added from config seed (%s) because this config was missing [%s].\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$section"
+    printf "# Added from config seed (%s) because this config was missing section %s.\n" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$header"
     awk -v header="$header" '
       {
         line=$0
