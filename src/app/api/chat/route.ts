@@ -54,7 +54,11 @@ import { getConfig } from "@/server/config";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
-import { adminTokenFromRequest } from "@/server/request-auth";
+import {
+  adminTokenFromRequest,
+  isLocalhostRequest,
+  isRequestAllowedByAdminPolicy,
+} from "@/server/request-auth";
 import {
   isCurrentDateTimeUserQuery,
   isTimezonesUserQuery,
@@ -1023,13 +1027,27 @@ export async function POST(req: Request) {
         skillsRegistry?.get("ov-nl-travel") &&
         !ovNlTools.enabled
       ) {
+        const cfg = getConfig().ovNl;
         const required = String(process.env.REMCOCHAT_ADMIN_TOKEN ?? "").trim();
         const provided = String(adminTokenFromRequest(req) ?? "").trim();
-        const hint = !required
-          ? "Server-side REMCOCHAT_ADMIN_TOKEN ontbreekt. Zet REMCOCHAT_ADMIN_TOKEN in je productie .env en herstart de stack."
-          : !provided
-            ? "Je request bevat geen admin-token. Klik op het sleutel-icoon (Admin access), plak REMCOCHAT_ADMIN_TOKEN, en klik op 'Save locally'."
-            : "Je request bevat wel een admin-token, maar die wordt niet geaccepteerd (token mismatch). Klik op het sleutel-icoon (Admin access), 'Clear', plak opnieuw de server token, en klik op 'Save locally'.";
+
+        let hint = "";
+        if (!cfg || !cfg.enabled) {
+          hint =
+            "De OV NL tool staat niet aan in je server config. Voeg een [app.ov_nl] sectie toe met enabled=true (en access=\"lan\" voor LAN-gebruik) in je actieve config.toml, en herstart de server.";
+        } else if (cfg.access === "localhost" && !isLocalhostRequest(req)) {
+          hint =
+            "De OV NL tool staat op access=\"localhost\" en is niet beschikbaar via LAN. Zet app.ov_nl.access=\"lan\" en herstart de server.";
+        } else if (cfg.access === "lan" && !isRequestAllowedByAdminPolicy(req)) {
+          hint = !required
+            ? "Server-side REMCOCHAT_ADMIN_TOKEN ontbreekt. Zet REMCOCHAT_ADMIN_TOKEN in je productie .env en herstart de stack."
+            : !provided
+              ? "Je request bevat geen admin-token. Klik op het sleutel-icoon (Admin access), plak REMCOCHAT_ADMIN_TOKEN, en klik op 'Save locally'."
+              : "Je request bevat wel een admin-token, maar die wordt niet geaccepteerd (token mismatch). Klik op het sleutel-icoon (Admin access), 'Clear', plak opnieuw de server token, en klik op 'Save locally'.";
+        } else {
+          hint =
+            "De OV NL tool is niet ingeschakeld voor dit request (onbekende reden). Controleer je actieve config.toml en herstart de server.";
+        }
         return uiTextResponse({
           text:
             'De skill "/ov-nl-travel" is wel geinstalleerd, maar is nu niet beschikbaar omdat de OV NL tool (ovNlGateway) niet is ingeschakeld voor jouw request.\n\n' +
