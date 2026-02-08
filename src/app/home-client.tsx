@@ -3705,8 +3705,10 @@ export function HomeClient({
 	                </div>
                   {lanAdminAccessEnabled ? (
                     <Button
-                      className="h-9 w-9 justify-start gap-2 px-0 md:w-auto md:px-3"
+                      aria-label="Admin access"
+                      className="h-9 w-9 px-0"
                       onClick={() => setLanAdminTokenOpen(true)}
+                      title="Admin access"
                       type="button"
                       variant="ghost"
                     >
@@ -3721,7 +3723,6 @@ export function HomeClient({
 	                            : "size-4"
 	                        }
 	                      />
-                      <span className="hidden md:inline">Admin access</span>
                     </Button>
                   ) : null}
 	                <Button
