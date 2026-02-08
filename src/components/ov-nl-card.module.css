@@ -298,21 +298,17 @@
 
 .timeline {
   display: grid;
-  gap: 0;
+  gap: 12px;
   margin-top: 8px;
+  --timeline-gap: 12px;
 }
 
 .timelineItem {
   display: grid;
   grid-template-columns: 22px 1fr;
   gap: 10px;
-  padding-bottom: 12px;
   --timeline-dot-outer: 15px;
   --timeline-dot-top: calc(10px + (0.98rem * 0.55) - (var(--timeline-dot-outer) * 0.5));
-}
-
-.timelineItem:last-child {
-  padding-bottom: 0;
 }
 
 .timelineRail {
@@ -322,16 +318,26 @@
   position: relative;
 }
 
-.timelineRail::before {
+.timelineRail::before,
+.timelineRail::after {
   content: "";
   position: absolute;
   left: 50%;
-  top: 0;
   width: 2px;
-  height: var(--timeline-dot-top);
   transform: translateX(-50%);
   background: color-mix(in srgb, var(--ov-ns-blue) 36%, white);
   border-radius: 1px;
+  z-index: 0;
+}
+
+.timelineRail::before {
+  top: calc(-1 * var(--timeline-gap));
+  height: calc(var(--timeline-gap) + var(--timeline-dot-top));
+}
+
+.timelineRail::after {
+  top: calc(var(--timeline-dot-top) + var(--timeline-dot-outer));
+  bottom: calc(-1 * var(--timeline-gap));
 }
 
 .timelineItem:first-child .timelineRail::before {
@@ -345,18 +351,20 @@
   border: 2px solid var(--ov-ns-blue);
   background: #fff;
   margin-top: var(--timeline-dot-top);
+  position: relative;
+  z-index: 1;
 }
 
 .timelineLine {
-  width: 2px;
-  flex: 1;
-  margin-top: 0;
-  background: color-mix(in srgb, var(--ov-ns-blue) 36%, white);
-  border-radius: 1px;
+  display: none;
 }
 
 .timelineItem:last-child .timelineLine {
   display: none;
+}
+
+.timelineItem:last-child .timelineRail::after {
+  content: none;
 }
 
 .timelineMain {
