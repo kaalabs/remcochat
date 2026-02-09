@@ -69,10 +69,8 @@ import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
 import { shouldPreferOvNlGatewayTool } from "@/server/ov-nl-intent";
 import {
   collectUIMessageChunks,
-  concatUIMessageStreams,
-  createBufferedUIMessageStream,
+  createUIMessageStreamWithDeferredContinuation,
   createUIMessageStreamWithToolErrorContinuation,
-  stripUIMessageChunks,
   stripUIMessageStream,
   type ToolStreamError,
 } from "@/server/ui-stream";
@@ -106,49 +104,6 @@ function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
 
 function isChunkRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
-}
-
-function collectToolOutputsFromChunks(
-  chunks: unknown[],
-  toolName: string
-): { outputs: unknown[]; hasTextDelta: boolean } {
-  const toolNamesByCallId = new Map<string, string>();
-  const outputs: unknown[] = [];
-  let hasVisibleTextDelta = false;
-
-  for (const chunk of chunks) {
-    if (!isChunkRecord(chunk)) continue;
-    const type = typeof chunk.type === "string" ? chunk.type : "";
-
-    if (
-      (type === "tool-input-start" ||
-        type === "tool-input-available" ||
-        type === "tool-input-error") &&
-      typeof chunk.toolCallId === "string" &&
-      typeof chunk.toolName === "string"
-    ) {
-      toolNamesByCallId.set(chunk.toolCallId, chunk.toolName);
-      continue;
-    }
-
-    if (
-      type === "text-delta" &&
-      typeof chunk.delta === "string" &&
-      chunk.delta.trim().length > 0
-    ) {
-      hasVisibleTextDelta = true;
-      continue;
-    }
-
-    if (type === "tool-output-available" && typeof chunk.toolCallId === "string") {
-      const candidateName = toolNamesByCallId.get(chunk.toolCallId);
-      if (candidateName === toolName) {
-        outputs.push((chunk as { output?: unknown }).output);
-      }
-    }
-  }
-
-  return { outputs, hasTextDelta: hasVisibleTextDelta };
 }
 
 function formatOvNlOutputForPrompt(output: unknown): string {
@@ -359,6 +314,33 @@ function uiTextResponse(input: {
   });
 
   return createUIMessageStreamResponse({ stream, headers: input.headers });
+}
+
+function uiTextContinuationStream(input: {
+  text: string;
+  messageMetadata?: RemcoChatMessageMetadata;
+}) {
+  const messageId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({ type: "text-start", id: messageId });
+      writer.write({ type: "text-delta", id: messageId, delta: input.text });
+      writer.write({ type: "text-end", id: messageId });
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return stripUIMessageStream(stream, { dropStart: true });
 }
 
 function uiMemoryPromptResponse(input: {
@@ -1305,301 +1287,284 @@ export async function POST(req: Request) {
       sendReasoning: config.reasoning.exposeToClient,
     });
 
-    const collected = await collectUIMessageChunks(
-      baseUIStream,
-      { isWebToolName }
-    );
+    const shouldInspectForContinuation =
+      shouldAutoContinuePerplexity || ovNlTools.enabled;
+    if (!shouldInspectForContinuation) {
+      return createUIMessageStreamResponse({
+        headers,
+        stream: createUIMessageStreamWithToolErrorContinuation({
+          stream: baseUIStream,
+          shouldContinue: () => false,
+          createContinuationStream: async () => null,
+        }),
+      });
+    }
 
-    const ovCollected = collectToolOutputsFromChunks(collected.chunks as unknown[], "ovNlGateway");
-    const lastOvOutput =
-      ovCollected.outputs.length > 0
-        ? ovCollected.outputs[ovCollected.outputs.length - 1]
-        : null;
+    return createUIMessageStreamResponse({
+      headers,
+      stream: createUIMessageStreamWithDeferredContinuation({
+        stream: baseUIStream,
+        collect: (inspectionStream) =>
+          collectUIMessageChunks(inspectionStream, {
+            isWebToolName,
+            captureChunks: false,
+            trackToolOutputsByName: ["ovNlGateway"],
+          }),
+        createContinuationStream: async (collected) => {
+          const ovOutputs = collected.toolOutputsByName.get("ovNlGateway") ?? [];
+          const lastOvOutput = ovOutputs.length > 0 ? ovOutputs[ovOutputs.length - 1] : null;
+          const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+          const needsPerplexityContinuation =
+            collected.finishReason === "tool-calls" &&
+            !collected.hasUserVisibleOutput &&
+            perplexityOutput != null;
+          const needsOvContinuation =
+            collected.finishReason === "tool-calls" &&
+            lastOvOutput != null &&
+            !collected.hasTextDelta;
 
-    const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
-    const needsPerplexityContinuation =
-      collected.finishReason === "tool-calls" &&
-      !collected.hasUserVisibleOutput &&
-      perplexityOutput != null;
-    const needsOvContinuation =
-      collected.finishReason === "tool-calls" &&
-      lastOvOutput != null &&
-      !ovCollected.hasTextDelta;
+          if (!needsPerplexityContinuation && !needsOvContinuation) {
+            if (collected.toolErrors.length === 0) return null;
 
-    if (!needsPerplexityContinuation && !needsOvContinuation) {
-      const needsToolErrorContinuation =
-        collected.toolErrors.length > 0;
-
-      if (needsToolErrorContinuation) {
-        const continuationMessages = modelMessages.concat([
-          {
-            role: "user" as const,
-            content: [
+            const continuationMessages = modelMessages.concat([
               {
-                type: "text" as const,
-                text: formatToolErrorsForPrompt(collected.toolErrors),
+                role: "user" as const,
+                content: [
+                  {
+                    type: "text" as const,
+                    text: formatToolErrorsForPrompt(collected.toolErrors),
+                  },
+                ],
               },
-            ],
-          },
-        ]);
+            ]);
 
-        const continued = streamText({
-          model: resolved!.model,
-          system,
-          messages: continuationMessages,
-          toolChoice: "none",
-          tools: {
+            const continued = streamText({
+              model: resolved!.model,
+              system,
+              messages: continuationMessages,
+              toolChoice: "none",
+              tools: {
+                ...chatTools,
+                ...webTools.tools,
+                ...bashTools.tools,
+                ...skillsTools.tools,
+                ...hueGatewayTools.tools,
+                ...ovNlTools.tools,
+              } as StreamTextToolSet,
+              ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                ? { temperature: 0 }
+                : {}),
+              ...(providerOptions ? { providerOptions } : {}),
+              stopWhen: [stepCountIs(5)],
+            });
+
+            const continuedStream = continued.toUIMessageStream({
+              generateMessageId: nanoid,
+              messageMetadata,
+              sendReasoning: config.reasoning.exposeToClient,
+            });
+            const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+              stream: continuedStream,
+              shouldContinue: () => false,
+              createContinuationStream: async () => null,
+            });
+            return stripUIMessageStream(safeContinuedStream, { dropStart: true });
+          }
+
+          if (needsOvContinuation) {
+            const allowFollowupOvToolCall = shouldAllowFollowupOvToolCall(lastOvOutput);
+            const continuationText = [
+              "Continue the response for the user's Dutch rail request.",
+              allowFollowupOvToolCall
+                ? "You may call ovNlGateway again if needed (for example action=trips.search), otherwise answer directly."
+                : "Do not call any more tools. Use the ovNlGateway output to answer directly.",
+              "Do not call web/internet search tools for this continuation.",
+              lastUserText ? `User question: ${lastUserText}` : "",
+              "Latest ovNlGateway output:",
+              formatOvNlOutputForPrompt(lastOvOutput),
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
+            const continuationMessages = modelMessages.concat([
+              {
+                role: "user" as const,
+                content: [{ type: "text" as const, text: continuationText }],
+              },
+            ]);
+
+            const followup = streamText({
+              model: resolved!.model,
+              system,
+              messages: continuationMessages,
+              ...(allowFollowupOvToolCall ? {} : { toolChoice: "none" as const }),
+              tools: {
+                ...chatTools,
+                ...bashTools.tools,
+                ...skillsTools.tools,
+                ...hueGatewayTools.tools,
+                ...ovNlTools.tools,
+              } as StreamTextToolSet,
+              ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                ? { temperature: 0 }
+                : {}),
+              ...(providerOptions ? { providerOptions } : {}),
+              ...(allowFollowupOvToolCall
+                ? { stopWhen: [hasToolCall("ovNlGateway"), stepCountIs(4)] }
+                : { stopWhen: [stepCountIs(4)] }),
+            });
+
+            const followupStream = followup.toUIMessageStream({
+              generateMessageId: nanoid,
+              messageMetadata,
+              sendReasoning: config.reasoning.exposeToClient,
+            });
+
+            const stitchedFollowup = createUIMessageStreamWithDeferredContinuation({
+              stream: followupStream,
+              collect: (inspectionStream) =>
+                collectUIMessageChunks(inspectionStream, {
+                  isWebToolName,
+                  captureChunks: false,
+                  trackToolOutputsByName: ["ovNlGateway"],
+                }),
+              createContinuationStream: async (followupCollected) => {
+                const followupOvOutputs =
+                  followupCollected.toolOutputsByName.get("ovNlGateway") ?? [];
+                const followupLastOvOutput =
+                  followupOvOutputs.length > 0
+                    ? followupOvOutputs[followupOvOutputs.length - 1]
+                    : null;
+                const needsFinalTextCompletion =
+                  allowFollowupOvToolCall &&
+                  followupCollected.finishReason === "tool-calls" &&
+                  followupLastOvOutput != null &&
+                  !followupCollected.hasTextDelta;
+
+                if (!needsFinalTextCompletion) return null;
+
+                const finalTextPrompt = [
+                  "Finish the answer directly for the user using the latest ovNlGateway output.",
+                  "Do not call any tools.",
+                  "Latest ovNlGateway output:",
+                  formatOvNlOutputForPrompt(followupLastOvOutput),
+                ].join("\n\n");
+
+                const finalMessages = continuationMessages.concat([
+                  {
+                    role: "user" as const,
+                    content: [{ type: "text" as const, text: finalTextPrompt }],
+                  },
+                ]);
+
+                const finalText = streamText({
+                  model: resolved!.model,
+                  system,
+                  messages: finalMessages,
+                  toolChoice: "none",
+                  tools: {
+                    ...chatTools,
+                    ...bashTools.tools,
+                    ...skillsTools.tools,
+                    ...hueGatewayTools.tools,
+                    ...ovNlTools.tools,
+                  } as StreamTextToolSet,
+                  ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                    ? { temperature: 0 }
+                    : {}),
+                  ...(providerOptions ? { providerOptions } : {}),
+                  stopWhen: [stepCountIs(4)],
+                });
+
+                const finalTextStream = finalText.toUIMessageStream({
+                  generateMessageId: nanoid,
+                  messageMetadata,
+                  sendReasoning: config.reasoning.exposeToClient,
+                });
+                return stripUIMessageStream(finalTextStream, { dropStart: true });
+              },
+            });
+
+            return stripUIMessageStream(stitchedFollowup, { dropStart: true });
+          }
+
+          const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
+            maxResults: 5,
+            maxSnippetChars: 420,
+          });
+
+          if (!formatted.ok) {
+            return uiTextContinuationStream({
+              text: `Web search error: ${formatted.errorText}`,
+              messageMetadata: baseMessageMetadata,
+            });
+          }
+
+          const continuationText = [
+            "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
+            lastUserText ? `User question: ${lastUserText}` : "",
+            formatted.text,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+
+          const continuationMessages = modelMessages.concat([
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: continuationText }],
+            },
+          ]);
+
+          const tools = {
             ...chatTools,
             ...webTools.tools,
             ...bashTools.tools,
-            ...skillsTools.tools,
-            ...hueGatewayTools.tools,
             ...ovNlTools.tools,
-          } as StreamTextToolSet,
-          ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-            ? { temperature: 0 }
-            : {}),
-          ...(providerOptions ? { providerOptions } : {}),
-          stopWhen: [stepCountIs(5)],
-        });
+          } as StreamTextToolSet;
+          delete tools.perplexity_search;
 
-        const continuedStream = continued.toUIMessageStream({
-          generateMessageId: nanoid,
-          messageMetadata,
-          sendReasoning: config.reasoning.exposeToClient,
-        });
-        const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
-          stream: continuedStream,
-          shouldContinue: () => false,
-          createContinuationStream: async () => null,
-        });
+          const continued = streamText({
+            model: resolved!.model,
+            system,
+            messages: continuationMessages,
+            ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+              ? { temperature: 0 }
+              : {}),
+            ...(providerOptions ? { providerOptions } : {}),
+            ...(resolved!.capabilities.tools
+              ? {
+                  ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
+                  stopWhen: [
+                    hasToolCall("displayWeather"),
+                    hasToolCall("displayWeatherForecast"),
+                    ...(stopAfterCurrentDateTime
+                      ? [hasToolCall("displayCurrentDateTime")]
+                      : []),
+                    ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+                    hasToolCall("displayNotes"),
+                    hasToolCall("displayMemoryPrompt"),
+                    hasToolCall("displayMemoryAnswer"),
+                    hasToolCall("displayList"),
+                    hasToolCall("displayListsOverview"),
+                    hasToolCall("displayAgenda"),
+                    hasToolCall("displayUrlSummary"),
+                    hasToolCall("ovNlGateway"),
+                    hasToolCall("summarizeURL"),
+                    stepCountIs(maxSteps),
+                  ],
+                  tools,
+                }
+              : { stopWhen: [stepCountIs(5)] }),
+          });
 
-        // Stitch multi-pass generation into a single assistant message stream:
-        // - strip the first stream's finish chunk (we're continuing)
-        // - strip the continuation stream's start chunk (avoid duplicate message IDs)
-        return createUIMessageStreamResponse({
-          headers,
-          stream: concatUIMessageStreams(
-            stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-            stripUIMessageStream(safeContinuedStream, { dropStart: true })
-          ),
-        });
-      }
-
-      return createUIMessageStreamResponse({
-        headers,
-        stream: createBufferedUIMessageStream(collected.chunks),
-      });
-    }
-
-    if (needsOvContinuation) {
-      const allowFollowupOvToolCall = shouldAllowFollowupOvToolCall(lastOvOutput);
-      const continuationText = [
-        "Continue the response for the user's Dutch rail request.",
-        allowFollowupOvToolCall
-          ? "You may call ovNlGateway again if needed (for example action=trips.search), otherwise answer directly."
-          : "Do not call any more tools. Use the ovNlGateway output to answer directly.",
-        "Do not call web/internet search tools for this continuation.",
-        lastUserText ? `User question: ${lastUserText}` : "",
-        "Latest ovNlGateway output:",
-        formatOvNlOutputForPrompt(lastOvOutput),
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-
-      const continuationMessages = modelMessages.concat([
-        {
-          role: "user" as const,
-          content: [{ type: "text" as const, text: continuationText }],
+          const continuedStream = continued.toUIMessageStream({
+            generateMessageId: nanoid,
+            messageMetadata,
+            sendReasoning: config.reasoning.exposeToClient,
+          });
+          return stripUIMessageStream(continuedStream, { dropStart: true });
         },
-      ]);
-
-      const followup = streamText({
-        model: resolved!.model,
-        system,
-        messages: continuationMessages,
-        ...(allowFollowupOvToolCall ? {} : { toolChoice: "none" as const }),
-        tools: {
-          ...chatTools,
-          ...bashTools.tools,
-          ...skillsTools.tools,
-          ...hueGatewayTools.tools,
-          ...ovNlTools.tools,
-        } as StreamTextToolSet,
-        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-          ? { temperature: 0 }
-          : {}),
-        ...(providerOptions ? { providerOptions } : {}),
-        ...(allowFollowupOvToolCall
-          ? { stopWhen: [hasToolCall("ovNlGateway"), stepCountIs(4)] }
-          : { stopWhen: [stepCountIs(4)] }),
-      });
-
-      const followupCollected = await collectUIMessageChunks(
-        followup.toUIMessageStream({
-          generateMessageId: nanoid,
-          messageMetadata,
-          sendReasoning: config.reasoning.exposeToClient,
-        }),
-        { isWebToolName }
-      );
-
-      const followupOv = collectToolOutputsFromChunks(
-        followupCollected.chunks as unknown[],
-        "ovNlGateway"
-      );
-      const followupLastOvOutput =
-        followupOv.outputs.length > 0
-          ? followupOv.outputs[followupOv.outputs.length - 1]
-          : null;
-
-      const needsFinalTextCompletion =
-        allowFollowupOvToolCall &&
-        followupCollected.finishReason === "tool-calls" &&
-        followupLastOvOutput != null &&
-        !followupOv.hasTextDelta;
-
-      if (!needsFinalTextCompletion) {
-        return createUIMessageStreamResponse({
-          headers,
-          stream: concatUIMessageStreams(
-            stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-            createBufferedUIMessageStream(
-              stripUIMessageChunks(followupCollected.chunks, { dropStart: true })
-            )
-          ),
-        });
-      }
-
-      const finalTextPrompt = [
-        "Finish the answer directly for the user using the latest ovNlGateway output.",
-        "Do not call any tools.",
-        "Latest ovNlGateway output:",
-        formatOvNlOutputForPrompt(followupLastOvOutput),
-      ].join("\n\n");
-
-      const finalMessages = continuationMessages.concat([
-        {
-          role: "user" as const,
-          content: [{ type: "text" as const, text: finalTextPrompt }],
-        },
-      ]);
-
-      const finalText = streamText({
-        model: resolved!.model,
-        system,
-        messages: finalMessages,
-        toolChoice: "none",
-        tools: {
-          ...chatTools,
-          ...bashTools.tools,
-          ...skillsTools.tools,
-          ...hueGatewayTools.tools,
-          ...ovNlTools.tools,
-        } as StreamTextToolSet,
-        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-          ? { temperature: 0 }
-          : {}),
-        ...(providerOptions ? { providerOptions } : {}),
-        stopWhen: [stepCountIs(4)],
-      });
-
-      const finalTextStream = finalText.toUIMessageStream({
-        generateMessageId: nanoid,
-        messageMetadata,
-        sendReasoning: config.reasoning.exposeToClient,
-      });
-
-      return createUIMessageStreamResponse({
-        headers,
-        stream: concatUIMessageStreams(
-          stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-          concatUIMessageStreams(
-            stripUIMessageChunks(followupCollected.chunks, {
-              dropStart: true,
-              dropFinish: true,
-            }),
-            stripUIMessageStream(finalTextStream, { dropStart: true })
-          )
-        ),
-      });
-    }
-
-    const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
-      maxResults: 5,
-      maxSnippetChars: 420,
-    });
-
-    if (!formatted.ok) {
-      return uiTextResponse({
-        headers,
-        text: `Web search error: ${formatted.errorText}`,
-        messageMetadata: baseMessageMetadata,
-      });
-    }
-
-    const continuationText = [
-      "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
-      lastUserText ? `User question: ${lastUserText}` : "",
-      formatted.text,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    const continuationMessages = modelMessages.concat([
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: continuationText }],
-      },
-    ]);
-
-    const tools = {
-      ...chatTools,
-      ...webTools.tools,
-      ...bashTools.tools,
-      ...ovNlTools.tools,
-    } as StreamTextToolSet;
-    delete tools.perplexity_search;
-
-    const continued = streamText({
-      model: resolved!.model,
-      system,
-      messages: continuationMessages,
-      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-        ? { temperature: 0 }
-        : {}),
-      ...(providerOptions ? { providerOptions } : {}),
-      ...(resolved!.capabilities.tools
-        ? {
-            ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-	          stopWhen: [
-	            hasToolCall("displayWeather"),
-	            hasToolCall("displayWeatherForecast"),
-	            ...(stopAfterCurrentDateTime
-	              ? [hasToolCall("displayCurrentDateTime")]
-	              : []),
-	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-	            hasToolCall("displayNotes"),
-	            hasToolCall("displayMemoryPrompt"),
-	            hasToolCall("displayMemoryAnswer"),
-	            hasToolCall("displayList"),
-            hasToolCall("displayListsOverview"),
-            hasToolCall("displayAgenda"),
-            hasToolCall("displayUrlSummary"),
-            hasToolCall("ovNlGateway"),
-	            hasToolCall("summarizeURL"),
-	            stepCountIs(maxSteps),
-          ],
-            tools,
-          }
-        : { stopWhen: [stepCountIs(5)] }),
-    });
-
-    return continued.toUIMessageStreamResponse({
-      headers,
-      generateMessageId: nanoid,
-      messageMetadata,
-      sendReasoning: config.reasoning.exposeToClient,
+      }),
     });
   }
 
@@ -2515,296 +2480,282 @@ export async function POST(req: Request) {
     sendReasoning: config.reasoning.exposeToClient,
   });
 
-  const collected = await collectUIMessageChunks(
-    baseUIStream,
-    { isWebToolName }
-  );
-
-  const ovCollected = collectToolOutputsFromChunks(collected.chunks as unknown[], "ovNlGateway");
-  const lastOvOutput =
-    ovCollected.outputs.length > 0
-      ? ovCollected.outputs[ovCollected.outputs.length - 1]
-      : null;
-
-  const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
-  const needsPerplexityContinuation =
-    collected.finishReason === "tool-calls" &&
-    !collected.hasUserVisibleOutput &&
-    perplexityOutput != null;
-  const needsOvContinuation =
-    collected.finishReason === "tool-calls" &&
-    lastOvOutput != null &&
-    !ovCollected.hasTextDelta;
-
-	  if (!needsPerplexityContinuation && !needsOvContinuation) {
-	    const needsToolErrorContinuation =
-	      collected.toolErrors.length > 0;
-
-	    if (needsToolErrorContinuation) {
-      const continuationMessages = modelMessages.concat([
-        {
-          role: "user" as const,
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolErrorsForPrompt(collected.toolErrors),
-            },
-          ],
-        },
-      ]);
-
-	      const continued = streamText({
-	        model: resolved!.model,
-	        system,
-	        messages: continuationMessages,
-	        toolChoice: "none",
-	        tools: {
-	          ...chatTools,
-	          ...webTools.tools,
-	          ...bashTools.tools,
-	          ...skillsTools.tools,
-            ...hueGatewayTools.tools,
-            ...ovNlTools.tools,
-	        } as StreamTextToolSet,
-	        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-	          ? { temperature: isRegenerate ? 0.9 : 0 }
-	          : {}),
-	        ...(providerOptions ? { providerOptions } : {}),
-	        stopWhen: [stepCountIs(5)],
-	      });
-
-	      const continuedStream = continued.toUIMessageStream({
-	        generateMessageId: nanoid,
-	        messageMetadata,
-	        sendReasoning: config.reasoning.exposeToClient,
-	      });
-		      const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
-		        stream: continuedStream,
-		        shouldContinue: () => false,
-		        createContinuationStream: async () => null,
-		      });
-
-		      return createUIMessageStreamResponse({
-		        headers,
-		        stream: concatUIMessageStreams(
-		          stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-		          stripUIMessageStream(safeContinuedStream, { dropStart: true })
-		        ),
-		      });
-		    }
-
+  const shouldInspectForContinuation =
+    shouldAutoContinuePerplexity || ovNlTools.enabled;
+  if (!shouldInspectForContinuation) {
     return createUIMessageStreamResponse({
       headers,
-      stream: createBufferedUIMessageStream(collected.chunks),
-    });
-  }
-
-  if (needsOvContinuation) {
-    const allowFollowupOvToolCall = shouldAllowFollowupOvToolCall(lastOvOutput);
-    const continuationText = [
-      "Continue the response for the user's Dutch rail request.",
-      allowFollowupOvToolCall
-        ? "You may call ovNlGateway again if needed (for example action=trips.search), otherwise answer directly."
-        : "Do not call any more tools. Use the ovNlGateway output to answer directly.",
-      "Do not call web/internet search tools for this continuation.",
-      lastUserText ? `User question: ${lastUserText}` : "",
-      "Latest ovNlGateway output:",
-      formatOvNlOutputForPrompt(lastOvOutput),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    const continuationMessages = modelMessages.concat([
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: continuationText }],
-      },
-    ]);
-
-    const followup = streamText({
-      model: resolved!.model,
-      system,
-      messages: continuationMessages,
-      ...(allowFollowupOvToolCall ? {} : { toolChoice: "none" as const }),
-      tools: {
-        ...chatTools,
-        ...bashTools.tools,
-        ...skillsTools.tools,
-        ...hueGatewayTools.tools,
-        ...ovNlTools.tools,
-      } as StreamTextToolSet,
-      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-        ? { temperature: isRegenerate ? 0.9 : 0 }
-        : {}),
-      ...(providerOptions ? { providerOptions } : {}),
-      ...(allowFollowupOvToolCall
-        ? { stopWhen: [hasToolCall("ovNlGateway"), stepCountIs(4)] }
-        : { stopWhen: [stepCountIs(4)] }),
-    });
-
-    const followupCollected = await collectUIMessageChunks(
-      followup.toUIMessageStream({
-        generateMessageId: nanoid,
-        messageMetadata,
-        sendReasoning: config.reasoning.exposeToClient,
+      stream: createUIMessageStreamWithToolErrorContinuation({
+        stream: baseUIStream,
+        shouldContinue: () => false,
+        createContinuationStream: async () => null,
       }),
-      { isWebToolName }
-    );
-
-    const followupOv = collectToolOutputsFromChunks(
-      followupCollected.chunks as unknown[],
-      "ovNlGateway"
-    );
-    const followupLastOvOutput =
-      followupOv.outputs.length > 0
-        ? followupOv.outputs[followupOv.outputs.length - 1]
-        : null;
-
-    const needsFinalTextCompletion =
-      allowFollowupOvToolCall &&
-      followupCollected.finishReason === "tool-calls" &&
-      followupLastOvOutput != null &&
-      !followupOv.hasTextDelta;
-
-	    if (!needsFinalTextCompletion) {
-	      return createUIMessageStreamResponse({
-	        headers,
-	        stream: concatUIMessageStreams(
-	          stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-	          createBufferedUIMessageStream(
-	            stripUIMessageChunks(followupCollected.chunks, { dropStart: true })
-	          )
-	        ),
-	      });
-	    }
-
-    const finalTextPrompt = [
-      "Finish the answer directly for the user using the latest ovNlGateway output.",
-      "Do not call any tools.",
-      "Latest ovNlGateway output:",
-      formatOvNlOutputForPrompt(followupLastOvOutput),
-    ].join("\n\n");
-
-    const finalMessages = continuationMessages.concat([
-      {
-        role: "user" as const,
-        content: [{ type: "text" as const, text: finalTextPrompt }],
-      },
-    ]);
-
-    const finalText = streamText({
-      model: resolved!.model,
-      system,
-      messages: finalMessages,
-      toolChoice: "none",
-      tools: {
-        ...chatTools,
-        ...bashTools.tools,
-        ...skillsTools.tools,
-        ...hueGatewayTools.tools,
-        ...ovNlTools.tools,
-      } as StreamTextToolSet,
-      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-        ? { temperature: isRegenerate ? 0.9 : 0 }
-        : {}),
-      ...(providerOptions ? { providerOptions } : {}),
-      stopWhen: [stepCountIs(4)],
-    });
-
-    const finalTextStream = finalText.toUIMessageStream({
-      generateMessageId: nanoid,
-      messageMetadata,
-      sendReasoning: config.reasoning.exposeToClient,
-    });
-
-	    return createUIMessageStreamResponse({
-	      headers,
-	      stream: concatUIMessageStreams(
-	        stripUIMessageChunks(collected.chunks, { dropFinish: true }),
-	        concatUIMessageStreams(
-	          stripUIMessageChunks(followupCollected.chunks, {
-	            dropStart: true,
-	            dropFinish: true,
-	          }),
-	          stripUIMessageStream(finalTextStream, { dropStart: true })
-	        )
-	      ),
-	    });
-	  }
-
-  const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
-    maxResults: 5,
-    maxSnippetChars: 420,
-  });
-
-  if (!formatted.ok) {
-    return uiTextResponse({
-      headers,
-      text: `Web search error: ${formatted.errorText}`,
-      messageMetadata: baseMessageMetadata,
     });
   }
 
-  const continuationText = [
-    "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
-    lastUserText ? `User question: ${lastUserText}` : "",
-    formatted.text,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const continuationMessages = modelMessages.concat([
-    {
-      role: "user" as const,
-      content: [{ type: "text" as const, text: continuationText }],
-    },
-  ]);
-
-  const tools = {
-    ...chatTools,
-    ...webTools.tools,
-    ...bashTools.tools,
-    ...ovNlTools.tools,
-  } as StreamTextToolSet;
-  delete tools.perplexity_search;
-
-  const continued = streamText({
-    model: resolved!.model,
-    system,
-    messages: continuationMessages,
-    ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-      ? { temperature: isRegenerate ? 0.9 : 0 }
-      : {}),
-    ...(providerOptions ? { providerOptions } : {}),
-    ...(resolved!.capabilities.tools
-      ? {
-          ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-		          stopWhen: [
-		            hasToolCall("displayWeather"),
-		            hasToolCall("displayWeatherForecast"),
-		            ...(stopAfterCurrentDateTime
-		              ? [hasToolCall("displayCurrentDateTime")]
-		              : []),
-		            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-		            hasToolCall("displayNotes"),
-		            hasToolCall("displayMemoryAnswer"),
-		            hasToolCall("displayList"),
-            hasToolCall("displayListsOverview"),
-            hasToolCall("displayAgenda"),
-            hasToolCall("displayUrlSummary"),
-            hasToolCall("ovNlGateway"),
-		            hasToolCall("summarizeURL"),
-		            stepCountIs(maxSteps),
-          ],
-          tools,
-        }
-      : { stopWhen: [stepCountIs(5)] }),
-  });
-
-  return continued.toUIMessageStreamResponse({
+  return createUIMessageStreamResponse({
     headers,
-    generateMessageId: nanoid,
-    messageMetadata,
-    sendReasoning: config.reasoning.exposeToClient,
+    stream: createUIMessageStreamWithDeferredContinuation({
+      stream: baseUIStream,
+      collect: (inspectionStream) =>
+        collectUIMessageChunks(inspectionStream, {
+          isWebToolName,
+          captureChunks: false,
+          trackToolOutputsByName: ["ovNlGateway"],
+        }),
+      createContinuationStream: async (collected) => {
+        const ovOutputs = collected.toolOutputsByName.get("ovNlGateway") ?? [];
+        const lastOvOutput = ovOutputs.length > 0 ? ovOutputs[ovOutputs.length - 1] : null;
+        const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+        const needsPerplexityContinuation =
+          collected.finishReason === "tool-calls" &&
+          !collected.hasUserVisibleOutput &&
+          perplexityOutput != null;
+        const needsOvContinuation =
+          collected.finishReason === "tool-calls" &&
+          lastOvOutput != null &&
+          !collected.hasTextDelta;
+
+        if (!needsPerplexityContinuation && !needsOvContinuation) {
+          if (collected.toolErrors.length === 0) return null;
+
+          const continuationMessages = modelMessages.concat([
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: formatToolErrorsForPrompt(collected.toolErrors),
+                },
+              ],
+            },
+          ]);
+
+          const continued = streamText({
+            model: resolved!.model,
+            system,
+            messages: continuationMessages,
+            toolChoice: "none",
+            tools: {
+              ...chatTools,
+              ...webTools.tools,
+              ...bashTools.tools,
+              ...skillsTools.tools,
+              ...hueGatewayTools.tools,
+              ...ovNlTools.tools,
+            } as StreamTextToolSet,
+            ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+              ? { temperature: isRegenerate ? 0.9 : 0 }
+              : {}),
+            ...(providerOptions ? { providerOptions } : {}),
+            stopWhen: [stepCountIs(5)],
+          });
+
+          const continuedStream = continued.toUIMessageStream({
+            generateMessageId: nanoid,
+            messageMetadata,
+            sendReasoning: config.reasoning.exposeToClient,
+          });
+          const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+            stream: continuedStream,
+            shouldContinue: () => false,
+            createContinuationStream: async () => null,
+          });
+          return stripUIMessageStream(safeContinuedStream, { dropStart: true });
+        }
+
+        if (needsOvContinuation) {
+          const allowFollowupOvToolCall = shouldAllowFollowupOvToolCall(lastOvOutput);
+          const continuationText = [
+            "Continue the response for the user's Dutch rail request.",
+            allowFollowupOvToolCall
+              ? "You may call ovNlGateway again if needed (for example action=trips.search), otherwise answer directly."
+              : "Do not call any more tools. Use the ovNlGateway output to answer directly.",
+            "Do not call web/internet search tools for this continuation.",
+            lastUserText ? `User question: ${lastUserText}` : "",
+            "Latest ovNlGateway output:",
+            formatOvNlOutputForPrompt(lastOvOutput),
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+
+          const continuationMessages = modelMessages.concat([
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: continuationText }],
+            },
+          ]);
+
+          const followup = streamText({
+            model: resolved!.model,
+            system,
+            messages: continuationMessages,
+            ...(allowFollowupOvToolCall ? {} : { toolChoice: "none" as const }),
+            tools: {
+              ...chatTools,
+              ...bashTools.tools,
+              ...skillsTools.tools,
+              ...hueGatewayTools.tools,
+              ...ovNlTools.tools,
+            } as StreamTextToolSet,
+            ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+              ? { temperature: isRegenerate ? 0.9 : 0 }
+              : {}),
+            ...(providerOptions ? { providerOptions } : {}),
+            ...(allowFollowupOvToolCall
+              ? { stopWhen: [hasToolCall("ovNlGateway"), stepCountIs(4)] }
+              : { stopWhen: [stepCountIs(4)] }),
+          });
+
+          const followupStream = followup.toUIMessageStream({
+            generateMessageId: nanoid,
+            messageMetadata,
+            sendReasoning: config.reasoning.exposeToClient,
+          });
+
+          const stitchedFollowup = createUIMessageStreamWithDeferredContinuation({
+            stream: followupStream,
+            collect: (inspectionStream) =>
+              collectUIMessageChunks(inspectionStream, {
+                isWebToolName,
+                captureChunks: false,
+                trackToolOutputsByName: ["ovNlGateway"],
+              }),
+            createContinuationStream: async (followupCollected) => {
+              const followupOvOutputs =
+                followupCollected.toolOutputsByName.get("ovNlGateway") ?? [];
+              const followupLastOvOutput =
+                followupOvOutputs.length > 0
+                  ? followupOvOutputs[followupOvOutputs.length - 1]
+                  : null;
+              const needsFinalTextCompletion =
+                allowFollowupOvToolCall &&
+                followupCollected.finishReason === "tool-calls" &&
+                followupLastOvOutput != null &&
+                !followupCollected.hasTextDelta;
+
+              if (!needsFinalTextCompletion) return null;
+
+              const finalTextPrompt = [
+                "Finish the answer directly for the user using the latest ovNlGateway output.",
+                "Do not call any tools.",
+                "Latest ovNlGateway output:",
+                formatOvNlOutputForPrompt(followupLastOvOutput),
+              ].join("\n\n");
+
+              const finalMessages = continuationMessages.concat([
+                {
+                  role: "user" as const,
+                  content: [{ type: "text" as const, text: finalTextPrompt }],
+                },
+              ]);
+
+              const finalText = streamText({
+                model: resolved!.model,
+                system,
+                messages: finalMessages,
+                toolChoice: "none",
+                tools: {
+                  ...chatTools,
+                  ...bashTools.tools,
+                  ...skillsTools.tools,
+                  ...hueGatewayTools.tools,
+                  ...ovNlTools.tools,
+                } as StreamTextToolSet,
+                ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                  ? { temperature: isRegenerate ? 0.9 : 0 }
+                  : {}),
+                ...(providerOptions ? { providerOptions } : {}),
+                stopWhen: [stepCountIs(4)],
+              });
+
+              const finalTextStream = finalText.toUIMessageStream({
+                generateMessageId: nanoid,
+                messageMetadata,
+                sendReasoning: config.reasoning.exposeToClient,
+              });
+              return stripUIMessageStream(finalTextStream, { dropStart: true });
+            },
+          });
+
+          return stripUIMessageStream(stitchedFollowup, { dropStart: true });
+        }
+
+        const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
+          maxResults: 5,
+          maxSnippetChars: 420,
+        });
+
+        if (!formatted.ok) {
+          return uiTextContinuationStream({
+            text: `Web search error: ${formatted.errorText}`,
+            messageMetadata: baseMessageMetadata,
+          });
+        }
+
+        const continuationText = [
+          "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
+          lastUserText ? `User question: ${lastUserText}` : "",
+          formatted.text,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
+        const continuationMessages = modelMessages.concat([
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: continuationText }],
+          },
+        ]);
+
+        const tools = {
+          ...chatTools,
+          ...webTools.tools,
+          ...bashTools.tools,
+          ...ovNlTools.tools,
+        } as StreamTextToolSet;
+        delete tools.perplexity_search;
+
+        const continued = streamText({
+          model: resolved!.model,
+          system,
+          messages: continuationMessages,
+          ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+            ? { temperature: isRegenerate ? 0.9 : 0 }
+            : {}),
+          ...(providerOptions ? { providerOptions } : {}),
+          ...(resolved!.capabilities.tools
+            ? {
+                ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
+                stopWhen: [
+                  hasToolCall("displayWeather"),
+                  hasToolCall("displayWeatherForecast"),
+                  ...(stopAfterCurrentDateTime
+                    ? [hasToolCall("displayCurrentDateTime")]
+                    : []),
+                  ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+                  hasToolCall("displayNotes"),
+                  hasToolCall("displayMemoryAnswer"),
+                  hasToolCall("displayList"),
+                  hasToolCall("displayListsOverview"),
+                  hasToolCall("displayAgenda"),
+                  hasToolCall("displayUrlSummary"),
+                  hasToolCall("ovNlGateway"),
+                  hasToolCall("summarizeURL"),
+                  stepCountIs(maxSteps),
+                ],
+                tools,
+              }
+            : { stopWhen: [stepCountIs(5)] }),
+        });
+
+        const continuedStream = continued.toUIMessageStream({
+          generateMessageId: nanoid,
+          messageMetadata,
+          sendReasoning: config.reasoning.exposeToClient,
+        });
+        return stripUIMessageStream(continuedStream, { dropStart: true });
+      },
+    }),
   });
 }

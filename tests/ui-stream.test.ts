@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readUIMessageStream } from "ai";
 import {
+  collectUIMessageChunks,
   concatUIMessageStreams,
   createBufferedUIMessageStream,
+  createUIMessageStreamWithDeferredContinuation,
   createUIMessageStreamWithToolErrorContinuation,
   stripUIMessageChunks,
   stripUIMessageStream,
@@ -25,6 +27,10 @@ async function readAll<T>(stream: ReadableStream<T>): Promise<T[]> {
     reader.releaseLock();
   }
   return out;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 test("createUIMessageStreamWithToolErrorContinuation appends continuation stream after tool-output-error", async () => {
@@ -174,9 +180,10 @@ test("stripUIMessage* helpers prevent duplicate assistant messages when stitchin
     stripUIMessageStream(createBufferedUIMessageStream(followup), { dropStart: true })
   );
 
-  const finalById = new Map<string, any>();
-  for await (const msg of readUIMessageStream({ stream: stitched as any })) {
-    finalById.set(msg.id, msg);
+  const finalById = new Map<string, unknown>();
+  for await (const msg of readUIMessageStream({ stream: stitched as ReadableStream<Chunk> })) {
+    const candidate = msg as { id?: unknown };
+    if (typeof candidate.id === "string") finalById.set(candidate.id, msg);
   }
 
   assert.equal(finalById.size, 1);
@@ -185,4 +192,83 @@ test("stripUIMessage* helpers prevent duplicate assistant messages when stitchin
   const textParts = message.parts.filter((p) => p.type === "text");
   assert.equal(toolParts.length, 1);
   assert.ok(textParts.some((p) => String(p.text ?? "").includes("after")));
+});
+
+test("createUIMessageStreamWithDeferredContinuation forwards non-finish chunks without waiting for collection", async () => {
+  const base: Chunk[] = [
+    { type: "start", messageId: "m1" },
+    { type: "text-delta", id: "m1", delta: "hello" },
+    { type: "finish", finishReason: "stop" },
+  ];
+
+  const wrapped = createUIMessageStreamWithDeferredContinuation({
+    stream: createBufferedUIMessageStream(base),
+    collect: async (inspectionStream) => {
+      await readAll(inspectionStream);
+      await sleep(60);
+      return { continue: false };
+    },
+    createContinuationStream: async () => null,
+  });
+
+  const reader = wrapped.getReader();
+  const startedAt = Date.now();
+  const first = await reader.read();
+  const elapsedMs = Date.now() - startedAt;
+  reader.releaseLock();
+
+  assert.equal(first.done, false);
+  assert.equal((first.value as Chunk).type, "start");
+  assert.ok(elapsedMs < 40);
+});
+
+test("createUIMessageStreamWithDeferredContinuation defers base finish when appending continuation", async () => {
+  const base: Chunk[] = [
+    { type: "start", messageId: "m1" },
+    { type: "text-delta", id: "m1", delta: "base" },
+    { type: "finish", finishReason: "tool-calls" },
+  ];
+  const continuation: Chunk[] = [
+    { type: "start", messageId: "m2" },
+    { type: "text-delta", id: "m2", delta: "after" },
+    { type: "finish", finishReason: "stop" },
+  ];
+
+  const wrapped = createUIMessageStreamWithDeferredContinuation({
+    stream: createBufferedUIMessageStream(base),
+    collect: async (inspectionStream) => {
+      await readAll(inspectionStream);
+      return { continue: true };
+    },
+    createContinuationStream: async () =>
+      stripUIMessageStream(createBufferedUIMessageStream(continuation), { dropStart: true }),
+  });
+
+  const output = await readAll(wrapped);
+  assert.deepEqual(
+    output.map((chunk) => chunk.type),
+    ["start", "text-delta", "text-delta", "finish"],
+  );
+  assert.equal(output[1].delta, "base");
+  assert.equal(output[2].delta, "after");
+});
+
+test("collectUIMessageChunks can inspect without retaining chunks", async () => {
+  const base: Chunk[] = [
+    { type: "start", messageId: "m1" },
+    { type: "tool-input-available", toolCallId: "tc_1", toolName: "ovNlGateway", input: {} },
+    { type: "tool-output-available", toolCallId: "tc_1", output: { kind: "stations.search" } },
+    { type: "finish", finishReason: "tool-calls" },
+  ];
+
+  const collected = await collectUIMessageChunks(createBufferedUIMessageStream(base), {
+    isWebToolName: () => false,
+    captureChunks: false,
+    trackToolOutputsByName: ["ovNlGateway"],
+  });
+
+  assert.equal(collected.chunks.length, 0);
+  const outputs = collected.toolOutputsByName.get("ovNlGateway") ?? [];
+  assert.equal(outputs.length, 1);
+  assert.deepEqual(outputs[0], { kind: "stations.search" });
 });

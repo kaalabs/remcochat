@@ -94,21 +94,31 @@ export async function collectUIMessageChunks<T>(
   opts: {
     isWebToolName: (toolName: string) => boolean;
     maxToolErrors?: number;
+    captureChunks?: boolean;
+    trackToolOutputsByName?: string[];
   },
 ): Promise<{
   chunks: T[];
   webToolOutputs: Map<string, unknown>;
+  toolOutputsByName: Map<string, unknown[]>;
   toolErrors: ToolStreamError[];
   finishReason: unknown;
   hasUserVisibleOutput: boolean;
+  hasTextDelta: boolean;
 }> {
   const reader = stream.getReader();
+  const captureChunks = opts.captureChunks !== false;
   const chunks: T[] = [];
+  const trackedToolNames = new Set(
+    (opts.trackToolOutputsByName ?? []).filter((name) => typeof name === "string" && name.trim()),
+  );
   const toolNamesByCallId = new Map<string, string>();
   const webToolOutputs = new Map<string, unknown>();
+  const toolOutputsByName = new Map<string, unknown[]>();
   const toolErrors: ToolStreamError[] = [];
   let finishReason: unknown = undefined;
   let hasUserVisibleOutput = false;
+  let hasTextDelta = false;
   let activeMessageId: string | null = null;
   let sawAnyText = false;
   let injectedErrorText = false;
@@ -122,7 +132,7 @@ export async function collectUIMessageChunks<T>(
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    if (captureChunks) chunks.push(value);
 
     const chunk = value as unknown;
     if (!isRecord(chunk)) continue;
@@ -160,15 +170,17 @@ export async function collectUIMessageChunks<T>(
 
         if (activeMessageId && !sawAnyText && !injectedErrorText) {
           injectedErrorText = true;
-          chunks.push({ type: "text-start", id: activeMessageId } as T);
-          chunks.push(
-            {
-              type: "text-delta",
-              id: activeMessageId,
-              delta: `Tool error: ${errorText}`,
-            } as T,
-          );
-          chunks.push({ type: "text-end", id: activeMessageId } as T);
+          if (captureChunks) {
+            chunks.push({ type: "text-start", id: activeMessageId } as T);
+            chunks.push(
+              {
+                type: "text-delta",
+                id: activeMessageId,
+                delta: `Tool error: ${errorText}`,
+              } as T,
+            );
+            chunks.push({ type: "text-end", id: activeMessageId } as T);
+          }
         }
 
         if (toolName && opts.isWebToolName(toolName)) {
@@ -213,14 +225,30 @@ export async function collectUIMessageChunks<T>(
 
           if (activeMessageId && !sawAnyText && !injectedErrorText) {
             injectedErrorText = true;
-            chunks.push({ type: "text-start", id: activeMessageId } as T);
-            chunks.push(
-              { type: "text-delta", id: activeMessageId, delta: `Tool error: ${errorText}` } as T,
-            );
-            chunks.push({ type: "text-end", id: activeMessageId } as T);
+            if (captureChunks) {
+              chunks.push({ type: "text-start", id: activeMessageId } as T);
+              chunks.push(
+                { type: "text-delta", id: activeMessageId, delta: `Tool error: ${errorText}` } as T,
+              );
+              chunks.push({ type: "text-end", id: activeMessageId } as T);
+            }
           }
         }
         hasUserVisibleOutput = true;
+      }
+
+      if (
+        chunk.type === "tool-output-available" &&
+        typeof chunk.toolCallId === "string" &&
+        toolName &&
+        trackedToolNames.has(toolName)
+      ) {
+        const list = toolOutputsByName.get(toolName);
+        if (list) {
+          list.push(chunk.output);
+        } else {
+          toolOutputsByName.set(toolName, [chunk.output]);
+        }
       }
       continue;
     }
@@ -229,6 +257,9 @@ export async function collectUIMessageChunks<T>(
       (chunk?.type === "text-delta" || chunk?.type === "reasoning-delta") &&
       typeof chunk.delta === "string"
     ) {
+      if (chunk?.type === "text-delta" && chunk.delta.trim().length > 0) {
+        hasTextDelta = true;
+      }
       if (chunk.delta.length > 0) hasUserVisibleOutput = true;
       continue;
     }
@@ -244,7 +275,69 @@ export async function collectUIMessageChunks<T>(
     }
   }
 
-  return { chunks, webToolOutputs, toolErrors, finishReason, hasUserVisibleOutput };
+  return {
+    chunks,
+    webToolOutputs,
+    toolOutputsByName,
+    toolErrors,
+    finishReason,
+    hasUserVisibleOutput,
+    hasTextDelta,
+  };
+}
+
+export function createUIMessageStreamWithDeferredContinuation<T, C>(input: {
+  stream: ReadableStream<T>;
+  collect: (inspectionStream: ReadableStream<T>) => Promise<C>;
+  createContinuationStream: (collected: C) => Promise<ReadableStream<T> | null>;
+}): ReadableStream<T> {
+  const [clientStream, inspectionStream] = input.stream.tee();
+  const collectedPromise = input.collect(inspectionStream);
+
+  return new ReadableStream({
+    async start(controller) {
+      const reader = clientStream.getReader();
+      const deferredFinishChunks: T[] = [];
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (isChunkType(value as unknown, "finish")) {
+            deferredFinishChunks.push(value);
+            continue;
+          }
+          controller.enqueue(value);
+        }
+
+        const collected = await collectedPromise;
+        const continuation = await input.createContinuationStream(collected);
+
+        if (continuation) {
+          const continuationReader = continuation.getReader();
+          try {
+            while (true) {
+              const { value, done } = await continuationReader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+          } finally {
+            continuationReader.releaseLock();
+          }
+        } else {
+          for (const finishChunk of deferredFinishChunks) {
+            controller.enqueue(finishChunk);
+          }
+        }
+
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
 }
 
 export function createUIMessageStreamWithToolErrorContinuation<T>(input: {
