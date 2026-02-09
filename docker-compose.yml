@@ -18,6 +18,8 @@ services:
       VERCEL_AI_GATEWAY_API_KEY: ${VERCEL_AI_GATEWAY_API_KEY:-}
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
       EXA_API_KEY: ${EXA_API_KEY:-}
+      BRAVE_SEARCH_API: ${BRAVE_SEARCH_API:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
       NS_APP_SUBSCRIPTION_KEY: ${NS_APP_SUBSCRIPTION_KEY:-}
     volumes:
       - remcochat_data:/app/data

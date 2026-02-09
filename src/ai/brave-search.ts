@@ -17,8 +17,14 @@ type BraveWebSearchResponse = {
 };
 
 function getBraveApiKey() {
-  const key = String(process.env.BRAVE_SEARCH_API ?? "").trim();
-  if (!key) throw new Error("Missing BRAVE_SEARCH_API for Brave Search.");
+  const key = String(
+    process.env.BRAVE_SEARCH_API ?? process.env.BRAVE_API_KEY ?? ""
+  ).trim();
+  if (!key) {
+    throw new Error(
+      "Missing Brave API key. Set BRAVE_SEARCH_API (preferred) or BRAVE_API_KEY."
+    );
+  }
   return key;
 }
 
