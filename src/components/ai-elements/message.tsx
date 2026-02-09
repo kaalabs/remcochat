@@ -33,7 +33,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
     className={cn(
       "group flex w-full flex-col gap-2",
       from === "user"
-        ? "is-user ml-auto justify-end max-w-[95%]"
+        ? "is-user ml-auto justify-end"
         : "is-assistant max-w-full",
       className
     )}
@@ -51,7 +51,7 @@ export const MessageContent = ({
   <div
     className={cn(
       "is-user:dark flex w-full max-w-full min-w-0 flex-col gap-2 text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:w-fit group-[.is-user]:overflow-hidden group-[.is-user]:rounded-lg group-[.is-user]:bg-sidebar-accent group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-sidebar-accent-foreground",
+      "group-[.is-user]:ml-auto group-[.is-user]:w-fit group-[.is-user]:max-w-[95%] group-[.is-user]:overflow-hidden group-[.is-user]:rounded-lg group-[.is-user]:bg-sidebar-accent group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-sidebar-accent-foreground",
       "group-[.is-assistant]:w-full group-[.is-assistant]:overflow-visible group-[.is-assistant]:text-foreground",
       className
     )}
@@ -316,7 +316,7 @@ export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul]:list-inside [&_ol]:list-inside [&_ul]:pl-0 [&_ol]:pl-0",
         className
       )}
       {...props}
