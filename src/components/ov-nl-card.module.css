@@ -308,7 +308,10 @@
   grid-template-columns: 22px 1fr;
   gap: 10px;
   --timeline-dot-outer: 15px;
-  --timeline-dot-top: calc(10px + (0.98rem * 0.55) - (var(--timeline-dot-outer) * 0.5));
+  --timeline-dot-nudge: 4px;
+  --timeline-dot-top: calc(
+    10px + (0.98rem * 0.55) - (var(--timeline-dot-outer) * 0.5) + var(--timeline-dot-nudge)
+  );
 }
 
 .timelineRail {
