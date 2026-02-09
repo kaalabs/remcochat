@@ -68,14 +68,7 @@ export function ModelPicker({
           suppressHydrationWarning
           variant="outline"
         >
-          <span className="truncate">
-            {selected?.label ?? value}
-            {selected?.description ? (
-              <span className="ml-2 text-muted-foreground">
-                {selected.description}
-              </span>
-            ) : null}
-          </span>
+          <span className="truncate">{selected?.label ?? value}</span>
           <ChevronDownIcon className="size-4 text-muted-foreground" />
         </Button>
       </ModelSelectorTrigger>

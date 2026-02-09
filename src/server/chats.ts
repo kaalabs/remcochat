@@ -402,13 +402,10 @@ export function createChat(input: {
   const profile = getProfile(input.profileId);
   const { provider } = getActiveProviderConfig();
   const allowed = new Set(provider.allowedModelIds);
-  const profileDefaultModelId = allowed.has(profile.defaultModelId)
-    ? profile.defaultModelId
-    : provider.defaultModelId;
   const modelId =
     typeof input.modelId === "string" && allowed.has(input.modelId)
       ? input.modelId
-      : profileDefaultModelId;
+      : provider.defaultModelId;
 
   const title = (input.title ?? "").trim();
   const chatInstructions = String(input.chatInstructions ?? "");

@@ -994,19 +994,12 @@ export function HomeClient({
     let nextChats = data.chats ?? [];
     const hasUnarchived = nextChats.some((c) => !c.archivedAt);
     if (input.ensureAtLeastOne && !hasUnarchived) {
-      const storedModelId = window.localStorage.getItem(
-        lastUsedModelKey(input.profileId)
-      );
-      const seedModelId = isAllowedModel(storedModelId)
-        ? storedModelId
-        : profileDefaultModelId;
-
       const createRes = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profileId: input.profileId,
-          modelId: seedModelId,
+          modelId: providerDefaultModelId,
         }),
       });
       const created = (await createRes.json()) as { chat?: Chat };
@@ -1058,7 +1051,7 @@ export function HomeClient({
         : firstUnarchivedChatId || storedChatId || nextChats[0]?.id || "";
 
     setActiveChatId(nextActiveChatId);
-  }, [profileDefaultModelId]);
+  }, [providerDefaultModelId]);
 
   const refreshFoldersNonceRef = useRef(0);
 	  const refreshFolders = useCallback(async (profileId: string) => {
@@ -1183,13 +1176,6 @@ export function HomeClient({
   const createChat = async () => {
     if (!activeProfile) return;
 
-    const storedModelId = window.localStorage.getItem(
-      lastUsedModelKey(activeProfile.id)
-    );
-    const seedModelId = isAllowedModel(storedModelId)
-      ? storedModelId
-      : effectiveModelId;
-
     if (status !== "ready") stop();
     setIsTemporaryChat(false);
 
@@ -1198,7 +1184,7 @@ export function HomeClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         profileId: activeProfile.id,
-        modelId: seedModelId || profileDefaultModelId,
+        modelId: providerDefaultModelId,
       }),
     });
 
