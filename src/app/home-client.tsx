@@ -3710,11 +3710,11 @@ export function HomeClient({
                   {lanAdminAccessEnabled ? (
                     <Button
                       aria-label="Admin access"
-                      className="h-9 w-9 px-0"
+                      className="h-8 w-9 px-0"
                       onClick={() => setLanAdminTokenOpen(true)}
                       title="Admin access"
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                     >
 	                      <KeyIcon
 	                        className={
