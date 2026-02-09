@@ -43,9 +43,9 @@ export function ThemeToggle() {
     return (
       <Button
         aria-label={t("theme.toggle.aria")}
-        className="h-8 w-8"
+        className="h-9 w-9"
         size="icon"
-        variant="ghost"
+        variant="outline"
       />
     );
   }
@@ -55,13 +55,13 @@ export function ThemeToggle() {
   return (
     <Button
       aria-label={t("theme.toggle.aria")}
-      className="h-8 w-8"
+      className="h-9 w-9"
       onClick={() => {
         setTheme(isDark ? "light" : "dark");
         requestComposerFocus();
       }}
       size="icon"
-      variant="ghost"
+      variant="outline"
     >
       {isDark ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
     </Button>

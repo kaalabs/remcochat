@@ -108,11 +108,11 @@ export const WebPreviewNavigationButton = ({
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          className="h-8 w-8 p-0 hover:text-foreground"
+          className="h-9 w-9 px-0"
           disabled={disabled}
           onClick={onClick}
-          size="sm"
-          variant="ghost"
+          size="icon"
+          variant="outline"
           {...props}
         >
           {children}

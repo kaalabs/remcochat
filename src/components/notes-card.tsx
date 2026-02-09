@@ -173,13 +173,13 @@ export function NotesCard(props: NotesCardProps) {
                 </div>
                 <Button
                   aria-label={t("notes.delete.aria")}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground"
                   data-testid={`note:delete:${note.id}`}
                   disabled={!canDelete}
                   onClick={() => deleteNote(note.id)}
                   size="icon-sm"
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                 >
                   <Trash2 className="size-4" />
                 </Button>

@@ -82,7 +82,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEventHandler,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { StickToBottom, type StickToBottomContext } from "use-stick-to-bottom";
 import { MessageActions, MessageAction } from "@/components/ai-elements/message";
@@ -118,6 +120,8 @@ import {
       FolderIcon,
       FolderOpenIcon,
       FolderPlusIcon,
+      PanelLeftCloseIcon,
+      PanelLeftOpenIcon,
       PinIcon,
       PinOffIcon,
 		  ShieldIcon,
@@ -140,6 +144,12 @@ import {
 import { nanoid } from "nanoid";
 import Link from "next/link";
 import { parseAttachmentUrl } from "@/lib/attachment-url";
+import {
+  clampDesktopSidebarWidth,
+  DESKTOP_SIDEBAR_DEFAULT_WIDTH_PX,
+  DESKTOP_SIDEBAR_STORAGE_KEY,
+  parseDesktopSidebarPrefs,
+} from "@/lib/sidebar-shell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -867,6 +877,17 @@ export function HomeClient({
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [profileSelectOpen, setProfileSelectOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  const [desktopSidebarWidthPx, setDesktopSidebarWidthPx] = useState(
+    DESKTOP_SIDEBAR_DEFAULT_WIDTH_PX
+  );
+  const [desktopSidebarPrefsLoaded, setDesktopSidebarPrefsLoaded] = useState(false);
+  const [desktopSidebarResizing, setDesktopSidebarResizing] = useState(false);
+  const desktopSidebarResizeRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
@@ -1148,6 +1169,91 @@ export function HomeClient({
 	    },
 	    [folderGroupCollapsedStorageKey]
 	  );
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY);
+    const parsed = parseDesktopSidebarPrefs(raw);
+    if (parsed) {
+      setDesktopSidebarCollapsed(parsed.collapsed);
+      setDesktopSidebarWidthPx(parsed.width);
+    }
+    setDesktopSidebarPrefsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!desktopSidebarPrefsLoaded) return;
+    try {
+      window.localStorage.setItem(
+        DESKTOP_SIDEBAR_STORAGE_KEY,
+        JSON.stringify({
+          collapsed: desktopSidebarCollapsed,
+          width: clampDesktopSidebarWidth(desktopSidebarWidthPx),
+        })
+      );
+    } catch {
+      // ignore write errors
+    }
+  }, [
+    desktopSidebarCollapsed,
+    desktopSidebarPrefsLoaded,
+    desktopSidebarWidthPx,
+  ]);
+
+  useEffect(() => {
+    if (!desktopSidebarResizing) return;
+    const { cursor: prevCursor, userSelect: prevUserSelect } = document.body.style;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
+    };
+  }, [desktopSidebarResizing]);
+
+  const startDesktopSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (desktopSidebarCollapsed) return;
+      if (event.button !== 0) return;
+      desktopSidebarResizeRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startWidth: desktopSidebarWidthPx,
+      };
+      setDesktopSidebarResizing(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    },
+    [desktopSidebarCollapsed, desktopSidebarWidthPx]
+  );
+
+  const moveDesktopSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = desktopSidebarResizeRef.current;
+      if (!state) return;
+      if (state.pointerId !== event.pointerId) return;
+      const delta = event.clientX - state.startX;
+      setDesktopSidebarWidthPx(
+        clampDesktopSidebarWidth(state.startWidth + delta)
+      );
+      event.preventDefault();
+    },
+    []
+  );
+
+  const endDesktopSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = desktopSidebarResizeRef.current;
+      if (!state) return;
+      if (state.pointerId !== event.pointerId) return;
+      desktopSidebarResizeRef.current = null;
+      setDesktopSidebarResizing(false);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+    },
+    []
+  );
 
   const createProfile = async () => {
     const name = newProfileName.trim();
@@ -2621,7 +2727,7 @@ export function HomeClient({
     window.setTimeout(() => focusComposer({ toEnd: true }), 0);
   }, [focusComposer]);
 
-	  const renderSidebar = (mode: "desktop" | "drawer") => {
+  const renderSidebar = (mode: "desktop" | "drawer") => {
 	    const closeIfDrawer = () => {
 	      if (mode !== "drawer") return;
 	      closeSidebarDrawer();
@@ -2646,21 +2752,32 @@ export function HomeClient({
 	            />
 	            <div className="min-w-0 truncate font-semibold tracking-tight">RemcoChat</div>
 	          </div>
-	          {mode === "drawer" ? (
-	            <DialogClose asChild>
-	              <Button
+          {mode === "drawer" ? (
+            <DialogClose asChild>
+              <Button
                 aria-label={t("sidebar.close_menu.aria")}
-                className="h-8 w-8"
+                className="h-9 w-9"
                 size="icon"
                 type="button"
-                variant="ghost"
+                variant="outline"
               >
                 <XIcon className="size-4" />
               </Button>
             </DialogClose>
           ) : (
-            <div className="hidden md:block">
-              <ThemeToggle />
+            <div className="hidden items-center gap-1 md:flex">
+              <Button
+                aria-label={t("sidebar.collapse.aria")}
+                aria-pressed={!desktopSidebarCollapsed}
+                className="h-9 w-9"
+                data-testid="sidebar:desktop-toggle"
+                onClick={() => setDesktopSidebarCollapsed(true)}
+                title={t("sidebar.collapse.aria")}
+                type="button"
+                variant="outline"
+              >
+                <PanelLeftCloseIcon className="size-4" />
+              </Button>
             </div>
           )}
         </div>
@@ -2670,22 +2787,22 @@ export function HomeClient({
             <div className="text-sm font-medium text-muted-foreground">
               {t("sidebar.chats")}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Button
                 aria-label={t("sidebar.new_folder.aria")}
-                className="h-7 w-7 px-0"
+                className="h-9 w-9 px-0"
                 data-testid="sidebar:new-folder"
                 disabled={!activeProfile || status !== "ready"}
                 onClick={() => setNewFolderOpen(true)}
                 title={t("sidebar.new_folder.title")}
                 type="button"
-                variant="secondary"
+                variant="outline"
               >
                 <FolderPlusIcon className="size-4" />
               </Button>
               <Button
                 aria-label={t("sidebar.new_chat.aria")}
-                className="h-7 w-7 px-0"
+                className="h-9 w-9 px-0"
                 data-testid="sidebar:new-chat"
                 disabled={!activeProfile || status !== "ready"}
                 onClick={() => {
@@ -2694,7 +2811,7 @@ export function HomeClient({
                 }}
                 title={t("sidebar.new_chat.title")}
                 type="button"
-                variant="secondary"
+                variant="outline"
               >
                 <PlusIcon className="size-4" />
               </Button>
@@ -2776,7 +2893,7 @@ export function HomeClient({
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
 	                          <Button
-	                            className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+	                            className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
 	                            data-testid={`sidebar:folder-menu:${folder.id}`}
 	                            disabled={
 	                              !activeProfile ||
@@ -2785,7 +2902,7 @@ export function HomeClient({
 	                            }
 	                            suppressHydrationWarning
 	                            type="button"
-	                            variant="ghost"
+	                            variant="outline"
 	                          >
 	                            <MoreVerticalIcon className="size-4" />
 	                          </Button>
@@ -2864,7 +2981,7 @@ export function HomeClient({
 	                              }
 	                              aria-pressed={chatIsPinned(chat)}
 	                              className={
-	                                "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                                "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                                (chatIsPinned(chat)
 	                                  ? "opacity-100"
 	                                  : "opacity-50 group-hover:opacity-100")
@@ -2878,7 +2995,7 @@ export function HomeClient({
 	                              }}
 	                              suppressHydrationWarning
 	                              type="button"
-	                              variant="ghost"
+	                              variant="outline"
 	                            >
 	                              {chatIsPinned(chat) ? (
 	                                <PinIcon className="size-4 text-sidebar-primary" />
@@ -2890,7 +3007,7 @@ export function HomeClient({
 	                            <DropdownMenu>
 	                              <DropdownMenuTrigger asChild>
 	                                <Button
-                                  className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                  className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                   data-testid={`sidebar:chat-menu:${chat.id}`}
                                   disabled={
                                     !activeProfile ||
@@ -2899,7 +3016,7 @@ export function HomeClient({
                                   }
                                   suppressHydrationWarning
                                   type="button"
-                                  variant="ghost"
+                                  variant="outline"
                                 >
                                   <MoreVerticalIcon className="size-4" />
                                 </Button>
@@ -3132,7 +3249,7 @@ export function HomeClient({
 	                                      }
 	                                      aria-pressed={chatIsPinned(chat)}
 	                                      className={
-	                                        "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                                        "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                                        (chatIsPinned(chat)
 	                                          ? "opacity-100"
 	                                          : "opacity-50 group-hover:opacity-100")
@@ -3146,7 +3263,7 @@ export function HomeClient({
 	                                      }}
 	                                      suppressHydrationWarning
 	                                      type="button"
-	                                      variant="ghost"
+	                                      variant="outline"
 	                                    >
 	                                      {chatIsPinned(chat) ? (
 	                                        <PinIcon className="size-4 text-sidebar-primary" />
@@ -3158,7 +3275,7 @@ export function HomeClient({
 	                                    <DropdownMenu>
 	                                      <DropdownMenuTrigger asChild>
 	                                        <Button
-                                          className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                          className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                           data-testid={`sidebar:chat-menu:${chat.id}`}
                                           disabled={
                                             !activeProfile ||
@@ -3167,7 +3284,7 @@ export function HomeClient({
                                           }
                                           suppressHydrationWarning
                                           type="button"
-                                          variant="ghost"
+                                          variant="outline"
                                         >
                                           <MoreVerticalIcon className="size-4" />
                                         </Button>
@@ -3320,7 +3437,7 @@ export function HomeClient({
 	                    }
 	                    aria-pressed={chatIsPinned(chat)}
 	                    className={
-	                      "h-8 w-8 shrink-0 px-0 transition-opacity " +
+	                      "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                      (chatIsPinned(chat)
 	                        ? "opacity-100"
 	                        : "opacity-50 group-hover:opacity-100")
@@ -3334,7 +3451,7 @@ export function HomeClient({
 	                    }}
 	                    suppressHydrationWarning
 	                    type="button"
-	                    variant="ghost"
+	                    variant="outline"
 	                  >
 	                    {chatIsPinned(chat) ? (
 	                      <PinIcon className="size-4 text-sidebar-primary" />
@@ -3346,7 +3463,7 @@ export function HomeClient({
 	                  <DropdownMenu>
 	                    <DropdownMenuTrigger asChild>
 	                      <Button
-                        className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                        className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                         data-testid={`sidebar:chat-menu:${chat.id}`}
                         disabled={
                           !activeProfile ||
@@ -3355,7 +3472,7 @@ export function HomeClient({
                         }
                         suppressHydrationWarning
                         type="button"
-                        variant="ghost"
+                        variant="outline"
                       >
                         <MoreVerticalIcon className="size-4" />
                       </Button>
@@ -3514,7 +3631,7 @@ export function HomeClient({
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
-                                className="h-8 w-8 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
                                 data-testid={`sidebar:archived-chat-menu:${chat.id}`}
                                 disabled={
                                   !activeProfile ||
@@ -3523,7 +3640,7 @@ export function HomeClient({
                                 }
                                 suppressHydrationWarning
                                 type="button"
-                                variant="ghost"
+                                variant="outline"
                               >
                                 <MoreVerticalIcon className="size-4" />
                               </Button>
@@ -3677,7 +3794,7 @@ export function HomeClient({
               }}
               title={t("profile.new.title")}
               type="button"
-              variant="secondary"
+              variant="outline"
             >
               <PlusIcon className="size-4" />
             </Button>
@@ -3693,7 +3810,7 @@ export function HomeClient({
               }}
               title={t("profile.settings.title")}
               type="button"
-              variant="secondary"
+              variant="outline"
             >
               <SettingsIcon className="size-4" />
             </Button>
@@ -3712,11 +3829,51 @@ export function HomeClient({
     );
   };
 
+  const resolvedDesktopSidebarWidthPx = clampDesktopSidebarWidth(
+    desktopSidebarWidthPx
+  );
+  const desktopSidebarColumns = desktopSidebarCollapsed
+    ? "0px minmax(0, 1fr)"
+    : `${resolvedDesktopSidebarWidthPx}px minmax(0, 1fr)`;
+  const desktopGridStyle = {
+    "--rc-desktop-sidebar-cols": desktopSidebarColumns,
+  } as CSSProperties;
+
   return (
 	    <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
-	      <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[18rem_1fr]">
-	        <aside className="hidden min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
-	          {renderSidebar("desktop")}
+	      <div
+          className="grid h-full min-h-0 grid-cols-1 md:[grid-template-columns:var(--rc-desktop-sidebar-cols)]"
+          style={desktopGridStyle}
+        >
+	        <aside
+            aria-hidden={desktopSidebarCollapsed}
+            className={
+              "relative hidden min-h-0 flex-col bg-sidebar text-sidebar-foreground md:flex " +
+              (desktopSidebarCollapsed
+                ? "overflow-hidden border-r-0"
+                : "overflow-visible border-r")
+            }
+            data-testid="sidebar:desktop"
+          >
+	          {!desktopSidebarCollapsed ? renderSidebar("desktop") : null}
+            {!desktopSidebarCollapsed ? (
+              <div
+                aria-label={t("sidebar.resize_handle.aria")}
+                className={
+                  "absolute right-0 top-0 hidden h-full w-1.5 translate-x-1/2 cursor-col-resize touch-none md:block " +
+                  (desktopSidebarResizing ? "bg-sidebar-primary/40" : "bg-transparent")
+                }
+                data-testid="sidebar:desktop-resize-handle"
+                onDoubleClick={() =>
+                  setDesktopSidebarWidthPx(DESKTOP_SIDEBAR_DEFAULT_WIDTH_PX)
+                }
+                onPointerCancel={endDesktopSidebarResize}
+                onPointerDown={startDesktopSidebarResize}
+                onPointerMove={moveDesktopSidebarResize}
+                onPointerUp={endDesktopSidebarResize}
+                role="separator"
+              />
+            ) : null}
 	        </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
@@ -3728,7 +3885,7 @@ export function HomeClient({
 	                  onClick={() => setSidebarOpen(true)}
 	                  size="icon"
 	                  type="button"
-	                  variant="ghost"
+	                  variant="outline"
 		                >
 		                  <MenuIcon className="size-4" />
 		                </Button>
@@ -3742,6 +3899,22 @@ export function HomeClient({
 		                  <div className="min-w-0 truncate font-semibold tracking-tight">RemcoChat</div>
 		                </div>
 		              </div>
+
+                {desktopSidebarCollapsed ? (
+                  <div className="hidden items-center md:flex">
+                    <Button
+                      aria-label={t("sidebar.expand.aria")}
+                      className="h-9 w-9"
+                      data-testid="sidebar:desktop-toggle"
+                      onClick={() => setDesktopSidebarCollapsed(false)}
+                      title={t("sidebar.expand.aria")}
+                      type="button"
+                      variant="outline"
+                    >
+                      <PanelLeftOpenIcon className="size-4" />
+                    </Button>
+                  </div>
+                ) : null}
 
 	              <div className="order-last flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
 	                <div className="hidden shrink-0 text-sm text-muted-foreground md:block">
@@ -3770,13 +3943,10 @@ export function HomeClient({
 	              </div>
 
 	              <div className="ml-auto flex items-center gap-2">
-	                <div className="md:hidden">
-	                  <ThemeToggle />
-	                </div>
                   {lanAdminAccessEnabled ? (
                     <Button
                       aria-label={t("admin_access.title")}
-                      className="h-8 w-9 px-0"
+                      className="h-9 w-9 px-0"
                       onClick={() => setLanAdminTokenOpen(true)}
                       title={t("admin_access.title")}
                       type="button"
@@ -3802,7 +3972,7 @@ export function HomeClient({
                         : t("chat.temporary.enter_aria")
 	                  }
 	                  className={
-	                    "h-8 w-9 px-0 " +
+	                    "h-9 w-9 px-0 " +
 	                    (isTemporaryChat
 	                      ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
 	                      : "border-ring/50 text-ring bg-transparent hover:bg-muted hover:text-ring focus-visible:border-ring focus-visible:ring-ring/30 dark:border-ring/50 dark:bg-input/30 dark:hover:bg-input/50 dark:hover:text-ring")
@@ -3823,10 +3993,11 @@ export function HomeClient({
 	                    <LockOpenIcon className="size-4" />
 	                  )}
 	                </Button>
+                  <ThemeToggle />
                   {adminEnabled ? (
                     <Button
                       asChild
-                      className="h-8 w-9 px-0"
+                      className="h-9 w-9 px-0"
                       data-testid="admin:open"
                       title={t("admin.dialog.title")}
                       variant="outline"
@@ -5120,16 +5291,17 @@ export function HomeClient({
 
                 <div className="flex items-center justify-end gap-2 pt-2 pr-2">
                   {status === "ready" && messages.some((m) => m.role === "user") ? (
-                    <button
+                    <Button
                       aria-label={t("composer.regenerate.aria")}
-                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
+                      className="h-9 w-9 px-0"
                       data-testid="composer:regenerate"
                       onClick={() => regenerateLatest()}
                       title={t("composer.regenerate.aria")}
                       type="button"
+                      variant="outline"
                     >
                       <RotateCcwIcon className="size-4" />
-                    </button>
+                    </Button>
                   ) : null}
 
                   {(status === "submitted" || status === "streaming") && (
@@ -5236,19 +5408,20 @@ export function HomeClient({
                   </div>
 
                   {!isTemporaryChat && activeChat ? (
-	                    <button
+	                    <Button
 	                      aria-label={t("chat.settings.title")}
-	                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+	                      className="h-9 w-9 px-0"
 	                      data-testid="chat:settings-open"
 	                      disabled={status !== "ready" || !canManageActiveChat}
 	                      onClick={() => openChatSettings()}
 	                      title={t("chat.settings.title")}
 	                      type="button"
+                        variant="outline"
 	                    >
-                      <SlidersHorizontalIcon className="size-4" />
-                    </button>
+                        <SlidersHorizontalIcon className="size-4" />
+                      </Button>
                   ) : (
-                    <div aria-hidden="true" className="size-10" />
+                    <div aria-hidden="true" className="size-9" />
                   )}
                 </div>
 	              </PromptInput>

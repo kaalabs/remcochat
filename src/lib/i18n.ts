@@ -140,6 +140,9 @@ export const enMessages = {
   "sidebar.profile": "Profile",
   "sidebar.shared_with_me": "Shared with me",
   "sidebar.shared_by": "by {ownerName}",
+  "sidebar.collapse.aria": "Collapse sidebar",
+  "sidebar.expand.aria": "Expand sidebar",
+  "sidebar.resize_handle.aria": "Resize sidebar",
 
   "chat.untitled": "Untitled",
   "chat.pin.aria": "Pin chat",
@@ -653,6 +656,9 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "sidebar.profile": "Profiel",
   "sidebar.shared_with_me": "Gedeeld met mij",
   "sidebar.shared_by": "van {ownerName}",
+  "sidebar.collapse.aria": "Zijbalk inklappen",
+  "sidebar.expand.aria": "Zijbalk uitklappen",
+  "sidebar.resize_handle.aria": "Zijbalkgrootte wijzigen",
 
   "chat.untitled": "Zonder titel",
   "chat.pin.aria": "Chat vastpinnen",

@@ -111,12 +111,12 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                       {canOpen ? (
                         <Button
                           aria-label={t("lists_overview.open_aria", { name: list.name })}
-                          className="h-7 w-7"
+                          className="h-9 w-9 px-0"
                           data-testid={`lists-overview:open:${list.id}`}
                           onClick={() => props.onOpenList?.(list)}
                           size="icon"
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                         >
                           <ArrowRightCircle className="size-4" />
                         </Button>
@@ -155,12 +155,12 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                       {canOpen ? (
                         <Button
                           aria-label={t("lists_overview.open_aria", { name: list.name })}
-                          className="h-7 w-7"
+                          className="h-9 w-9 px-0"
                           data-testid={`lists-overview:open:${list.id}`}
                           onClick={() => props.onOpenList?.(list)}
                           size="icon"
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                         >
                           <ArrowRightCircle className="size-4" />
                         </Button>

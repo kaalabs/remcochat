@@ -255,7 +255,7 @@ export const MessageBranchPrevious = ({
       onClick={goToPrevious}
       size="icon-sm"
       type="button"
-      variant="ghost"
+      variant="outline"
       {...props}
     >
       {children ?? <ChevronLeftIcon size={14} />}
@@ -280,7 +280,7 @@ export const MessageBranchNext = ({
       onClick={goToNext}
       size="icon-sm"
       type="button"
-      variant="ghost"
+      variant="outline"
       {...props}
     >
       {children ?? <ChevronRightIcon size={14} />}
@@ -369,13 +369,13 @@ export function MessageAttachment({
           {onRemove && (
             <Button
               aria-label={t("prompt.attachment.remove_aria")}
-              className="absolute top-2 right-2 size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity hover:bg-background group-hover:opacity-100 [&>svg]:size-3"
+              className="absolute top-2 right-2 size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 [&>svg]:size-3"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
               type="button"
-              variant="ghost"
+              variant="outline"
             >
               <XIcon />
               <span className="sr-only">{t("common.remove")}</span>
@@ -397,13 +397,13 @@ export function MessageAttachment({
           {onRemove && (
             <Button
               aria-label={t("prompt.attachment.remove_aria")}
-              className="size-6 shrink-0 rounded-full p-0 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 [&>svg]:size-3"
+              className="size-6 shrink-0 rounded-full p-0 opacity-0 transition-opacity group-hover:opacity-100 [&>svg]:size-3"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
               type="button"
-              variant="ghost"
+              variant="outline"
             >
               <XIcon />
               <span className="sr-only">{t("common.remove")}</span>
