@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useI18n } from "@/components/i18n-provider";
 import { listModelCapabilityBadges, type ModelCapabilities } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
@@ -125,6 +126,7 @@ function AdminModelPicker(props: {
   placeholder?: string;
   triggerTestId?: string;
 }) {
+  const { t } = useI18n();
   const selected = props.options.find((m) => m.id === props.value);
   const [open, setOpen] = useState(false);
   const displayValue = (selected?.label ?? props.value).trim();
@@ -139,7 +141,7 @@ function AdminModelPicker(props: {
           variant="outline"
         >
           <span className="truncate">
-            {displayValue || props.placeholder || "Select..."}
+            {displayValue || props.placeholder || t("model.select.title")}
             {selected?.description ? (
               <span className="ml-2 text-muted-foreground">{selected.description}</span>
             ) : null}
@@ -148,11 +150,11 @@ function AdminModelPicker(props: {
         </Button>
       </ModelSelectorTrigger>
 
-      <ModelSelectorContent title="Select model">
-        <ModelSelectorInput placeholder="Search models…" />
+      <ModelSelectorContent title={t("model.select.title")}>
+        <ModelSelectorInput placeholder={t("model.select.search")} />
         <ModelSelectorList>
-          <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-          <ModelSelectorGroup heading="Models">
+          <ModelSelectorEmpty>{t("model.select.empty")}</ModelSelectorEmpty>
+          <ModelSelectorGroup heading={t("model.select.group")}>
             {props.options.map((option) => (
               <ModelSelectorItem
                 data-testid={`model-option:${option.id}`}
@@ -258,6 +260,8 @@ export function AdminClient() {
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillsAdminResponse | null>(null);
 
+  const { locale, t } = useI18n();
+
   const readLanAdminToken = (): string => {
     if (typeof window === "undefined") return "";
     const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
@@ -271,7 +275,7 @@ export function AdminClient() {
     const res = await fetch("/api/providers", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || "Failed to load providers.");
+      throw new Error(json?.error || t("error.admin.providers_load_failed"));
     }
     const data = (await res.json()) as ProvidersResponse;
     setProviders(data);
@@ -282,7 +286,7 @@ export function AdminClient() {
     const res = await fetch("/api/admin/models-inventory", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || "Failed to load models inventory.");
+      throw new Error(json?.error || t("error.admin.models_inventory_load_failed"));
     }
     const data = (await res.json()) as ModelsInventoryResponse;
     setInventory(data);
@@ -297,7 +301,7 @@ export function AdminClient() {
     const res = await fetch("/api/skills", { cache: "no-store", headers });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || "Failed to load skills.");
+      throw new Error(json?.error || t("error.admin.skills_load_failed"));
     }
     const data = (await res.json()) as SkillsAdminResponse;
     setSkills(data);
@@ -311,7 +315,9 @@ export function AdminClient() {
     load()
       .catch((err) => {
         if (canceled) return;
-        setError(err instanceof Error ? err.message : "Failed to load providers.");
+        setError(
+          err instanceof Error ? err.message : t("error.admin.providers_load_failed")
+        );
       })
       .finally(() => {
         if (canceled) return;
@@ -330,7 +336,9 @@ export function AdminClient() {
       .catch((err) => {
         if (canceled) return;
         setInventoryError(
-          err instanceof Error ? err.message : "Failed to load models inventory."
+          err instanceof Error
+            ? err.message
+            : t("error.admin.models_inventory_load_failed")
         );
       })
       .finally(() => {
@@ -364,7 +372,7 @@ export function AdminClient() {
     loadSkills()
       .catch((err) => {
         if (canceled) return;
-        setSkillsError(err instanceof Error ? err.message : "Failed to load skills.");
+        setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
       })
       .finally(() => {
         if (canceled) return;
@@ -423,12 +431,12 @@ export function AdminClient() {
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to reset.");
+        throw new Error(json?.error || t("error.admin.reset_failed"));
       }
       setResetConfirm("");
-      setNotice("Reset completed. RemcoChat has been restored to the default profile.");
+      setNotice(t("admin.reset.notice.completed"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reset.");
+      setError(err instanceof Error ? err.message : t("error.admin.reset_failed"));
     } finally {
       setResetSaving(false);
     }
@@ -452,12 +460,14 @@ export function AdminClient() {
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to switch provider.");
+        throw new Error(json?.error || t("error.admin.switch_provider_failed"));
       }
       await load();
-      setNotice("Active provider updated.");
+      setNotice(t("admin.providers.notice.updated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to switch provider.");
+      setError(
+        err instanceof Error ? err.message : t("error.admin.switch_provider_failed")
+      );
     } finally {
       setSaving(false);
     }
@@ -471,7 +481,9 @@ export function AdminClient() {
       await loadInventory();
     } catch (err) {
       setInventoryError(
-        err instanceof Error ? err.message : "Failed to load models inventory."
+        err instanceof Error
+          ? err.message
+          : t("error.admin.models_inventory_load_failed")
       );
     } finally {
       setInventoryLoading(false);
@@ -548,13 +560,13 @@ export function AdminClient() {
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to update allowed models.");
+        throw new Error(json?.error || t("error.admin.allowed_models_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice(`Allowed models updated for "${providerId}".`);
+      setModelsNotice(t("admin.models.notice.allowed_updated", { providerId }));
     } catch (err) {
       setModelsError(
-        err instanceof Error ? err.message : "Failed to update allowed models."
+        err instanceof Error ? err.message : t("error.admin.allowed_models_update_failed")
       );
     } finally {
       setModelsSavingByProvider((prev) => ({ ...prev, [providerId]: false }));
@@ -574,7 +586,7 @@ export function AdminClient() {
     const hasAllowedChanges = !setsEqual(allowedDraft, new Set(provider.allowedModelIds));
     if (hasAllowedChanges) {
       setModelsError(
-        `Provider "${providerId}" has unsaved allowed-model changes. Save or reset allowed models first.`
+        t("admin.models.error.unsaved_allowed_changes", { providerId })
       );
       return;
     }
@@ -592,13 +604,13 @@ export function AdminClient() {
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to update default model.");
+        throw new Error(json?.error || t("error.admin.default_model_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice(`Default model updated for "${providerId}".`);
+      setModelsNotice(t("admin.models.notice.default_updated", { providerId }));
     } catch (err) {
       setModelsError(
-        err instanceof Error ? err.message : "Failed to update default model."
+        err instanceof Error ? err.message : t("error.admin.default_model_update_failed")
       );
     } finally {
       setDefaultModelSavingByProvider((prev) => ({ ...prev, [providerId]: false }));
@@ -623,13 +635,13 @@ export function AdminClient() {
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(json?.error || "Failed to update router model.");
+        throw new Error(json?.error || t("error.admin.router_model_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice("Router model updated.");
+      setModelsNotice(t("admin.router.notice.updated"));
     } catch (err) {
       setModelsError(
-        err instanceof Error ? err.message : "Failed to update router model."
+        err instanceof Error ? err.message : t("error.admin.router_model_update_failed")
       );
     } finally {
       setRouterSaving(false);
@@ -643,7 +655,7 @@ export function AdminClient() {
     try {
       await loadSkills();
     } catch (err) {
-      setSkillsError(err instanceof Error ? err.message : "Failed to load skills.");
+      setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
     } finally {
       setSkillsLoading(false);
     }
@@ -679,15 +691,17 @@ export function AdminClient() {
           <div className="flex min-w-0 items-center gap-3">
             <ShieldIcon className="size-4 shrink-0" />
             <div className="min-w-0">
-              <div className="truncate font-semibold tracking-tight">Admin</div>
+              <div className="truncate font-semibold tracking-tight">
+                {t("admin.dialog.title")}
+              </div>
               <div className="truncate text-xs text-muted-foreground">
-                Global settings for this RemcoChat instance
+                {t("admin.page.subtitle")}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="secondary">
-              <Link href="/">Back</Link>
+              <Link href="/">{t("common.back")}</Link>
             </Button>
             <ThemeToggle />
           </div>
@@ -697,11 +711,11 @@ export function AdminClient() {
           <div className="mx-auto w-full max-w-3xl space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Backup</CardTitle>
+                <CardTitle>{t("admin.backup.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-sm text-muted-foreground">
-                  Download a full JSON backup (profiles, chats, messages, variants, memory).
+                  {t("admin.backup.description")}
                 </div>
                 <div className="flex justify-end">
                   <Button
@@ -710,7 +724,7 @@ export function AdminClient() {
                     type="button"
                     variant="secondary"
                   >
-                    Export all data
+                    {t("admin.backup.export")}
                   </Button>
                 </div>
               </CardContent>
@@ -718,7 +732,7 @@ export function AdminClient() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Provider switching</CardTitle>
+                <CardTitle>{t("admin.providers.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {error ? (
@@ -735,7 +749,7 @@ export function AdminClient() {
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div className="space-y-2">
                     <label className="text-sm font-medium" htmlFor="admin:provider">
-                      Active provider
+                      {t("admin.providers.active.label")}
                     </label>
                     <Select
                       disabled={loading || saving}
@@ -746,7 +760,11 @@ export function AdminClient() {
                         data-testid="admin:provider-select"
                         id="admin:provider"
                       >
-                        <SelectValue placeholder={loading ? "Loading..." : "Select a provider"} />
+                        <SelectValue
+                          placeholder={
+                            loading ? t("common.loading") : t("admin.providers.active.placeholder")
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {providerOptions.map((p) => (
@@ -762,7 +780,8 @@ export function AdminClient() {
                     </Select>
                     {activeProvider ? (
                       <div className="text-xs text-muted-foreground">
-                        Current: <span className="font-medium">{activeProvider.name}</span> ·{" "}
+                        {t("admin.providers.current")}:{" "}
+                        <span className="font-medium">{activeProvider.name}</span> ·{" "}
                         <span className="font-mono">
                           {Array.from(
                             new Set(activeProvider.models.map((m) => m.type))
@@ -778,14 +797,12 @@ export function AdminClient() {
                     onClick={() => save()}
                     type="button"
                   >
-                    {saving ? "Saving…" : "Save"}
+                    {saving ? t("common.saving_ellipsis") : t("common.save")}
                   </Button>
                 </div>
 
                 <div className="text-xs text-muted-foreground">
-                  Switching is global and persistent for this server instance. Existing chats keep
-                  their stored model ids; RemcoChat clamps them to the active provider’s allowed
-                  models.
+                  {t("admin.providers.description")}
                 </div>
               </CardContent>
             </Card>
@@ -793,18 +810,18 @@ export function AdminClient() {
             {inventory?.router ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Router model</CardTitle>
+                  <CardTitle>{t("admin.router.title")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="text-sm text-muted-foreground">
-                    This controls <code>app.router.model_id</code> in <code>config.toml</code>.
-                    Changing it also ensures the model is included in the router provider’s
-                    <code>allowed_model_ids</code>.
+                    {t("admin.router.description.part1")} <code>app.router.model_id</code>{" "}
+                    {t("admin.router.description.part2")} <code>config.toml</code>.{" "}
+                    {t("admin.router.description.part3")} <code>allowed_model_ids</code>.
                   </div>
 
                   {inventory ? (
                     <div className="text-xs text-muted-foreground">
-                      Provider:{" "}
+                      {t("admin.router.provider")}:{" "}
                       <span className="font-mono">{inventory.router.providerId}</span>
                     </div>
                   ) : null}
@@ -833,14 +850,16 @@ export function AdminClient() {
                       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                         <div className="space-y-2">
                           <label className="text-sm font-medium" htmlFor="admin:router-model">
-                            Model
+                            {t("model.label")}
                           </label>
                           <div id="admin:router-model">
                             <AdminModelPicker
                               disabled={inventoryLoading || routerSaving || options.length === 0}
                               onChange={(modelId) => setRouterDraftModelId(modelId)}
                               options={options}
-                              placeholder={inventoryLoading ? "Loading…" : "Select a model"}
+                              placeholder={
+                                inventoryLoading ? t("common.loading") : t("model.select.title")
+                              }
                               triggerTestId="admin:router-model-select"
                               value={routerDraftModelId}
                             />
@@ -853,7 +872,7 @@ export function AdminClient() {
                           onClick={() => saveRouterModel()}
                           type="button"
                         >
-                          {routerSaving ? "Saving…" : "Save"}
+                          {routerSaving ? t("common.saving_ellipsis") : t("common.save")}
                         </Button>
                       </div>
                     );
@@ -865,7 +884,7 @@ export function AdminClient() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle>Allowed models</CardTitle>
+                  <CardTitle>{t("admin.models.allowed.title")}</CardTitle>
                   <Button
                     disabled={inventoryLoading}
                     onClick={() => refreshInventory()}
@@ -873,14 +892,16 @@ export function AdminClient() {
                     type="button"
                     variant="secondary"
                   >
-                    {inventoryLoading ? "Refreshing…" : "Refresh"}
+                    {inventoryLoading
+                      ? t("common.refreshing_ellipsis")
+                      : t("common.refresh")}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
-                  These models appear in the user chat UI Model picker (per provider). Changes are
-                  written to <code>config.toml</code> and apply immediately.
+                  {t("admin.models.allowed.description.part1")} <code>config.toml</code>{" "}
+                  {t("admin.models.allowed.description.part2")}
                 </div>
 
                 {modelsError ? (
@@ -902,17 +923,20 @@ export function AdminClient() {
                 ) : null}
 
                 {inventoryLoading ? (
-                  <div className="text-sm text-muted-foreground">Loading…</div>
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
                 ) : inventory ? (
                   <div className="space-y-3">
                     <div className="text-xs text-muted-foreground">
-                      Config: <span className="font-mono">{inventory.configPath}</span> · Loaded:{" "}
-                      <span className="font-mono">{inventory.loadedAt}</span> · modelsdev:{" "}
+                      {t("admin.models.allowed.inventory.config")}:{" "}
+                      <span className="font-mono">{inventory.configPath}</span> ·{" "}
+                      {t("admin.models.allowed.inventory.loaded")}:{" "}
+                      <span className="font-mono">{inventory.loadedAt}</span> ·{" "}
+                      {t("admin.models.allowed.inventory.modelsdev")}:{" "}
                       <span className="font-mono">{inventory.modelsdevVersion}</span>
                     </div>
 
                     <div className="text-xs text-muted-foreground">
-                      Users may need to refresh their page to fetch updated model options.
+                      {t("admin.models.allowed.inventory.hint")}
                     </div>
 
                     <div className="space-y-3">
@@ -952,11 +976,15 @@ export function AdminClient() {
                               <span className="font-mono text-muted-foreground">{p.id}</span>{" "}
                               {isActive ? (
                                 <Badge className="ml-2" variant="secondary">
-                                  Active
+                                  {t("common.active")}
                                 </Badge>
                               ) : null}{" "}
                               <span className="text-muted-foreground">
-                                · {draft.size} allowed / {p.models.length} total
+                                ·{" "}
+                                {t("admin.models.allowed.summary_counts", {
+                                  allowed: draft.size,
+                                  total: p.models.length,
+                                })}
                               </span>
                             </summary>
 
@@ -974,7 +1002,7 @@ export function AdminClient() {
                                     className="text-sm font-medium"
                                     htmlFor={`admin:default-model:${p.id}`}
                                   >
-                                    Default model
+                                    {t("admin.models.default_model.label")}
                                   </label>
                                   <div id={`admin:default-model:${p.id}`}>
                                     <AdminModelPicker
@@ -989,15 +1017,17 @@ export function AdminClient() {
                                           modelType: m.modelType,
                                           capabilities: m.capabilities,
                                         }))}
-                                      placeholder="Select a default model"
+                                      placeholder={t("admin.models.default_model.placeholder")}
                                       triggerTestId={`admin:default-model-select:${p.id}`}
                                       value={defaultDraft}
                                     />
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    Saved to <code>providers.{p.id}.default_model_id</code> (and
-                                    RemcoChat will auto-include it in <code>allowed_model_ids</code>
-                                    if needed).
+                                    {t("admin.models.default_model.helper.part1")}{" "}
+                                    <code>providers.{p.id}.default_model_id</code>{" "}
+                                    {t("admin.models.default_model.helper.part2")}{" "}
+                                    <code>allowed_model_ids</code>{" "}
+                                    {t("admin.models.default_model.helper.part3")}
                                   </div>
                                 </div>
 
@@ -1010,7 +1040,7 @@ export function AdminClient() {
                                     type="button"
                                     variant="secondary"
                                   >
-                                    Reset
+                                    {t("common.reset")}
                                   </Button>
                                   <Button
                                     data-testid={`admin:default-model-save:${p.id}`}
@@ -1019,14 +1049,21 @@ export function AdminClient() {
                                     size="sm"
                                     type="button"
                                   >
-                                    {savingDefault ? "Saving…" : "Save"}
+                                    {savingDefault
+                                      ? t("common.saving_ellipsis")
+                                      : t("common.save")}
                                   </Button>
                                 </div>
 
                                 {hasChanges ? (
                                   <div className="text-xs text-muted-foreground sm:col-span-2">
-                                    Save/reset allowed models first (default-model save rewrites
-                                    <code>allowed_model_ids</code> to ensure consistency).
+                                    {t(
+                                      "admin.models.default_model.warning_unsaved_allowed.part1"
+                                    )}{" "}
+                                    <code>allowed_model_ids</code>{" "}
+                                    {t(
+                                      "admin.models.default_model.warning_unsaved_allowed.part2"
+                                    )}
                                   </div>
                                 ) : null}
                               </div>
@@ -1037,7 +1074,7 @@ export function AdminClient() {
                                     className="text-sm font-medium"
                                     htmlFor={`admin:models-search:${p.id}`}
                                   >
-                                    Search
+                                    {t("common.search")}
                                   </label>
                                   <Input
                                     autoComplete="off"
@@ -1046,8 +1083,8 @@ export function AdminClient() {
                                     onChange={(e) => setProviderQuery(p.id, e.target.value)}
                                     placeholder={
                                       filter.showAll
-                                        ? "Filter models…"
-                                        : "Filter allowed models…"
+                                        ? t("admin.models.search.placeholder.all")
+                                        : t("admin.models.search.placeholder.allowed")
                                     }
                                     value={filter.query}
                                   />
@@ -1061,7 +1098,9 @@ export function AdminClient() {
                                     type="button"
                                     variant="secondary"
                                   >
-                                    {filter.showAll ? "Show allowed" : "Show all"}
+                                    {filter.showAll
+                                      ? t("admin.models.show_allowed")
+                                      : t("admin.models.show_all")}
                                   </Button>
                                   <Button
                                     data-testid={`admin:allowed-models-reset:${p.id}`}
@@ -1071,7 +1110,7 @@ export function AdminClient() {
                                     type="button"
                                     variant="secondary"
                                   >
-                                    Reset
+                                    {t("common.reset")}
                                   </Button>
                                   <Button
                                     data-testid={`admin:allowed-models-save:${p.id}`}
@@ -1080,7 +1119,9 @@ export function AdminClient() {
                                     size="sm"
                                     type="button"
                                   >
-                                    {savingProvider ? "Saving…" : "Save"}
+                                    {savingProvider
+                                      ? t("common.saving_ellipsis")
+                                      : t("common.save")}
                                   </Button>
                                 </div>
                               </div>
@@ -1088,7 +1129,7 @@ export function AdminClient() {
                               <div className="rounded-md border">
                                 {filtered.length === 0 ? (
                                   <div className="px-3 py-2 text-sm text-muted-foreground">
-                                    No models found.
+                                    {t("model.select.empty")}
                                   </div>
                                 ) : (
                                   <div className="divide-y">
@@ -1127,13 +1168,13 @@ export function AdminClient() {
                                                 <div className="text-xs text-muted-foreground">
                                                   {m.modelType ? (
                                                     <>
-                                                      type{" "}
+                                                      {t("admin.models.model_type.label")}{" "}
                                                       <span className="font-mono">
                                                         {m.modelType}
                                                       </span>
                                                     </>
                                                   ) : (
-                                                    <>type (unknown)</>
+                                                    <>{t("admin.models.model_type.unknown")}</>
                                                   )}
                                                   {m.npm ? (
                                                     <>
@@ -1147,13 +1188,19 @@ export function AdminClient() {
 
                                               <div className="flex flex-wrap gap-1">
                                                 {!m.supported ? (
-                                                  <Badge variant="outline">Unsupported</Badge>
+                                                  <Badge variant="outline">
+                                                    {t("admin.models.badge.unsupported")}
+                                                  </Badge>
                                                 ) : null}
                                                 {isDefault ? (
-                                                  <Badge variant="secondary">Default</Badge>
+                                                  <Badge variant="secondary">
+                                                    {t("admin.models.badge.default")}
+                                                  </Badge>
                                                 ) : null}
                                                 {isRouter ? (
-                                                  <Badge variant="secondary">Router</Badge>
+                                                  <Badge variant="secondary">
+                                                    {t("admin.models.badge.router")}
+                                                  </Badge>
                                                 ) : null}
                                               </div>
                                             </div>
@@ -1186,7 +1233,9 @@ export function AdminClient() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">No inventory loaded.</div>
+                  <div className="text-sm text-muted-foreground">
+                    {t("admin.models.allowed.inventory.none")}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1194,7 +1243,7 @@ export function AdminClient() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle>Skills</CardTitle>
+                  <CardTitle>{t("admin.skills.title")}</CardTitle>
                   <Button
                     disabled={skillsLoading}
                     onClick={() => refreshSkills()}
@@ -1202,7 +1251,7 @@ export function AdminClient() {
                     type="button"
                     variant="secondary"
                   >
-                    {skillsLoading ? "Refreshing…" : "Refresh"}
+                    {skillsLoading ? t("common.refreshing_ellipsis") : t("common.refresh")}
                   </Button>
                 </div>
               </CardHeader>
@@ -1217,41 +1266,44 @@ export function AdminClient() {
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={skillsSummary.enabled ? "secondary" : "outline"}>
-                        {skillsSummary.enabled ? "Enabled" : "Disabled"}
+                        {skillsSummary.enabled ? t("common.enabled") : t("common.disabled")}
                       </Badge>
                       <Badge variant="outline">
-                        Discovered: {skillsSummary.discovered}
+                        {t("admin.skills.summary.discovered")}: {skillsSummary.discovered}
                       </Badge>
-                      <Badge variant="outline">Invalid: {skillsSummary.invalid}</Badge>
                       <Badge variant="outline">
-                        Collisions: {skillsSummary.collisions}
+                        {t("admin.skills.summary.invalid")}: {skillsSummary.invalid}
+                      </Badge>
+                      <Badge variant="outline">
+                        {t("admin.skills.summary.collisions")}: {skillsSummary.collisions}
                       </Badge>
                       {skills?.usage ? (
                         <Badge variant="outline">
-                          Chats with activated skills: {skillsSummary.activatedChats}
+                          {t("admin.skills.summary.chats_with_activated")}:{" "}
+                          {skillsSummary.activatedChats}
                         </Badge>
                       ) : (
-                        <Badge variant="outline">Usage: (admin only)</Badge>
+                        <Badge variant="outline">{t("admin.skills.summary.usage_admin_only")}</Badge>
                       )}
                     </div>
 
                     <div className="text-sm text-muted-foreground">
-                      {skillsSummary.scannedAt ? (
-                        <span>
-                          Last scan:{" "}
+                      <span>
+                        {t("admin.skills.last_scan.label")}:{" "}
+                        {skillsSummary.scannedAt ? (
                           <span className="font-medium text-foreground">
-                            {skillsSummary.scannedAt.toLocaleString()}
+                            {skillsSummary.scannedAt.toLocaleString(locale)}
                           </span>
-                        </span>
-                      ) : (
-                        <span>Last scan: (unknown)</span>
-                      )}
+                        ) : (
+                          <span>{t("admin.skills.last_scan.unknown")}</span>
+                        )}
+                      </span>
                     </div>
 
                     {skillsSummary.scanRootsMeta.length > 0 ? (
                       <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
                         <div className="mb-1 font-medium text-muted-foreground">
-                          Scan roots
+                          {t("admin.skills.scan_roots.title")}
                         </div>
                         <div className="space-y-2">
                           {skillsSummary.scanRootsMeta.map((r) => (
@@ -1265,17 +1317,17 @@ export function AdminClient() {
                               >
                                 {r.exists ? (
                                   <CheckCircleIcon
-                                    aria-label="Exists"
+                                    aria-label={t("admin.skills.scan_root.exists_aria")}
                                     className="mr-1 inline-block size-3 align-[-2px] text-emerald-600 dark:text-emerald-400"
                                   />
                                 ) : (
                                   <XCircleIcon
-                                    aria-label="Missing"
+                                    aria-label={t("admin.skills.scan_root.missing_aria")}
                                     className="mr-1 inline-block size-3 align-[-2px] text-red-600 dark:text-red-400"
                                   />
                                 )}
                                 <Sparkles
-                                  aria-label="Skills available"
+                                  aria-label={t("admin.skills.scan_root.skills_available_aria")}
                                   className="mr-1 inline-block size-3 align-[-2px] text-muted-foreground"
                                 />
                                 <span className="mr-2 text-muted-foreground">
@@ -1293,7 +1345,7 @@ export function AdminClient() {
                     {(skills?.invalid?.length ?? 0) > 0 ? (
                       <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
                         <div className="mb-1 font-medium text-muted-foreground">
-                          Invalid skills
+                          {t("admin.skills.invalid.title")}
                         </div>
                         <div className="space-y-2">
                           {(skills?.invalid ?? []).map((inv, idx) => (
@@ -1309,17 +1361,18 @@ export function AdminClient() {
                     {(skills?.collisions?.length ?? 0) > 0 ? (
                       <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs">
                         <div className="mb-1 font-medium text-muted-foreground">
-                          Name collisions
+                          {t("admin.skills.collisions.title")}
                         </div>
                         <div className="space-y-2">
                           {(skills?.collisions ?? []).map((c) => (
                             <div key={c.name} className="space-y-1">
                               <div className="font-mono">{c.name}</div>
                               <div className="text-muted-foreground">
-                                Winner: <span className="font-mono">{c.winner.sourceDir}</span>
+                                {t("admin.skills.collisions.winner")}:{" "}
+                                <span className="font-mono">{c.winner.sourceDir}</span>
                               </div>
                               <div className="text-muted-foreground">
-                                Losers:{" "}
+                                {t("admin.skills.collisions.losers")}:{" "}
                                 <span className="font-mono">
                                   {c.losers.map((l) => l.sourceDir).join(", ")}
                                 </span>
@@ -1332,11 +1385,19 @@ export function AdminClient() {
 
                     <div className="rounded-md border bg-muted/20">
                       <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
-                        Available skills
+                        {t("admin.skills.available.title")}
                       </div>
                       <div className="divide-y">
                         {(skills?.skills ?? []).map((s) => {
                           const activatedCount = skillsSummary.activatedCounts[s.name] ?? 0;
+                          const activationLabel =
+                            activatedCount === 0
+                              ? t("admin.skills.activation.not_activated")
+                              : activatedCount === 1
+                                ? t("admin.skills.activation.activated_one")
+                                : t("admin.skills.activation.activated_other", {
+                                    count: activatedCount,
+                                  });
                           return (
                             <div key={s.name} className="px-3 py-2">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1344,7 +1405,8 @@ export function AdminClient() {
                                   <div className="truncate font-mono text-sm">{s.name}</div>
                                   {s.sourceDir ? (
                                     <div className="mt-0.5 text-xs text-muted-foreground">
-                                      Root: <span className="font-mono break-all">{s.sourceDir}</span>
+                                      {t("admin.skills.skill.root")}:{" "}
+                                      <span className="font-mono break-all">{s.sourceDir}</span>
                                     </div>
                                   ) : null}
                                   <div className="mt-0.5 text-xs text-muted-foreground">
@@ -1354,12 +1416,12 @@ export function AdminClient() {
                                 <div className="flex shrink-0 items-center gap-2">
                                   {skills?.usage ? (
                                     <Badge variant={activatedCount > 0 ? "secondary" : "outline"}>
-                                      {activatedCount > 0
-                                        ? `Activated in ${activatedCount} chat${activatedCount === 1 ? "" : "s"}`
-                                        : "Not activated"}
+                                      {activationLabel}
                                     </Badge>
                                   ) : (
-                                    <Badge variant="outline">Activation: (admin only)</Badge>
+                                    <Badge variant="outline">
+                                      {t("admin.skills.activation.admin_only")}
+                                    </Badge>
                                   )}
                                 </div>
                               </div>
@@ -1371,7 +1433,7 @@ export function AdminClient() {
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">
-                    {skillsLoading ? "Loading skills…" : "No skills data."}
+                    {skillsLoading ? t("admin.skills.loading") : t("admin.skills.none")}
                   </div>
                 )}
               </CardContent>
@@ -1379,17 +1441,28 @@ export function AdminClient() {
 
             <Card className="border-destructive/40">
               <CardHeader>
-                <CardTitle className="text-destructive">Danger zone</CardTitle>
+                <CardTitle className="text-destructive">{t("admin.danger.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
-                  This wipes the local database. Type <code>RESET</code> to enable the button.
+                  {(() => {
+                    const desc = t("admin.danger.description");
+                    const parts = desc.split("RESET");
+                    if (parts.length === 1) return desc;
+                    return (
+                      <>
+                        {parts[0]}
+                        <code>RESET</code>
+                        {parts.slice(1).join("RESET")}
+                      </>
+                    );
+                  })()}
                 </div>
                 <Input
                   autoComplete="off"
                   data-testid="admin:reset-confirm"
                   onChange={(e) => setResetConfirm(e.target.value)}
-                  placeholder="Type RESET"
+                  placeholder={t("admin.danger.placeholder")}
                   value={resetConfirm}
                 />
                 <div className="flex justify-end">
@@ -1400,7 +1473,7 @@ export function AdminClient() {
                     type="button"
                     variant="destructive"
                   >
-                    {resetSaving ? "Resetting…" : "Reset all data"}
+                    {resetSaving ? t("common.resetting_ellipsis") : t("admin.danger.reset")}
                   </Button>
                 </div>
               </CardContent>

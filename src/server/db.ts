@@ -21,7 +21,8 @@ function initSchema(database: Database.Database) {
       default_model_id TEXT NOT NULL,
       custom_instructions TEXT NOT NULL DEFAULT '',
       custom_instructions_revision INTEGER NOT NULL DEFAULT 1,
-      memory_enabled INTEGER NOT NULL DEFAULT 1
+      memory_enabled INTEGER NOT NULL DEFAULT 1,
+      ui_language TEXT NOT NULL DEFAULT 'en'
     );
 
     CREATE TABLE IF NOT EXISTS profile_memory (
@@ -336,6 +337,13 @@ function initSchema(database: Database.Database) {
   if (!hasProfileInstructionsRevision) {
     database.exec(
       `ALTER TABLE profiles ADD COLUMN custom_instructions_revision INTEGER NOT NULL DEFAULT 1;`
+    );
+  }
+
+  const hasUiLanguage = profileColumns.some((c) => c.name === "ui_language");
+  if (!hasUiLanguage) {
+    database.exec(
+      `ALTER TABLE profiles ADD COLUMN ui_language TEXT NOT NULL DEFAULT 'en';`
     );
   }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +47,7 @@ function clip(value: string, maxChars: number) {
 }
 
 function CopyTextButton(props: { text: string; label: string; className?: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   return (
@@ -68,7 +70,7 @@ function CopyTextButton(props: { text: string; label: string; className?: string
       variant="secondary"
     >
       <CopyIcon className="mr-1 size-3.5" />
-      {copied ? "Copied" : props.label}
+      {copied ? t("common.copied") : props.label}
     </Button>
   );
 }
@@ -80,6 +82,7 @@ function OutputBlock(props: {
   maxHeightClass?: string;
   autoScroll?: boolean;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(Boolean(props.defaultOpen));
   const hasValue = Boolean(String(props.value ?? ""));
   const maxHeightClass = props.maxHeightClass ?? "max-h-96";
@@ -103,10 +106,14 @@ function OutputBlock(props: {
           >
             <ChevronDown className={cn("size-3.5 transition-transform", open ? "rotate-180" : "")} />
             <span>{props.label}</span>
-            {!hasValue ? <span className="text-muted-foreground/70">(empty)</span> : null}
+            {!hasValue ? (
+              <span className="text-muted-foreground/70">
+                ({t("common.empty")})
+              </span>
+            ) : null}
           </button>
         </CollapsibleTrigger>
-        {hasValue ? <CopyTextButton label="Copy" text={props.value} /> : null}
+        {hasValue ? <CopyTextButton label={t("common.copy")} text={props.value} /> : null}
       </div>
       <CollapsibleContent className="mt-2">
         <pre
@@ -124,19 +131,20 @@ function OutputBlock(props: {
 }
 
 export function BashToolCard(props: BashToolCardProps) {
+  const { t } = useI18n();
   const [openFull, setOpenFull] = useState(false);
   const header = useMemo(() => {
     if (props.kind === "bash") {
       return {
-        title: "Terminal",
+        title: t("bash_tool.title.terminal"),
         subtitle: "bash",
       };
     }
     if (props.kind === "readFile") {
-      return { title: "Filesystem", subtitle: "readFile" };
+      return { title: t("bash_tool.title.filesystem"), subtitle: "readFile" };
     }
-    return { title: "Filesystem", subtitle: "writeFile" };
-  }, [props.kind]);
+    return { title: t("bash_tool.title.filesystem"), subtitle: "writeFile" };
+  }, [props.kind, t]);
 
   const commandSummary =
     props.kind === "bash" ? clip(props.command, 140).text : "";
@@ -162,10 +170,10 @@ export function BashToolCard(props: BashToolCardProps) {
                   </Badge>
                 ) : null}
                 {props.state === "running" ? (
-                  <Badge variant="outline">Running…</Badge>
+                  <Badge variant="outline">{t("common.running_ellipsis")}</Badge>
                 ) : props.state === "error" ? (
                   <Badge className="border-destructive/50 text-destructive" variant="outline">
-                    Error
+                    {t("common.error")}
                   </Badge>
                 ) : null}
               </CardTitle>
@@ -181,7 +189,9 @@ export function BashToolCard(props: BashToolCardProps) {
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-mono">{props.path}</span>
                   {typeof props.contentLength === "number" ? (
-                    <span>({props.contentLength.toString()} chars)</span>
+                    <span>
+                      {t("bash_tool.chars", { count: props.contentLength })}
+                    </span>
                   ) : null}
                 </div>
               )}
@@ -197,9 +207,9 @@ export function BashToolCard(props: BashToolCardProps) {
                 variant="secondary"
               >
                 <Maximize2 className="mr-1 size-3.5" />
-                Full
+                {t("bash_tool.full")}
               </Button>
-              <CopyTextButton label="Copy command" text={props.command} />
+              <CopyTextButton label={t("bash_tool.copy_command")} text={props.command} />
             </div>
           ) : null}
         </div>
@@ -238,7 +248,9 @@ export function BashToolCard(props: BashToolCardProps) {
 
         {props.kind === "writeFile" && props.state === "ok" ? (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary">{props.success ? "Wrote file" : "Done"}</Badge>
+            <Badge variant="secondary">
+              {props.success ? t("bash_tool.wrote_file") : t("common.done")}
+            </Badge>
           </div>
         ) : null}
       </CardContent>
@@ -247,7 +259,7 @@ export function BashToolCard(props: BashToolCardProps) {
         <Dialog onOpenChange={setOpenFull} open={openFull}>
           <DialogContent className="sm:max-w-6xl">
             <DialogHeader>
-              <DialogTitle>Terminal output</DialogTitle>
+              <DialogTitle>{t("bash_tool.dialog.title")}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4">
               <div className="grid gap-2">
@@ -261,14 +273,14 @@ export function BashToolCard(props: BashToolCardProps) {
                         exit {props.result.exitCode}
                       </Badge>
                     ) : props.state === "running" ? (
-                      <Badge variant="outline">Running…</Badge>
+                      <Badge variant="outline">{t("common.running_ellipsis")}</Badge>
                     ) : props.state === "error" ? (
                       <Badge className="border-destructive/50 text-destructive" variant="outline">
-                        Error
+                        {t("common.error")}
                       </Badge>
                     ) : null}
                   </div>
-                  <CopyTextButton label="Copy command" text={props.command} />
+                  <CopyTextButton label={t("bash_tool.copy_command")} text={props.command} />
                 </div>
                 <pre className="max-h-40 overflow-auto rounded-md border bg-background/60 p-3 text-xs leading-relaxed whitespace-pre font-mono">
                   {props.command}
@@ -301,7 +313,9 @@ export function BashToolCard(props: BashToolCardProps) {
               ) : null}
 
               {props.state === "running" ? (
-                <div className="text-sm text-muted-foreground">Command still running…</div>
+                <div className="text-sm text-muted-foreground">
+                  {t("bash_tool.command_still_running")}
+                </div>
               ) : null}
             </div>
           </DialogContent>

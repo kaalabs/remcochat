@@ -20,6 +20,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { ModelPicker } from "@/components/model-picker";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -198,6 +199,7 @@ function toolNameFromPartType(type: string) {
 }
 
 function ToolCallLine(props: { type: string; state?: string }) {
+  const { t } = useI18n();
   const toolName = toolNameFromPartType(props.type);
   const showSpinner =
     props.state === "input-streaming" ||
@@ -207,7 +209,7 @@ function ToolCallLine(props: { type: string; state?: string }) {
   return (
     <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
       {showSpinner ? <Loader size={14} /> : null}
-      Calling tool: &quot;{toolName}&quot;
+      {t("tool.calling", { toolName })}
     </div>
   );
 }
@@ -279,6 +281,8 @@ export function HomeClient({
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
+  const { locale, setUiLanguage, t, uiLanguage } = useI18n();
+
   const initialProfileId =
     initialProfiles.some((p) => p.id === initialActiveProfileId)
       ? initialActiveProfileId
@@ -514,6 +518,12 @@ export function HomeClient({
   const activeProfile = useMemo(() => {
     return profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
   }, [profiles, activeProfileId]);
+
+  useEffect(() => {
+    if (!activeProfile) return;
+    if (activeProfile.uiLanguage === uiLanguage) return;
+    setUiLanguage(activeProfile.uiLanguage);
+  }, [activeProfile, setUiLanguage, uiLanguage]);
 
   const activeProvider = useMemo(() => {
     if (!providersConfig) return null;
@@ -789,6 +799,7 @@ export function HomeClient({
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [profileInstructionsDraft, setProfileInstructionsDraft] = useState("");
   const [memoryEnabledDraft, setMemoryEnabledDraft] = useState(true);
+  const [uiLanguageDraft, setUiLanguageDraft] = useState<Profile["uiLanguage"]>("en");
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
 
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
@@ -1149,12 +1160,16 @@ export function HomeClient({
       const res = await fetch("/api/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, defaultModelId: profileDefaultModelId }),
+        body: JSON.stringify({
+          name,
+          defaultModelId: profileDefaultModelId,
+          uiLanguage: "nl",
+        }),
       });
 
       const data = (await res.json()) as { profile?: Profile; error?: string };
       if (!res.ok || !data.profile) {
-        throw new Error(data.error || "Failed to create profile.");
+        throw new Error(data.error || t("error.profile.create_failed"));
       }
 
       setProfiles((prev) => [...prev, data.profile!]);
@@ -1166,7 +1181,7 @@ export function HomeClient({
       setCreateOpen(false);
     } catch (err) {
       setCreateError(
-        err instanceof Error ? err.message : "Failed to create profile."
+        err instanceof Error ? err.message : t("error.profile.create_failed")
       );
     } finally {
       setCreating(false);
@@ -1327,17 +1342,19 @@ export function HomeClient({
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(data?.error || "Failed to reset.");
+        throw new Error(data?.error || t("error.admin.reset_failed"));
       }
       setAdminResetConfirm("");
       setAdminOpen(false);
       await refreshProfiles();
     } catch (err) {
-      setAdminError(err instanceof Error ? err.message : "Failed to reset.");
+      setAdminError(
+        err instanceof Error ? err.message : t("error.admin.reset_failed")
+      );
     } finally {
       setAdminResetSaving(false);
     }
-  }, [adminEnabled, adminResetConfirm, adminResetSaving, refreshProfiles]);
+  }, [adminEnabled, adminResetConfirm, adminResetSaving, refreshProfiles, t]);
 
   const deleteChatById = useCallback(async (chatId: string, folderIdHint?: string | null) => {
     if (!activeProfile) return;
@@ -1359,7 +1376,7 @@ export function HomeClient({
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(data?.error || "Failed to delete chat.");
+        throw new Error(data?.error || t("error.chat.delete_failed"));
       }
 
       refreshChats({
@@ -1369,12 +1386,12 @@ export function HomeClient({
       }).catch(() => {});
     } catch (err) {
       setDeleteChatError(
-        err instanceof Error ? err.message : "Failed to delete chat."
+        err instanceof Error ? err.message : t("error.chat.delete_failed")
       );
     } finally {
       setDeleteChatSaving(false);
     }
-  }, [activeProfile, chats, deleteChatSaving, refreshChats, status]);
+  }, [activeProfile, chats, deleteChatSaving, refreshChats, status, t]);
 
   const openRenameChat = useCallback(
     (chatId: string) => {
@@ -1415,7 +1432,7 @@ export function HomeClient({
         | { chat?: Chat; error?: string }
         | null;
       if (!res.ok || !data?.chat) {
-        throw new Error(data?.error || "Failed to rename chat.");
+        throw new Error(data?.error || t("error.chat.rename_failed"));
       }
 
       const updated = data.chat;
@@ -1428,7 +1445,7 @@ export function HomeClient({
       setRenameChatOpen(false);
     } catch (err) {
       setRenameChatError(
-        err instanceof Error ? err.message : "Failed to rename chat."
+        err instanceof Error ? err.message : t("error.chat.rename_failed")
       );
     } finally {
       setRenameChatSaving(false);
@@ -1439,6 +1456,7 @@ export function HomeClient({
     renameChatId,
     renameChatSaving,
     status,
+    t,
   ]);
 
   const normalizeFolderNameDraft = useCallback((value: string) => {
@@ -1448,11 +1466,13 @@ export function HomeClient({
   const validateFolderNameDraft = useCallback(
     (value: string): { ok: true; name: string } | { ok: false; error: string } => {
       const name = normalizeFolderNameDraft(value);
-      if (!name) return { ok: false, error: "Folder name is required." };
-      if (name.length > 60) return { ok: false, error: "Folder name is too long." };
+      if (!name) return { ok: false, error: t("validation.folder.name_required") };
+      if (name.length > 60) {
+        return { ok: false, error: t("validation.folder.name_too_long") };
+      }
       return { ok: true, name };
     },
-    [normalizeFolderNameDraft]
+    [normalizeFolderNameDraft, t]
   );
 
 	  const createFolderByName = useCallback(async () => {
@@ -1480,14 +1500,14 @@ export function HomeClient({
         | { folder?: ChatFolder; error?: string }
         | null;
 	      if (!res.ok || !data?.folder) {
-	        throw new Error(data?.error || "Failed to create folder.");
+	        throw new Error(data?.error || t("error.folder.create_failed"));
 	      }
 
 	      refreshFolders(activeProfile.id).catch(() => {});
 	      setNewFolderOpen(false);
 	    } catch (err) {
 	      setNewFolderError(
-	        err instanceof Error ? err.message : "Failed to create folder."
+	        err instanceof Error ? err.message : t("error.folder.create_failed")
       );
     } finally {
       setNewFolderSaving(false);
@@ -1498,6 +1518,7 @@ export function HomeClient({
 	    newFolderSaving,
 	    refreshFolders,
 	    status,
+	    t,
 	    validateFolderNameDraft,
 	  ]);
 
@@ -1541,7 +1562,7 @@ export function HomeClient({
         | { folder?: ChatFolder; error?: string }
         | null;
 	      if (!res.ok || !data?.folder) {
-	        throw new Error(data?.error || "Failed to rename folder.");
+	        throw new Error(data?.error || t("error.folder.rename_failed"));
 	      }
 
 	      setFolders((prev) =>
@@ -1551,7 +1572,7 @@ export function HomeClient({
 	      setRenameFolderOpen(false);
 	    } catch (err) {
 	      setRenameFolderError(
-	        err instanceof Error ? err.message : "Failed to rename folder."
+	        err instanceof Error ? err.message : t("error.folder.rename_failed")
       );
     } finally {
       setRenameFolderSaving(false);
@@ -1563,6 +1584,7 @@ export function HomeClient({
 	    renameFolderId,
 	    renameFolderSaving,
 	    status,
+	    t,
 	    validateFolderNameDraft,
 	  ]);
 
@@ -1605,7 +1627,7 @@ export function HomeClient({
 
       const target = String(shareFolderTarget ?? "").trim();
       if (!target) {
-        setShareFolderError("Target profile is required.");
+        setShareFolderError(t("validation.folder.share_target_required"));
         return;
       }
 
@@ -1622,13 +1644,13 @@ export function HomeClient({
           | { ok?: boolean; error?: string }
           | null;
         if (!res.ok || !data?.ok) {
-          throw new Error(data?.error || "Failed to share folder.");
+          throw new Error(data?.error || t("error.folder.share_failed"));
         }
         refreshFolders(activeProfile.id).catch(() => {});
         setShareFolderOpen(false);
       } catch (err) {
         setShareFolderError(
-          err instanceof Error ? err.message : "Failed to share folder."
+          err instanceof Error ? err.message : t("error.folder.share_failed")
         );
       } finally {
         setShareFolderSaving(false);
@@ -1640,6 +1662,7 @@ export function HomeClient({
       shareFolderSaving,
       shareFolderTarget,
       status,
+      t,
     ]);
 
     const loadFolderMembers = useCallback(
@@ -1655,18 +1678,22 @@ export function HomeClient({
             | { members?: FolderMember[]; error?: string }
             | null;
           if (!res.ok) {
-            throw new Error(data?.error || "Failed to load sharing settings.");
+            throw new Error(
+              data?.error || t("error.folder.sharing_settings_load_failed")
+            );
           }
           setManageSharingMembers(Array.isArray(data?.members) ? data!.members! : []);
         } catch (err) {
           setManageSharingError(
-            err instanceof Error ? err.message : "Failed to load sharing settings."
+            err instanceof Error
+              ? err.message
+              : t("error.folder.sharing_settings_load_failed")
           );
         } finally {
           setManageSharingLoading(false);
         }
       },
-      [activeProfile]
+      [activeProfile, t]
     );
 
     const openManageFolderSharing = useCallback(
@@ -1708,7 +1735,7 @@ export function HomeClient({
             | { ok?: boolean; error?: string }
             | null;
           if (!res.ok || !data?.ok) {
-            throw new Error(data?.error || "Failed to stop sharing.");
+            throw new Error(data?.error || t("error.folder.stop_sharing_failed"));
           }
           setManageSharingMembers((prev) =>
             prev.filter((m) => m.profileId !== member.profileId)
@@ -1716,7 +1743,9 @@ export function HomeClient({
           refreshFolders(activeProfile.id).catch(() => {});
         } catch (err) {
           setManageSharingError(
-            err instanceof Error ? err.message : "Failed to stop sharing."
+            err instanceof Error
+              ? err.message
+              : t("error.folder.stop_sharing_failed")
           );
         } finally {
           setManageSharingSaving(false);
@@ -1728,6 +1757,7 @@ export function HomeClient({
         manageSharingSaving,
         refreshFolders,
         status,
+        t,
       ]
     );
 
@@ -1750,7 +1780,7 @@ export function HomeClient({
         | { ok?: boolean; error?: string }
         | null;
       if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || "Failed to delete folder.");
+        throw new Error(data?.error || t("error.folder.delete_failed"));
       }
 
       setFolders((prev) => prev.filter((f) => f.id !== deleteFolderId));
@@ -1763,12 +1793,12 @@ export function HomeClient({
       setDeleteFolderOpen(false);
     } catch (err) {
       setDeleteFolderError(
-        err instanceof Error ? err.message : "Failed to delete folder."
+        err instanceof Error ? err.message : t("error.folder.delete_failed")
       );
     } finally {
       setDeleteFolderSaving(false);
     }
-  }, [activeProfile, deleteFolderId, deleteFolderSaving, status]);
+  }, [activeProfile, deleteFolderId, deleteFolderSaving, status, t]);
 
   const toggleFolderCollapsed = useCallback(
     async (folderId: string, nextCollapsed: boolean) => {
@@ -1795,14 +1825,18 @@ export function HomeClient({
 	          | { ok?: boolean; folder?: ChatFolder; error?: string }
 	          | null;
 	        if (!res.ok) {
-	          throw new Error(data?.error || "Failed to update folder.");
+	          throw new Error(data?.error || t("error.folder.update_failed"));
 	        }
 	      } catch (err) {
-	        setFolderError(err instanceof Error ? err.message : "Failed to update folder.");
+	        setFolderError(
+            err instanceof Error
+              ? err.message
+              : t("error.folder.update_failed")
+          );
 	        refreshFolders(activeProfile.id).catch(() => {});
 	      }
     },
-    [activeProfile, refreshFolders, status]
+    [activeProfile, refreshFolders, status, t]
   );
 
   const moveChatToFolder = useCallback(
@@ -1821,15 +1855,17 @@ export function HomeClient({
           | { chat?: Chat; error?: string }
           | null;
         if (!res.ok || !data?.chat) {
-          throw new Error(data?.error || "Failed to move chat.");
+          throw new Error(data?.error || t("error.chat.move_failed"));
         }
 
         setChats((prev) => prev.map((c) => (c.id === chatId ? data.chat! : c)));
       } catch (err) {
-        setFolderError(err instanceof Error ? err.message : "Failed to move chat.");
+        setFolderError(
+          err instanceof Error ? err.message : t("error.chat.move_failed")
+        );
       }
     },
-    [activeProfile, status]
+    [activeProfile, status, t]
   );
 
   const setChatModel = async (nextModelId: string) => {
@@ -2232,7 +2268,7 @@ export function HomeClient({
         const data = (await persistRes.json().catch(() => null)) as
           | { error?: string }
           | null;
-        throw new Error(data?.error || "Failed to persist chat state.");
+        throw new Error(data?.error || t("error.chat.persist_state_failed"));
       }
 
       const res = await fetch(`/api/chats/${activeChatId}/fork`, {
@@ -2247,7 +2283,7 @@ export function HomeClient({
 
       const data = (await res.json()) as { chat?: Chat; error?: string };
       if (!res.ok || !data.chat) {
-        throw new Error(data.error || "Failed to fork chat.");
+        throw new Error(data.error || t("error.chat.fork_failed"));
       }
 
       setChats((prev) => {
@@ -2259,7 +2295,7 @@ export function HomeClient({
       setActiveChatId(data.chat.id);
       setEditOpen(false);
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Failed to fork chat.");
+      setEditError(err instanceof Error ? err.message : t("error.chat.fork_failed"));
     } finally {
       setEditing(false);
     }
@@ -2271,6 +2307,7 @@ export function HomeClient({
     editingMessageId,
     isTemporaryChat,
     messages,
+    t,
     variantsByUserMessageId,
   ]);
 
@@ -2281,6 +2318,7 @@ export function HomeClient({
     setSettingsError(null);
     setProfileInstructionsDraft(activeProfile.customInstructions ?? "");
     setMemoryEnabledDraft(Boolean(activeProfile.memoryEnabled));
+    setUiLanguageDraft(activeProfile.uiLanguage ?? "en");
 
     fetch(`/api/profiles/${activeProfile.id}/memory`)
       .then((r) => r.json())
@@ -2303,26 +2341,36 @@ export function HomeClient({
         body: JSON.stringify({
           customInstructions: profileInstructionsDraft,
           memoryEnabled: memoryEnabledDraft,
+          uiLanguage: uiLanguageDraft,
         }),
       });
 
       const data = (await res.json()) as { profile?: Profile; error?: string };
       if (!res.ok || !data.profile) {
-        throw new Error(data.error || "Failed to save profile settings.");
+        throw new Error(data.error || t("error.profile.settings_save_failed"));
       }
 
       setProfiles((prev) =>
         prev.map((p) => (p.id === data.profile!.id ? data.profile! : p))
       );
+      setUiLanguage(data.profile.uiLanguage);
       setSettingsOpen(false);
     } catch (err) {
       setSettingsError(
-        err instanceof Error ? err.message : "Failed to save profile settings."
+        err instanceof Error ? err.message : t("error.profile.settings_save_failed")
       );
     } finally {
       setSettingsSaving(false);
     }
-  }, [activeProfile, memoryEnabledDraft, profileInstructionsDraft, settingsSaving]);
+  }, [
+    activeProfile,
+    memoryEnabledDraft,
+    profileInstructionsDraft,
+    settingsSaving,
+    setUiLanguage,
+    t,
+    uiLanguageDraft,
+  ]);
 
   const deleteMemory = useCallback(
     async (memoryId: string) => {
@@ -2355,7 +2403,7 @@ export function HomeClient({
         | { ok?: boolean; profiles?: Profile[]; error?: string }
         | null;
       if (!res.ok) {
-        throw new Error(data?.error || "Failed to delete profile.");
+        throw new Error(data?.error || t("error.profile.delete_failed"));
       }
 
       setDeleteProfileOpen(false);
@@ -2363,7 +2411,7 @@ export function HomeClient({
       await refreshProfiles();
     } catch (err) {
       setDeleteProfileError(
-        err instanceof Error ? err.message : "Failed to delete profile."
+        err instanceof Error ? err.message : t("error.profile.delete_failed")
       );
     } finally {
       setDeleteProfileSaving(false);
@@ -2374,6 +2422,7 @@ export function HomeClient({
     deleteProfileSaving,
     refreshProfiles,
     status,
+    t,
   ]);
 
 	  const openChatSettings = useCallback(() => {
@@ -2414,7 +2463,7 @@ export function HomeClient({
 
       const data = (await res.json()) as { chat?: Chat; error?: string };
       if (!res.ok || !data.chat) {
-        throw new Error(data.error || "Failed to save chat settings.");
+        throw new Error(data.error || t("error.chat.settings_save_failed"));
       }
 
       setChats((prev) =>
@@ -2429,7 +2478,9 @@ export function HomeClient({
       setChatSettingsOpen(false);
     } catch (err) {
       setChatSettingsError(
-        err instanceof Error ? err.message : "Failed to save chat settings."
+        err instanceof Error
+          ? err.message
+          : t("error.chat.settings_save_failed")
       );
     } finally {
       setChatSettingsSaving(false);
@@ -2440,6 +2491,7 @@ export function HomeClient({
     chatSettingsChatId,
     chatSettingsSaving,
     refreshChats,
+    t,
   ]);
 
   const toggleTemporaryChat = useCallback(() => {
@@ -2496,19 +2548,19 @@ export function HomeClient({
 
       const data = (await res.json()) as { item?: MemoryItem; error?: string };
       if (!res.ok || !data.item) {
-        throw new Error(data.error || "Failed to save memory.");
+        throw new Error(data.error || t("error.memory.save_failed"));
       }
 
       setMemoryItems((prev) => [data.item!, ...prev]);
       setMemorizeOpen(false);
     } catch (err) {
       setMemorizeError(
-        err instanceof Error ? err.message : "Failed to save memory."
+        err instanceof Error ? err.message : t("error.memory.save_failed")
       );
     } finally {
       setMemorizeSaving(false);
     }
-  }, [activeProfile, isTemporaryChat, memorizeSaving, memorizeText]);
+  }, [activeProfile, isTemporaryChat, memorizeSaving, memorizeText, t]);
 
   const sendMemoryDecision = useCallback(
     (decision: "confirm" | "cancel") => {
@@ -2597,7 +2649,7 @@ export function HomeClient({
 	          {mode === "drawer" ? (
 	            <DialogClose asChild>
 	              <Button
-                aria-label="Close menu"
+                aria-label={t("sidebar.close_menu.aria")}
                 className="h-8 w-8"
                 size="icon"
                 type="button"
@@ -2615,22 +2667,24 @@ export function HomeClient({
 
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <div className="flex items-center justify-between gap-2 px-2 py-2">
-            <div className="text-sm font-medium text-muted-foreground">Chats</div>
+            <div className="text-sm font-medium text-muted-foreground">
+              {t("sidebar.chats")}
+            </div>
             <div className="flex items-center gap-1">
               <Button
-                aria-label="New folder"
+                aria-label={t("sidebar.new_folder.aria")}
                 className="h-7 w-7 px-0"
                 data-testid="sidebar:new-folder"
                 disabled={!activeProfile || status !== "ready"}
                 onClick={() => setNewFolderOpen(true)}
-                title="New folder"
+                title={t("sidebar.new_folder.title")}
                 type="button"
                 variant="secondary"
               >
                 <FolderPlusIcon className="size-4" />
               </Button>
               <Button
-                aria-label="New chat"
+                aria-label={t("sidebar.new_chat.aria")}
                 className="h-7 w-7 px-0"
                 data-testid="sidebar:new-chat"
                 disabled={!activeProfile || status !== "ready"}
@@ -2638,7 +2692,7 @@ export function HomeClient({
                   createChat();
                   closeIfDrawer();
                 }}
-                title="New chat"
+                title={t("sidebar.new_chat.title")}
                 type="button"
                 variant="secondary"
               >
@@ -2675,7 +2729,7 @@ export function HomeClient({
 			                  ) : (
 			                    <FolderOpenIcon className="size-4 shrink-0" />
 			                  )}
-			                  <span>Personal folders</span>
+			                  <span>{t("sidebar.personal_folders")}</span>
 			                </button>
 			              ) : null}
 			              {sharedFoldersByOwner.length > 0 &&
@@ -2742,7 +2796,7 @@ export function HomeClient({
 	                            onClick={() => openShareFolder(folder.id)}
 	                          >
 	                            <UsersIcon />
-	                            Share folder…
+	                            {t("folder.share")}
 	                          </DropdownMenuItem>
 	                          {(folder.sharedWithCount ?? 0) > 0 ? (
 	                            <DropdownMenuItem
@@ -2750,7 +2804,7 @@ export function HomeClient({
 	                              onClick={() => openManageFolderSharing(folder.id)}
 	                            >
 	                              <UsersIcon />
-	                              Manage sharing…
+	                              {t("folder.manage_sharing")}
 	                            </DropdownMenuItem>
 	                          ) : null}
 	                          <DropdownMenuSeparator />
@@ -2759,7 +2813,7 @@ export function HomeClient({
 	                            onClick={() => openRenameFolder(folder.id)}
 	                          >
 	                            <PencilIcon />
-                            Rename
+                            {t("common.rename")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -2768,7 +2822,7 @@ export function HomeClient({
                             variant="destructive"
                           >
                             <Trash2Icon />
-                            Delete folder
+                            {t("folder.delete")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -2798,13 +2852,15 @@ export function HomeClient({
 	                              type="button"
                             >
 	                              <div className="truncate">
-	                                {chat.title.trim() ? chat.title : "New chat"}
+	                                {chat.title.trim() ? chat.title : t("chat.untitled")}
 	                              </div>
 	                            </button>
 
 	                            <Button
 	                              aria-label={
-	                                chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
+	                                chatIsPinned(chat)
+	                                  ? t("chat.unpin.aria")
+	                                  : t("chat.pin.aria")
 	                              }
 	                              aria-pressed={chatIsPinned(chat)}
 	                              className={
@@ -2854,7 +2910,7 @@ export function HomeClient({
                                     data-testid={`chat-action:move-folder:${chat.id}`}
                                   >
                                     <FolderIcon />
-                                    Move to folder…
+                                    {t("chat.move_to_folder")}
                                   </DropdownMenuSubTrigger>
                                   <DropdownMenuSubContent>
                                     <DropdownMenuRadioGroup
@@ -2864,7 +2920,7 @@ export function HomeClient({
                                       value={chat.folderId ?? ""}
                                     >
 	                                      <DropdownMenuRadioItem value="">
-	                                        No folder
+	                                        {t("chat.no_folder")}
 	                                      </DropdownMenuRadioItem>
 	                                      {ownedFolders.map((f) => (
 	                                        <DropdownMenuRadioItem key={f.id} value={f.id}>
@@ -2886,7 +2942,7 @@ export function HomeClient({
                                   }}
                                 >
                                   <ArchiveIcon />
-                                  Archive
+                                  {t("chat.archive")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   data-testid={`chat-action:rename:${chat.id}`}
@@ -2897,7 +2953,7 @@ export function HomeClient({
                                   }}
                                 >
                                   <PencilIcon />
-                                  Rename
+                                  {t("common.rename")}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -2909,7 +2965,7 @@ export function HomeClient({
                                   }}
                                 >
                                   <DownloadIcon />
-                                  Export Markdown
+                                  {t("chat.export.markdown")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   data-testid={`chat-action:export-json:${chat.id}`}
@@ -2920,7 +2976,7 @@ export function HomeClient({
                                   }}
                                 >
                                   <DownloadIcon />
-                                  Export JSON
+                                  {t("chat.export.json")}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -2934,7 +2990,7 @@ export function HomeClient({
                                   variant="destructive"
                                 >
                                   <Trash2Icon />
-                                  Delete
+                                  {t("common.delete")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -2968,7 +3024,7 @@ export function HomeClient({
 		                    ) : (
 		                      <FolderOpenIcon className="size-4 shrink-0" />
 		                    )}
-		                    <span>Shared with me</span>
+		                    <span>{t("sidebar.shared_with_me")}</span>
 		                  </button>
 
 	                  {folderGroupCollapsed["folders:shared"]
@@ -2996,7 +3052,9 @@ export function HomeClient({
 		                              ) : (
 		                                <FolderOpenIcon className="size-4 shrink-0" />
 		                              )}
-		                              <span>by {ownerName}</span>
+		                              <span>
+                                {t("sidebar.shared_by", { ownerName })}
+                              </span>
 		                            </button>
 
 	                            {ownerGroupCollapsed
@@ -3062,13 +3120,15 @@ export function HomeClient({
                                       type="button"
                                     >
 	                                      <div className="truncate">
-	                                        {chat.title.trim() ? chat.title : "New chat"}
+	                                        {chat.title.trim() ? chat.title : t("chat.untitled")}
 	                                      </div>
 	                                    </button>
 
 	                                    <Button
 	                                      aria-label={
-	                                        chatIsPinned(chat) ? "Unpin chat" : "Pin chat"
+	                                        chatIsPinned(chat)
+	                                          ? t("chat.unpin.aria")
+	                                          : t("chat.pin.aria")
 	                                      }
 	                                      aria-pressed={chatIsPinned(chat)}
 	                                      className={
@@ -3118,7 +3178,7 @@ export function HomeClient({
                                             data-testid={`chat-action:move-folder:${chat.id}`}
                                           >
                                             <FolderIcon />
-                                            Move to folder…
+                                            {t("chat.move_to_folder")}
                                           </DropdownMenuSubTrigger>
                                           <DropdownMenuSubContent>
                                             <DropdownMenuRadioGroup
@@ -3128,7 +3188,7 @@ export function HomeClient({
                                               value={chat.folderId ?? ""}
                                             >
                                               <DropdownMenuRadioItem value="">
-                                                No folder
+                                                {t("chat.no_folder")}
                                               </DropdownMenuRadioItem>
                                               {ownedFolders.map((f) => (
                                                 <DropdownMenuRadioItem
@@ -3153,7 +3213,7 @@ export function HomeClient({
                                           }}
                                         >
                                           <ArchiveIcon />
-                                          Archive
+                                          {t("chat.archive")}
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                           data-testid={`chat-action:rename:${chat.id}`}
@@ -3164,7 +3224,7 @@ export function HomeClient({
                                           }}
                                         >
                                           <PencilIcon />
-                                          Rename
+                                          {t("common.rename")}
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
@@ -3176,7 +3236,7 @@ export function HomeClient({
                                           }}
                                         >
                                           <DownloadIcon />
-                                          Export Markdown
+                                          {t("chat.export.markdown")}
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                           data-testid={`chat-action:export-json:${chat.id}`}
@@ -3187,7 +3247,7 @@ export function HomeClient({
                                           }}
                                         >
                                           <DownloadIcon />
-                                          Export JSON
+                                          {t("chat.export.json")}
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
@@ -3201,7 +3261,7 @@ export function HomeClient({
                                           variant="destructive"
                                         >
                                           <Trash2Icon />
-                                          Delete
+                                          {t("common.delete")}
                                         </DropdownMenuItem>
                                       </DropdownMenuContent>
                                     </DropdownMenu>
@@ -3250,12 +3310,14 @@ export function HomeClient({
 	                    type="button"
                   >
 	                    <div className="truncate">
-	                      {chat.title.trim() ? chat.title : "New chat"}
+	                      {chat.title.trim() ? chat.title : t("chat.untitled")}
 	                    </div>
 	                  </button>
 
 	                  <Button
-	                    aria-label={chatIsPinned(chat) ? "Unpin chat" : "Pin chat"}
+	                    aria-label={
+	                      chatIsPinned(chat) ? t("chat.unpin.aria") : t("chat.pin.aria")
+	                    }
 	                    aria-pressed={chatIsPinned(chat)}
 	                    className={
 	                      "h-8 w-8 shrink-0 px-0 transition-opacity " +
@@ -3300,11 +3362,11 @@ export function HomeClient({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuSub>
-                        <DropdownMenuSubTrigger
+                      <DropdownMenuSubTrigger
                           data-testid={`chat-action:move-folder:${chat.id}`}
                         >
                           <FolderIcon />
-                          Move to folder…
+                          {t("chat.move_to_folder")}
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
                           <DropdownMenuRadioGroup
@@ -3314,7 +3376,7 @@ export function HomeClient({
                             value={chat.folderId ?? ""}
                           >
 	                            <DropdownMenuRadioItem value="">
-	                              No folder
+	                              {t("chat.no_folder")}
 	                            </DropdownMenuRadioItem>
 	                            {ownedFolders.map((f) => (
 	                              <DropdownMenuRadioItem key={f.id} value={f.id}>
@@ -3336,7 +3398,7 @@ export function HomeClient({
                         }}
                       >
                         <ArchiveIcon />
-                        Archive
+                        {t("chat.archive")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         data-testid={`chat-action:rename:${chat.id}`}
@@ -3347,7 +3409,7 @@ export function HomeClient({
                         }}
                       >
                         <PencilIcon />
-                        Rename
+                        {t("common.rename")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -3359,7 +3421,7 @@ export function HomeClient({
                         }}
                       >
                         <DownloadIcon />
-                        Export Markdown
+                        {t("chat.export.markdown")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         data-testid={`chat-action:export-json:${chat.id}`}
@@ -3370,7 +3432,7 @@ export function HomeClient({
                         }}
                       >
                         <DownloadIcon />
-                        Export JSON
+                        {t("chat.export.json")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -3384,7 +3446,7 @@ export function HomeClient({
                                   variant="destructive"
                                 >
                         <Trash2Icon />
-                        Delete
+                        {t("common.delete")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -3403,8 +3465,9 @@ export function HomeClient({
                     type="button"
                   >
                     <span>
-                      Archived (
-                      {chats.filter((c) => Boolean(c.archivedAt)).length})
+                      {t("sidebar.archived", {
+                        count: chats.filter((c) => Boolean(c.archivedAt)).length,
+                      })}
                     </span>
                     <ChevronDownIcon
                       className={
@@ -3444,7 +3507,7 @@ export function HomeClient({
 	                            type="button"
                           >
                             <div className="truncate">
-                              {chat.title.trim() ? chat.title : "New chat"}
+                              {chat.title.trim() ? chat.title : t("chat.untitled")}
                             </div>
                           </button>
 
@@ -3476,7 +3539,7 @@ export function HomeClient({
                                 }}
                               >
                                 <Undo2Icon />
-                                Unarchive
+                                {t("chat.unarchive")}
                               </DropdownMenuItem>
 
                               <DropdownMenuSub>
@@ -3484,7 +3547,7 @@ export function HomeClient({
                                   data-testid={`chat-action:move-folder:${chat.id}`}
                                 >
                                   <FolderIcon />
-                                  Move to folder…
+                                  {t("chat.move_to_folder")}
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent>
                                   <DropdownMenuRadioGroup
@@ -3494,7 +3557,7 @@ export function HomeClient({
                                     value={chat.folderId ?? ""}
                                   >
                                     <DropdownMenuRadioItem value="">
-                                      No folder
+                                      {t("chat.no_folder")}
                                     </DropdownMenuRadioItem>
 	                                    {ownedFolders.map((f) => (
 	                                      <DropdownMenuRadioItem key={f.id} value={f.id}>
@@ -3514,7 +3577,7 @@ export function HomeClient({
                                 }}
                               >
                                 <PencilIcon />
-                                Rename
+                                {t("common.rename")}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -3526,7 +3589,7 @@ export function HomeClient({
                                 }}
                               >
                                 <DownloadIcon />
-                                Export Markdown
+                                {t("chat.export.markdown")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 data-testid={`chat-action:export-json:${chat.id}`}
@@ -3537,7 +3600,7 @@ export function HomeClient({
                                 }}
                               >
                                 <DownloadIcon />
-                                Export JSON
+                                {t("chat.export.json")}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -3551,7 +3614,7 @@ export function HomeClient({
                                   variant="destructive"
                                 >
                                 <Trash2Icon />
-                                Delete
+                                {t("common.delete")}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -3566,9 +3629,9 @@ export function HomeClient({
 
         <div className="border-t p-4">
           <div className="mb-2 text-sm font-medium text-muted-foreground">
-            Profile
+            {t("sidebar.profile")}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Select
               onOpenChange={(open) => {
                 setProfileSelectOpen(open);
@@ -3586,30 +3649,33 @@ export function HomeClient({
               value={activeProfile?.id ?? ""}
             >
               <SelectTrigger
-                className="h-9 flex-1"
+                className="h-9 min-w-0 flex-1"
                 data-testid="profile:select-trigger"
                 suppressHydrationWarning
               >
-                <SelectValue placeholder="Select profile" />
+                <SelectValue
+                  className="min-w-0 max-w-full truncate"
+                  placeholder={t("profile.select.placeholder")}
+                />
               </SelectTrigger>
-              <SelectContent>
-                {profiles.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+	              <SelectContent>
+	                {profiles.map((p) => (
+	                  <SelectItem data-testid={`profile:option:${p.id}`} key={p.id} value={p.id}>
+	                    {p.name}
+	                  </SelectItem>
+	                ))}
+	              </SelectContent>
+	            </Select>
 
             <Button
-              aria-label="New profile"
+              aria-label={t("profile.new.title")}
               className="h-9 w-9 px-0"
               data-testid="profile:new"
               onClick={() => {
                 setCreateOpen(true);
                 closeIfDrawer();
               }}
-              title="New profile"
+              title={t("profile.new.title")}
               type="button"
               variant="secondary"
             >
@@ -3617,7 +3683,7 @@ export function HomeClient({
             </Button>
 
             <Button
-              aria-label="Profile settings"
+              aria-label={t("profile.settings.title")}
               className="h-9 w-9 px-0"
               data-testid="profile:settings-open"
               disabled={status !== "ready"}
@@ -3625,7 +3691,7 @@ export function HomeClient({
                 setSettingsOpen(true);
                 closeIfDrawer();
               }}
-              title="Profile settings"
+              title={t("profile.settings.title")}
               type="button"
               variant="secondary"
             >
@@ -3658,7 +3724,7 @@ export function HomeClient({
 	            <div className="flex flex-wrap items-center gap-3 pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))]">
 		              <div className="flex min-w-0 items-center gap-2 md:hidden">
 		                <Button
-		                  aria-label="Open menu"
+		                  aria-label={t("sidebar.open_menu.aria")}
 	                  onClick={() => setSidebarOpen(true)}
 	                  size="icon"
 	                  type="button"
@@ -3679,7 +3745,7 @@ export function HomeClient({
 
 	              <div className="order-last flex w-full min-w-0 items-center gap-2 md:order-none md:w-auto">
 	                <div className="hidden shrink-0 text-sm text-muted-foreground md:block">
-	                  Model
+	                  {t("model.label")}
 	                </div>
 		                <ModelPicker
                       disabled={!isTemporaryChat && !canManageActiveChat}
@@ -3709,10 +3775,10 @@ export function HomeClient({
 	                </div>
                   {lanAdminAccessEnabled ? (
                     <Button
-                      aria-label="Admin access"
+                      aria-label={t("admin_access.title")}
                       className="h-8 w-9 px-0"
                       onClick={() => setLanAdminTokenOpen(true)}
-                      title="Admin access"
+                      title={t("admin_access.title")}
                       type="button"
                       variant="outline"
                     >
@@ -3731,7 +3797,9 @@ export function HomeClient({
                   ) : null}
 	                <Button
 	                  aria-label={
-	                    isTemporaryChat ? "Exit temporary chat" : "Enter temporary chat"
+	                    isTemporaryChat
+                        ? t("chat.temporary.exit_aria")
+                        : t("chat.temporary.enter_aria")
 	                  }
 	                  className={
 	                    "h-8 w-9 px-0 " +
@@ -3741,7 +3809,11 @@ export function HomeClient({
 	                  }
 	                  data-testid="chat:temporary-toggle"
 	                  onClick={() => toggleTemporaryChat()}
-	                  title={isTemporaryChat ? "Temporary chat (on)" : "Temporary chat (off)"}
+	                  title={
+                      isTemporaryChat
+                        ? t("chat.temporary.title_on")
+                        : t("chat.temporary.title_off")
+                    }
 	                  type="button"
 	                  variant="outline"
 	                >
@@ -3756,10 +3828,10 @@ export function HomeClient({
                       asChild
                       className="h-8 w-9 px-0"
                       data-testid="admin:open"
-                      title="Admin"
+                      title={t("admin.dialog.title")}
                       variant="outline"
                     >
-                      <Link aria-label="Open admin" href="/admin">
+                      <Link aria-label={t("admin.open.aria")} href="/admin">
                         <ShieldIcon className="size-4" />
                       </Link>
                     </Button>
@@ -3779,7 +3851,7 @@ export function HomeClient({
               <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
                 {messages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground">
-                    Start a chat.
+                    {t("home.empty.start_chat")}
                   </div>
                 ) : null}
 
@@ -3958,7 +4030,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Memory error: {part.errorText}
+                                        {t("tool_error.memory", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4009,7 +4081,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Memory error: {part.errorText}
+                                        {t("tool_error.memory", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4047,7 +4119,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        List error: {part.errorText}
+                                        {t("tool_error.list", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4087,7 +4159,9 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Lists overview error: {part.errorText}
+                                        {t("tool_error.lists_overview", {
+                                          error: part.errorText,
+                                        })}
                                       </div>
                                     </div>
                                   );
@@ -4124,7 +4198,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Agenda error: {part.errorText}
+                                        {t("tool_error.agenda", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4161,7 +4235,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Timezones error: {part.errorText}
+                                        {t("tool_error.timezones", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4196,12 +4270,14 @@ export function HomeClient({
 	                                case "output-error":
 	                                  return (
 	                                    <div className="space-y-2" key={`${id}-${index}`}>
-	                                      <ToolCallLine state={part.state} type={part.type} />
-	                                      <div className="text-sm text-destructive">
-	                                        Current date/time error: {part.errorText}
-	                                      </div>
-	                                    </div>
-	                                  );
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <div className="text-sm text-destructive">
+	                                        {t("tool_error.current_date_time", {
+                                          error: part.errorText,
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
 	                                default:
 	                                  return null;
 	                              }
@@ -4238,7 +4314,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Summary error: {part.errorText}
+                                        {t("tool_error.url_summary", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4278,7 +4354,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Notes error: {part.errorText}
+                                        {t("tool_error.notes", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4319,7 +4395,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        OV NL error: {part.errorText}
+                                        {t("tool_error.ov_nl", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4696,7 +4772,7 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Weather error: {part.errorText}
+                                        {t("tool_error.weather", { error: part.errorText })}
                                       </div>
                                     </div>
                                   );
@@ -4730,7 +4806,9 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <div className="text-sm text-destructive">
-                                        Forecast error: {part.errorText}
+                                        {t("tool_error.weather_forecast", {
+                                          error: part.errorText,
+                                        })}
                                       </div>
                                     </div>
                                   );
@@ -4756,7 +4834,7 @@ export function HomeClient({
                               return (
                                 <Tool data-testid={`tool:${toolName}`} key={`${id}-${index}`}>
                                   <ToolHeader
-                                    title={`Calling tool: "${toolName}"`}
+                                    title={t("tool.calling", { toolName })}
                                     type={toolPart.type as never}
                                     state={toolPart.state as never}
                                   />
@@ -4787,7 +4865,7 @@ export function HomeClient({
                           if (!reasoningTokens) return null;
                           return (
                             <div className="text-xs text-muted-foreground">
-                              {" "}Reasoning tokens: {reasoningTokens}
+                              {t("reasoning.tokens", { count: reasoningTokens })}
                             </div>
                           );
                         })() : null}
@@ -4795,7 +4873,7 @@ export function HomeClient({
 	                        {role === "user" ? (
 	                          <MessageActions className="justify-end opacity-60 transition-opacity hover:opacity-100 group-hover:opacity-100">
 	                            <MessageAction
-	                              aria-label="Memorize this"
+	                              aria-label={t("message.action.memorize")}
 	                              data-testid={`message-action:memorize:${id}`}
 	                              disabled={
 	                                status !== "ready" ||
@@ -4810,12 +4888,12 @@ export function HomeClient({
                                   metadata,
                                 })
                               }
-                              tooltip="Memorize this"
+                              tooltip={t("message.action.memorize")}
                             >
                               <BookmarkIcon />
                             </MessageAction>
 	                            <MessageAction
-	                              aria-label="Edit message"
+	                              aria-label={t("message.action.edit")}
 	                              data-testid={`message-action:edit:${id}`}
 	                              disabled={status !== "ready" || isTemporaryChat}
 	                              onClick={() =>
@@ -4826,7 +4904,7 @@ export function HomeClient({
                                   metadata,
                                 })
                               }
-                              tooltip="Edit & fork"
+                              tooltip={t("message.action.edit_fork")}
                             >
                               <PencilIcon />
                             </MessageAction>
@@ -4850,7 +4928,7 @@ export function HomeClient({
                               }}
                               type="button"
                             >
-                              Prev
+                              {t("common.prev")}
                             </button>
                             <div>
                               {variantIndex + 1} / {sortedVariants.length}
@@ -4867,7 +4945,7 @@ export function HomeClient({
                               }}
                               type="button"
                             >
-                              Next
+                              {t("common.next")}
                             </button>
                           </div>
                         ) : null}
@@ -4881,7 +4959,7 @@ export function HomeClient({
                     <MessageContent>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader size={14} />
-                        <span>Thinking…</span>
+                        <span>{t("reasoning.thinking")}</span>
                       </div>
                     </MessageContent>
                   </Message>
@@ -4889,7 +4967,7 @@ export function HomeClient({
 
                 {error ? (
                   <div className="rounded-md border bg-card p-4 text-sm text-muted-foreground">
-                    <div>Something went wrong.</div>
+                    <div>{t("common.something_went_wrong")}</div>
                     <button
                       className="mt-2 underline underline-offset-4"
                       onClick={() => {
@@ -4899,7 +4977,7 @@ export function HomeClient({
                       }}
                       type="button"
                     >
-                      Retry
+                      {t("common.retry")}
                     </button>
                   </div>
                 ) : null}
@@ -4951,7 +5029,7 @@ export function HomeClient({
                       } else if (activeChat) {
                         form.set("chatId", activeChat.id);
                       } else {
-                        throw new Error("Missing chatId.");
+                        throw new Error(t("error.chat.missing_chat_id"));
                       }
 
                       for (const file of rawFiles) {
@@ -4975,7 +5053,9 @@ export function HomeClient({
                         | null;
 
                       if (!res.ok || !Array.isArray(data?.attachments)) {
-                        throw new Error(data?.error || "Failed to upload attachments.");
+                        throw new Error(
+                          data?.error || t("error.attachments.upload_failed")
+                        );
                       }
 
                       uploadedParts = data.attachments
@@ -5004,7 +5084,9 @@ export function HomeClient({
                     queueScrollTranscriptToBottom("smooth");
                   } catch (err) {
                     setAttachmentUploadError(
-                      err instanceof Error ? err.message : "Failed to upload attachments."
+                      err instanceof Error
+                        ? err.message
+                        : t("error.attachments.upload_failed")
                     );
                     throw err;
                   } finally {
@@ -5039,11 +5121,11 @@ export function HomeClient({
                 <div className="flex items-center justify-end gap-2 pt-2 pr-2">
                   {status === "ready" && messages.some((m) => m.role === "user") ? (
                     <button
-                      aria-label="Regenerate"
+                      aria-label={t("composer.regenerate.aria")}
                       className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent"
                       data-testid="composer:regenerate"
                       onClick={() => regenerateLatest()}
-                      title="Regenerate"
+                      title={t("composer.regenerate.aria")}
                       type="button"
                     >
                       <RotateCcwIcon className="size-4" />
@@ -5057,7 +5139,7 @@ export function HomeClient({
                       onClick={() => stop()}
                       type="button"
                     >
-                      Stop
+                      {t("common.stop")}
                     </button>
                   )}
 
@@ -5074,9 +5156,9 @@ export function HomeClient({
                   <div className="flex min-w-0 items-center gap-2">
                     <PromptInputActionMenu>
                       <PromptInputActionMenuTrigger
-                        aria-label="Add attachments"
+                        aria-label={t("composer.attachments.menu.aria")}
                         disabled={status !== "ready"}
-                        title="Add files"
+                        title={t("composer.attachments.menu.title")}
                       />
                       <PromptInputActionMenuContent>
                         <PromptInputActionAddAttachments />
@@ -5086,7 +5168,7 @@ export function HomeClient({
                     {selectedModel?.capabilities?.reasoning &&
                     reasoningOptions.length > 0 ? (
                       <div className="min-w-0 overflow-x-auto">
-                        <ButtonGroup aria-label="Reasoning level">
+                        <ButtonGroup aria-label={t("composer.reasoning_level.aria")}>
                           {(
                             [
                               "auto" as const,
@@ -5095,14 +5177,14 @@ export function HomeClient({
                           ).map((option) => {
                             const label =
                               option === "auto"
-                                ? "Auto"
+                                ? t("composer.reasoning_level.auto")
                                 : option === "minimal"
-                                  ? "Min"
+                                  ? t("composer.reasoning_level.minimal")
                                   : option === "medium"
-                                    ? "Med"
+                                    ? t("composer.reasoning_level.medium")
                                     : option === "high"
-                                      ? "High"
-                                      : "Low";
+                                      ? t("composer.reasoning_level.high")
+                                      : t("composer.reasoning_level.low");
 
                             const selected = reasoningEffort === option;
                             const dim = !canSend || !chatRequestBody;
@@ -5155,12 +5237,12 @@ export function HomeClient({
 
                   {!isTemporaryChat && activeChat ? (
 	                    <button
-	                      aria-label="Chat settings"
+	                      aria-label={t("chat.settings.title")}
 	                      className="inline-flex size-10 items-center justify-center rounded-md border text-sm hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 	                      data-testid="chat:settings-open"
 	                      disabled={status !== "ready" || !canManageActiveChat}
 	                      onClick={() => openChatSettings()}
-	                      title="Chat settings"
+	                      title={t("chat.settings.title")}
 	                      type="button"
 	                    >
                       <SlidersHorizontalIcon className="size-4" />
@@ -5188,7 +5270,7 @@ export function HomeClient({
 	            data-testid="sidebar:drawer"
 	            showCloseButton={false}
 	          >
-		            <DialogTitle className="sr-only">Menu</DialogTitle>
+		            <DialogTitle className="sr-only">{t("sidebar.menu.sr_title")}</DialogTitle>
 		            {renderSidebar("drawer")}
 		          </DialogContent>
 	        </Dialog>
@@ -5196,7 +5278,7 @@ export function HomeClient({
       <Dialog onOpenChange={setCreateOpen} open={createOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New profile</DialogTitle>
+            <DialogTitle>{t("profile.new.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -5210,7 +5292,7 @@ export function HomeClient({
                   createProfile();
                 }
               }}
-              placeholder="Profile name"
+              placeholder={t("profile.name.placeholder")}
               value={newProfileName}
             />
 
@@ -5225,7 +5307,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="profile:create-submit"
@@ -5233,7 +5315,7 @@ export function HomeClient({
                 onClick={() => createProfile()}
                 type="button"
               >
-                Create
+                {t("common.create")}
               </Button>
             </div>
           </div>
@@ -5243,7 +5325,7 @@ export function HomeClient({
 	      <Dialog onOpenChange={setEditOpen} open={editOpen}>
 	        <DialogContent>
 	          <DialogHeader>
-	            <DialogTitle>Edit message (fork)</DialogTitle>
+	            <DialogTitle>{t("chat.edit_fork.title")}</DialogTitle>
 	          </DialogHeader>
 
 	          <div className="space-y-3">
@@ -5267,7 +5349,7 @@ export function HomeClient({
 	                type="button"
 	                variant="ghost"
 	              >
-	                Cancel
+	                {t("common.cancel")}
 	              </Button>
 	              <Button
 	                disabled={!editText.trim() || editing}
@@ -5275,7 +5357,7 @@ export function HomeClient({
 	                onClick={() => forkFromEdit()}
 	                type="button"
 	              >
-	                Fork chat
+	                {t("chat.edit_fork.submit")}
               </Button>
             </div>
           </div>
@@ -5288,32 +5370,64 @@ export function HomeClient({
             data-testid="profile:settings-dialog"
           >
 	          <DialogHeader>
-	            <DialogTitle>Profile settings</DialogTitle>
+	            <DialogTitle>{t("profile.settings.title")}</DialogTitle>
 	          </DialogHeader>
 
 	          <div className="min-h-0 overflow-y-auto pr-1">
               <div className="space-y-4 pr-3">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">
+                    {t("profile.language.label")}
+                  </div>
+                  <Select
+                    onValueChange={(value) =>
+                      setUiLanguageDraft(value as Profile["uiLanguage"])
+                    }
+                    value={uiLanguageDraft}
+                  >
+                    <SelectTrigger
+                      className="h-9"
+                      data-testid="profile:ui-language-trigger"
+                      suppressHydrationWarning
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+	                    <SelectContent>
+	                      <SelectItem data-testid="profile:ui-language-option:en" value="en">
+	                        {t("profile.language.option.en")}
+	                      </SelectItem>
+	                      <SelectItem data-testid="profile:ui-language-option:nl" value="nl">
+	                        {t("profile.language.option.nl")}
+	                      </SelectItem>
+	                    </SelectContent>
+	                  </Select>
+                </div>
+
 	              <div className="space-y-2">
-	                <div className="text-sm font-medium">Custom instructions</div>
+	                <div className="text-sm font-medium">
+                    {t("profile.custom_instructions.label")}
+                  </div>
 	                <Textarea
 	                  className="min-h-[8rem]"
 	                  data-testid="profile:instructions"
 	                  onChange={(e) => setProfileInstructionsDraft(e.target.value)}
-	                  placeholder="How should RemcoChat behave for this profile?"
+	                  placeholder={t("profile.custom_instructions.placeholder")}
 	                  value={profileInstructionsDraft}
 	                />
 	              </div>
 
 	            <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2">
 	              <div>
-	                <div className="text-sm font-medium">Memory</div>
+	                <div className="text-sm font-medium">
+                    {t("profile.memory.label")}
+                  </div>
 	                <div className="text-xs text-muted-foreground">
-	                  Saved after confirmation (ask me to remember/save in chat or use the Memorize action).
+	                  {t("profile.memory.description")}
 	                </div>
 	              </div>
 	              <button
 	                aria-checked={memoryEnabledDraft}
-	                aria-label="Toggle memory"
+	                aria-label={t("profile.memory.toggle.aria")}
 	                className={
 	                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors " +
 	                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
@@ -5322,7 +5436,11 @@ export function HomeClient({
 	                data-testid="profile:memory-toggle"
 	                onClick={() => setMemoryEnabledDraft((v) => !v)}
 	                role="switch"
-	                title={memoryEnabledDraft ? "Memory: On" : "Memory: Off"}
+	                title={
+                    memoryEnabledDraft
+                      ? t("profile.memory.toggle.title_on")
+                      : t("profile.memory.toggle.title_off")
+                  }
 	                type="button"
 	              >
 	                <span
@@ -5336,10 +5454,12 @@ export function HomeClient({
 
             {memoryEnabledDraft ? (
               <div className="space-y-2">
-                <div className="text-sm font-medium">Saved memories</div>
+                <div className="text-sm font-medium">
+                  {t("profile.memory.saved.title")}
+                </div>
                 {memoryItems.length === 0 ? (
                   <div className="text-sm text-muted-foreground">
-                    No memories yet.
+                    {t("profile.memory.saved.empty")}
                   </div>
                 ) : (
 	                  <div className="space-y-2">
@@ -5360,7 +5480,7 @@ export function HomeClient({
 	                          type="button"
 	                          variant="ghost"
 	                        >
-                          Delete
+                          {t("common.delete")}
                         </Button>
                       </div>
                     ))}
@@ -5374,9 +5494,9 @@ export function HomeClient({
             ) : null}
 
             <div className="rounded-md border border-destructive/30 bg-card p-3">
-              <div className="text-sm font-medium">Danger zone</div>
+              <div className="text-sm font-medium">{t("profile.danger.title")}</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Deleting a profile deletes all its chats, messages, and memories.
+                {t("profile.danger.description")}
               </div>
               <div className="mt-3 flex justify-end">
                 <Button
@@ -5386,7 +5506,7 @@ export function HomeClient({
                   type="button"
                   variant="destructive"
                 >
-                  Delete profile
+                  {t("profile.delete.button")}
                 </Button>
               </div>
             </div>
@@ -5399,7 +5519,7 @@ export function HomeClient({
 	                  type="button"
 	                  variant="ghost"
 	                >
-	                  Cancel
+	                  {t("common.cancel")}
 	                </Button>
 	                <Button
 	                  disabled={settingsSaving}
@@ -5407,7 +5527,7 @@ export function HomeClient({
 	                  onClick={() => saveProfileSettings()}
 	                  type="button"
 	                >
-	                  Save
+	                  {t("common.save")}
 	                </Button>
 	              </div>
 	            </div>
@@ -5418,24 +5538,22 @@ export function HomeClient({
       <Dialog onOpenChange={setDeleteProfileOpen} open={deleteProfileOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete profile</DialogTitle>
+            <DialogTitle>{t("profile.delete.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              This cannot be undone. Type{" "}
-              <span className="font-medium text-foreground">
-                {activeProfile?.name ?? "the profile name"}
-              </span>{" "}
-              (or <span className="font-medium text-foreground">DELETE</span>) to
-              confirm.
+              {t("profile.delete.description", {
+                profileName:
+                  activeProfile?.name ?? t("profile.delete.fallback_name"),
+              })}
             </div>
 
             <Input
               autoFocus
               data-testid="profile:delete-confirm-input"
               onChange={(e) => setDeleteProfileConfirm(e.target.value)}
-              placeholder="Type profile name or DELETE"
+              placeholder={t("profile.delete.placeholder")}
               value={deleteProfileConfirm}
             />
 
@@ -5451,7 +5569,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="profile:delete-submit"
@@ -5468,7 +5586,7 @@ export function HomeClient({
                 type="button"
                 variant="destructive"
               >
-                Delete
+                {t("common.delete")}
               </Button>
             </div>
           </div>
@@ -5478,20 +5596,20 @@ export function HomeClient({
       <Dialog onOpenChange={setChatSettingsOpen} open={chatSettingsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Chat settings</DialogTitle>
+            <DialogTitle>{t("chat.settings.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
-              Applies starting with the next assistant response.
+              {t("chat.settings.note")}
             </div>
             <div className="space-y-2">
-              <div className="text-sm font-medium">Chat instructions</div>
+              <div className="text-sm font-medium">{t("chat.instructions.label")}</div>
               <Textarea
                 className="min-h-[8rem]"
                 data-testid="chat:instructions"
                 onChange={(e) => setChatInstructionsDraft(e.target.value)}
-                placeholder="Instructions applied only to this chat."
+                placeholder={t("chat.instructions.placeholder")}
                 value={chatInstructionsDraft}
               />
             </div>
@@ -5508,7 +5626,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 disabled={chatSettingsSaving}
@@ -5516,7 +5634,7 @@ export function HomeClient({
                 onClick={() => saveChatSettings()}
                 type="button"
               >
-                Save
+                {t("common.save")}
               </Button>
             </div>
           </div>
@@ -5542,23 +5660,21 @@ export function HomeClient({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Admin access</DialogTitle>
+            <DialogTitle>{t("admin_access.title")}</DialogTitle>
           </DialogHeader>
 
           {!lanAdminAccessEnabled ? (
             <div className="text-sm text-muted-foreground">
-              Admin access is not configured for LAN access.
+              {t("admin_access.not_configured")}
             </div>
           ) : (
             <div className="space-y-3">
               <div className="text-sm text-muted-foreground">
-                For safety, some admin features are protected by a shared admin token when you
-                access RemcoChat over the network. Enter the token for this server to unlock
-                admin-only features in this browser (including LAN-only tools).
+                {t("admin_access.description")}
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium">Admin token</div>
+                <div className="text-sm font-medium">{t("admin_access.token.label")}</div>
                 <Input
                   autoFocus
                   data-testid="bash-tools:lan-admin-token"
@@ -5574,7 +5690,7 @@ export function HomeClient({
                     type="button"
                     variant="secondary"
                   >
-                    {lanAdminTokenVisible ? "Hide" : "Show"}
+                    {lanAdminTokenVisible ? t("common.hide") : t("common.show")}
                   </Button>
                   <Button
 	                    onClick={() => {
@@ -5587,7 +5703,7 @@ export function HomeClient({
                     type="button"
                     variant="ghost"
                   >
-                    Clear
+                    {t("common.clear")}
                   </Button>
                 </div>
               </div>
@@ -5595,7 +5711,7 @@ export function HomeClient({
               <div className="flex items-start gap-3 rounded-md border bg-card px-3 py-2">
                 <button
                   aria-checked={lanAdminTokenRemember}
-                  aria-label="Remember token"
+                  aria-label={t("admin_access.remember.aria")}
                   className={
                     "relative mt-0.5 inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors " +
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
@@ -5605,8 +5721,8 @@ export function HomeClient({
                   role="switch"
                   title={
                     lanAdminTokenRemember
-                      ? "Remember: On (localStorage)"
-                      : "Remember: Off (session only)"
+                      ? t("admin_access.remember.title_on")
+                      : t("admin_access.remember.title_off")
                   }
                   type="button"
                 >
@@ -5618,19 +5734,17 @@ export function HomeClient({
                   />
                 </button>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">Remember on this device</div>
+                  <div className="text-sm font-medium">{t("admin_access.remember.title")}</div>
                   <div className="text-xs text-muted-foreground">
-                    Off stores in sessionStorage (cleared when the tab closes). On
-                    stores in localStorage (persists across restarts).
+                    {t("admin_access.remember.description")}
                   </div>
                 </div>
               </div>
 
 	              <div className="rounded-md border bg-card p-3">
-	                <div className="text-sm font-medium">Verification</div>
+	                <div className="text-sm font-medium">{t("admin_access.verification.title")}</div>
 	                <div className="mt-1 text-xs text-muted-foreground">
-	                  LAN admin access check + bash tools header (from the last{" "}
-	                  <code>/api/chat</code> response):
+	                  {t("admin_access.verification.description")}
 	                </div>
 	                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
 	                  <code className="rounded bg-muted px-2 py-1">
@@ -5638,14 +5752,17 @@ export function HomeClient({
 	                    {bashToolsEnabledHeader ?? "?"}
 	                  </code>
 	                  <code className="rounded bg-muted px-2 py-1">
-	                    token={hasLanAdminToken ? "present" : "absent"}
+	                    token=
+                      {hasLanAdminToken
+                        ? t("admin_access.verification.token_present")
+                        : t("admin_access.verification.token_absent")}
 	                  </code>
 	                  <code className="rounded bg-muted px-2 py-1">
 	                    admin=
 	                    {lanAdminTokenAllowed === true
-	                      ? "allowed"
+	                      ? t("admin_access.verification.allowed")
 	                      : lanAdminTokenAllowed === false
-	                        ? "denied"
+	                        ? t("admin_access.verification.denied")
 	                        : "?"}
 	                    {lanAdminTokenAllowedReason ? ` (${lanAdminTokenAllowedReason})` : ""}
 	                  </code>
@@ -5658,7 +5775,7 @@ export function HomeClient({
                   type="button"
                   variant="ghost"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
 	                  onClick={() => {
@@ -5670,7 +5787,7 @@ export function HomeClient({
 	                  }}
                   type="button"
                 >
-                  Save locally
+                  {t("admin_access.save_locally")}
                 </Button>
               </div>
             </div>
@@ -5681,7 +5798,7 @@ export function HomeClient({
       <Dialog onOpenChange={setRenameChatOpen} open={renameChatOpen}>
         <DialogContent data-testid="chat:rename-dialog">
           <DialogHeader>
-            <DialogTitle>Rename chat</DialogTitle>
+            <DialogTitle>{t("chat.rename.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -5707,7 +5824,7 @@ export function HomeClient({
                   }
                 }
               }}
-              placeholder="Chat title"
+              placeholder={t("chat.rename.placeholder")}
               value={renameChatDraft}
             />
 
@@ -5727,7 +5844,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="chat:rename-save"
@@ -5735,7 +5852,7 @@ export function HomeClient({
                 onClick={() => renameChatTitle()}
                 type="button"
               >
-                Save
+                {t("common.save")}
               </Button>
             </div>
           </div>
@@ -5745,7 +5862,7 @@ export function HomeClient({
       <Dialog onOpenChange={setNewFolderOpen} open={newFolderOpen}>
         <DialogContent data-testid="folder:new-dialog">
           <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
+            <DialogTitle>{t("folder.new.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -5767,7 +5884,7 @@ export function HomeClient({
                   createFolderByName();
                 }
               }}
-              placeholder="Folder name"
+              placeholder={t("folder.name.placeholder")}
               value={newFolderDraft}
             />
 
@@ -5783,7 +5900,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="folder:new-create"
@@ -5797,7 +5914,7 @@ export function HomeClient({
                 onClick={() => createFolderByName()}
                 type="button"
               >
-                Create
+                {t("common.create")}
               </Button>
             </div>
           </div>
@@ -5807,7 +5924,7 @@ export function HomeClient({
       <Dialog onOpenChange={setRenameFolderOpen} open={renameFolderOpen}>
         <DialogContent data-testid="folder:rename-dialog">
           <DialogHeader>
-            <DialogTitle>Rename folder</DialogTitle>
+            <DialogTitle>{t("folder.rename.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -5829,7 +5946,7 @@ export function HomeClient({
                   saveRenameFolder();
                 }
               }}
-              placeholder="Folder name"
+              placeholder={t("folder.name.placeholder")}
               value={renameFolderDraft}
             />
 
@@ -5845,7 +5962,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="folder:rename-save"
@@ -5860,7 +5977,7 @@ export function HomeClient({
                 onClick={() => saveRenameFolder()}
                 type="button"
               >
-                Save
+                {t("common.save")}
               </Button>
             </div>
           </div>
@@ -5870,12 +5987,12 @@ export function HomeClient({
       <Dialog onOpenChange={setDeleteFolderOpen} open={deleteFolderOpen}>
         <DialogContent data-testid="folder:delete-dialog">
           <DialogHeader>
-            <DialogTitle>Delete folder?</DialogTitle>
+            <DialogTitle>{t("folder.delete.confirm_title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              Chats in this folder will be moved to the root level.
+              {t("folder.delete.description")}
             </div>
 
             {deleteFolderName ? (
@@ -5896,7 +6013,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="folder:delete-confirm"
@@ -5910,7 +6027,7 @@ export function HomeClient({
                 type="button"
                 variant="destructive"
               >
-                Delete
+                {t("common.delete")}
               </Button>
             </div>
           </div>
@@ -5920,12 +6037,12 @@ export function HomeClient({
       <Dialog onOpenChange={setShareFolderOpen} open={shareFolderOpen}>
         <DialogContent data-testid="folder:share-dialog">
           <DialogHeader>
-            <DialogTitle>Share folder</DialogTitle>
+            <DialogTitle>{t("folder.share.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground">
-              This will share all chats in this folder.
+              {t("folder.share.description")}
             </div>
 
             {shareFolderName ? (
@@ -5952,7 +6069,7 @@ export function HomeClient({
                   confirmShareFolder();
                 }
               }}
-              placeholder="Target profile name or id"
+              placeholder={t("folder.share.placeholder")}
               value={shareFolderTarget}
             />
 
@@ -5968,7 +6085,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 data-testid="folder:share-submit"
@@ -5982,7 +6099,7 @@ export function HomeClient({
                 onClick={() => confirmShareFolder()}
                 type="button"
               >
-                Share
+                {t("folder.share")}
               </Button>
             </div>
           </div>
@@ -5992,7 +6109,7 @@ export function HomeClient({
       <Dialog onOpenChange={setManageSharingOpen} open={manageSharingOpen}>
         <DialogContent data-testid="folder:manage-sharing-dialog">
           <DialogHeader>
-            <DialogTitle>Manage sharing</DialogTitle>
+            <DialogTitle>{t("folder.manage_sharing")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -6003,7 +6120,9 @@ export function HomeClient({
             ) : null}
 
             {manageSharingLoading ? (
-              <div className="text-sm text-muted-foreground">Loading…</div>
+              <div className="text-sm text-muted-foreground">
+                {t("common.loading")}
+              </div>
             ) : null}
 
             {manageSharingError ? (
@@ -6012,7 +6131,7 @@ export function HomeClient({
 
             {!manageSharingLoading && manageSharingMembers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
-                Not shared with any profiles yet.
+                {t("folder.manage_sharing.empty")}
               </div>
             ) : null}
 
@@ -6034,7 +6153,7 @@ export function HomeClient({
                       type="button"
                       variant="destructive"
                     >
-                      Stop sharing
+                      {t("folder.manage_sharing.stop")}
                     </Button>
                   </div>
                 ))}
@@ -6049,7 +6168,7 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Close
+                {t("common.close")}
               </Button>
             </div>
           </div>
@@ -6059,7 +6178,7 @@ export function HomeClient({
       <Dialog onOpenChange={setMemorizeOpen} open={memorizeOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Memorize this</DialogTitle>
+            <DialogTitle>{t("memory.memorize.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -6067,7 +6186,7 @@ export function HomeClient({
               autoFocus
               className="min-h-[8rem]"
               onChange={(e) => setMemorizeText(e.target.value)}
-              placeholder="What should RemcoChat remember?"
+              placeholder={t("memory.memorize.placeholder")}
               value={memorizeText}
             />
 
@@ -6082,14 +6201,14 @@ export function HomeClient({
                 type="button"
                 variant="ghost"
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
               <Button
                 disabled={!memorizeText.trim() || memorizeSaving}
                 onClick={() => saveMemorize()}
                 type="button"
               >
-                Save memory
+                {t("memory.memorize.save")}
               </Button>
             </div>
           </div>
@@ -6099,15 +6218,14 @@ export function HomeClient({
       <Dialog onOpenChange={setAdminOpen} open={adminOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Admin</DialogTitle>
+            <DialogTitle>{t("admin.dialog.title")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <div className="text-sm font-medium">Backup</div>
+              <div className="text-sm font-medium">{t("admin.backup.title")}</div>
               <div className="text-sm text-muted-foreground">
-                Download a full JSON backup (profiles, chats, messages, variants,
-                memory).
+                {t("admin.backup.description")}
               </div>
               <div className="flex justify-end">
                 <Button
@@ -6116,22 +6234,23 @@ export function HomeClient({
                   type="button"
                   variant="secondary"
                 >
-                  Export all data
+                  {t("admin.backup.export")}
                 </Button>
               </div>
             </div>
 
             <div className="space-y-2 rounded-md border bg-card p-3">
-              <div className="text-sm font-medium text-destructive">Danger zone</div>
+              <div className="text-sm font-medium text-destructive">
+                {t("admin.danger.title")}
+              </div>
               <div className="text-sm text-muted-foreground">
-                This wipes the local database. Type <code>RESET</code> to enable
-                the button.
+                {t("admin.danger.description")}
               </div>
               <Input
                 autoComplete="off"
                 data-testid="admin:reset-confirm"
                 onChange={(e) => setAdminResetConfirm(e.target.value)}
-                placeholder="Type RESET"
+                placeholder={t("admin.danger.placeholder")}
                 value={adminResetConfirm}
               />
               <div className="flex justify-end">
@@ -6142,7 +6261,7 @@ export function HomeClient({
                   type="button"
                   variant="destructive"
                 >
-                  Reset all data
+                  {t("admin.danger.reset")}
                 </Button>
               </div>
             </div>
@@ -6153,7 +6272,7 @@ export function HomeClient({
 
             <div className="flex justify-end">
               <Button onClick={() => setAdminOpen(false)} type="button" variant="ghost">
-                Close
+                {t("common.close")}
               </Button>
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useI18n } from "@/components/i18n-provider";
 import type { AgendaItem, AgendaToolOutput } from "@/lib/types";
 import { CalendarDays, Share2, User, Users } from "lucide-react";
 
@@ -16,9 +17,9 @@ type AgendaCardProps = {
   output: AgendaToolOutput;
 };
 
-function formatDayLabel(date: Date) {
+function formatDayLabel(locale: string, date: Date) {
   // e.g. "Monday 12 September 2026" (uses viewer locale + timezone).
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -26,22 +27,22 @@ function formatDayLabel(date: Date) {
   }).format(date);
 }
 
-function formatTimeLabel(date: Date) {
+function formatTimeLabel(locale: string, date: Date) {
   // e.g. "12:15" (uses viewer locale + timezone).
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   }).format(date);
 }
 
-function formatTimeRangeLine(startAt: string, endAt: string) {
+function formatTimeRangeLine(locale: string, startAt: string, endAt: string) {
   const start = new Date(startAt);
   const end = new Date(endAt);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
 
-  const startTime = formatTimeLabel(start);
-  const endTime = formatTimeLabel(end);
+  const startTime = formatTimeLabel(locale, start);
+  const endTime = formatTimeLabel(locale, end);
 
   // Date is already shown in the day header. Keep this line time-only.
   const sameDay =
@@ -51,12 +52,12 @@ function formatTimeRangeLine(startAt: string, endAt: string) {
   if (sameDay) return `${startTime}–${endTime}`;
 
   // Cross-day items are rare; include just weekday labels to reduce ambiguity.
-  const startWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(start);
-  const endWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(end);
+  const startWeekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(start);
+  const endWeekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(end);
   return `${startWeekday} ${startTime}–${endWeekday} ${endTime}`;
 }
 
-function groupItemsByDay(items: AgendaItem[]) {
+function groupItemsByDay(locale: string, scheduledLabel: string, items: AgendaItem[]) {
   const groups = new Map<string, { key: string; label: string; items: AgendaItem[] }>();
   for (const item of items) {
     const start = new Date(item.startAt);
@@ -64,7 +65,7 @@ function groupItemsByDay(items: AgendaItem[]) {
     const key =
       item.viewerLocalDate ||
       (Number.isNaN(start.getTime()) ? item.startAt : start.toISOString().slice(0, 10));
-    const label = Number.isNaN(start.getTime()) ? "Scheduled" : formatDayLabel(start);
+    const label = Number.isNaN(start.getTime()) ? scheduledLabel : formatDayLabel(locale, start);
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
@@ -84,15 +85,35 @@ function normalizeItems(output: AgendaToolOutput) {
 }
 
 export function AgendaCard({ output }: AgendaCardProps) {
+  const { locale, t } = useI18n();
   const items = normalizeItems(output);
-  const dayGroups = groupItemsByDay(items);
+  const dayGroups = groupItemsByDay(locale, t("agenda.scheduled"), items);
   const isList = output.ok && output.action === "list";
   const headerNote = output.ok
     ? isList
       ? `${output.rangeLabel} (${output.timezone})`
       : output.message
     : output.error;
-  const actionLabel = output.ok ? output.action : "needs-detail";
+  const actionLabel = (() => {
+    if (!output.ok) return t("agenda.action.needs_detail");
+    const action = output.action;
+    switch (action) {
+      case "create":
+        return t("agenda.action.create");
+      case "update":
+        return t("agenda.action.update");
+      case "delete":
+        return t("agenda.action.delete");
+      case "share":
+        return t("agenda.action.share");
+      case "unshare":
+        return t("agenda.action.unshare");
+      case "list":
+        return t("agenda.action.list");
+      default:
+        return String(action);
+    }
+  })();
 
   return (
     <Card
@@ -102,14 +123,14 @@ export function AgendaCard({ output }: AgendaCardProps) {
       <CardHeader className="border-b border-border/60 bg-transparent pb-4">
         <div className="flex items-start gap-3">
           <div
-            aria-label="Agenda"
+            aria-label={t("agenda.title")}
             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-emerald-200/70 bg-emerald-100/70 shadow-xs dark:border-emerald-600/40 dark:bg-emerald-900/40"
           >
             <CalendarDays className="size-5 text-emerald-800/80 dark:text-emerald-100/80" />
           </div>
           <div className="min-w-0 flex-1">
             <CardTitle className="flex flex-wrap items-center gap-2">
-              <span className="min-w-0 truncate">Agenda</span>
+              <span className="min-w-0 truncate">{t("agenda.title")}</span>
               <Badge variant="secondary">{actionLabel}</Badge>
             </CardTitle>
             <CardDescription className="text-xs">{headerNote}</CardDescription>
@@ -120,10 +141,10 @@ export function AgendaCard({ output }: AgendaCardProps) {
         {items.length === 0 ? (
           <div className="rounded-md border border-dashed bg-background/60 px-3 py-3 text-sm text-muted-foreground">
             {isList
-              ? "No agenda items for this range. Try 'this week' or 'next 30 days'."
+              ? t("agenda.empty.range")
               : output.ok
-                ? "No agenda items to show."
-                : "No matching agenda items found."}
+                ? t("agenda.empty.ok")
+                : t("agenda.empty.not_found")}
           </div>
         ) : (
           dayGroups.map((group) => (
@@ -133,8 +154,9 @@ export function AgendaCard({ output }: AgendaCardProps) {
               </div>
               <div className="grid gap-2">
                 {group.items.map((item) => {
-                  const line = formatTimeRangeLine(item.startAt, item.endAt);
-                  const scopeLabel = item.scope === "shared" ? "Shared" : "Owned";
+                  const line = formatTimeRangeLine(locale, item.startAt, item.endAt);
+                  const scopeLabel =
+                    item.scope === "shared" ? t("common.shared") : t("common.owned");
                   const ScopeIcon = item.scope === "shared" ? Users : User;
                   return (
                     <div
@@ -172,12 +194,12 @@ export function AgendaCard({ output }: AgendaCardProps) {
                             {item.sharedWithCount > 0 ? (
                               <div
                                 className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/50 px-2 py-0.5 text-[11px] text-muted-foreground"
-                                title={`Shared with ${item.sharedWithCount}`}
+                                title={t("agenda.shared_with", { count: item.sharedWithCount })}
                               >
                                 <Share2 className="size-3.5" />
                                 <span>{item.sharedWithCount}</span>
                                 <span className="sr-only">
-                                  Shared with {item.sharedWithCount}
+                                  {t("agenda.shared_with", { count: item.sharedWithCount })}
                                 </span>
                               </div>
                             ) : null}
@@ -193,7 +215,7 @@ export function AgendaCard({ output }: AgendaCardProps) {
         )}
       </CardContent>
       <CardFooter className="border-t border-border/60 pt-4 text-xs text-muted-foreground">
-        Tip: ask “show my agenda”, “this week”, or “next 30 days”.
+        {t("agenda.tip")}
       </CardFooter>
     </Card>
   );

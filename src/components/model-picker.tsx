@@ -13,6 +13,7 @@ import {
 } from "@/components/ai-elements/model-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import { listModelCapabilityBadges, type ModelOption } from "@/lib/models";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
@@ -35,6 +36,7 @@ export function ModelPicker({
   className,
   triggerTestId,
 }: ModelPickerProps) {
+  const { t } = useI18n();
   const selected = options.find((m) => m.id === value);
   const [open, setOpen] = useState(false);
   const focusOnCloseRef = useRef(false);
@@ -80,12 +82,12 @@ export function ModelPicker({
           focusOnCloseRef.current = false;
           focusComposer();
         }}
-        title="Select model"
+        title={t("model.select.title")}
       >
-        <ModelSelectorInput placeholder="Search models…" />
+        <ModelSelectorInput placeholder={t("model.select.search")} />
         <ModelSelectorList>
-          <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-          <ModelSelectorGroup heading="Models">
+          <ModelSelectorEmpty>{t("model.select.empty")}</ModelSelectorEmpty>
+          <ModelSelectorGroup heading={t("model.select.group")}>
             {options.map((option) => (
               <ModelSelectorItem
                 data-testid={`model-option:${option.id}`}

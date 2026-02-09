@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,8 +22,8 @@ type ListsOverviewCardProps = ListsOverviewToolOutput & {
 };
 
 const kindMeta = {
-  todo: { label: "To-do", icon: ListChecks },
-  grocery: { label: "Boodschappen", icon: ShoppingBasket },
+  todo: { icon: ListChecks },
+  grocery: { icon: ShoppingBasket },
 } as const;
 
 function normalizeOutput(output: ListsOverviewToolOutput) {
@@ -41,6 +42,7 @@ function sortLists(lists: TaskListOverview[]) {
 }
 
 export function ListsOverviewCard(props: ListsOverviewCardProps) {
+  const { t } = useI18n();
   const { lists, counts } = useMemo(() => normalizeOutput(props), [props]);
   const canOpen = typeof props.onOpenList === "function";
   const owned = useMemo(
@@ -52,7 +54,9 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
     [lists]
   );
   const headerLabel =
-    counts.total === 1 ? "1 list" : `${counts.total.toString()} lists`;
+    counts.total === 1
+      ? t("lists_overview.count.one")
+      : t("lists_overview.count.other", { count: counts.total });
 
   return (
     <Card
@@ -62,20 +66,20 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
       <CardHeader className="border-b border-border/60 bg-transparent pb-4">
         <div className="flex items-start gap-3">
           <div
-            aria-label="Lists overview"
+            aria-label={t("lists_overview.title")}
             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-blue-200/70 bg-blue-100/70 shadow-xs dark:border-blue-600/40 dark:bg-blue-900/40"
           >
             <Users className="size-5 text-blue-800/80 dark:text-blue-100/80" />
           </div>
           <div className="min-w-0 flex-1">
             <CardTitle className="flex flex-wrap items-center gap-2">
-              <span className="min-w-0 truncate">Lists overview</span>
+              <span className="min-w-0 truncate">{t("lists_overview.title")}</span>
               <Badge variant="secondary">{headerLabel}</Badge>
             </CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
-              <span>{counts.owned} owned</span>
+              <span>{t("lists_overview.count.owned", { count: counts.owned })}</span>
               <span className="text-muted-foreground">•</span>
-              <span>{counts.shared} shared</span>
+              <span>{t("lists_overview.count.shared", { count: counts.shared })}</span>
             </CardDescription>
           </div>
         </div>
@@ -83,18 +87,22 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
       <CardContent className="grid gap-3 pt-4">
         {lists.length === 0 ? (
           <div className="rounded-md border border-dashed bg-background/60 px-3 py-3 text-sm text-muted-foreground">
-            No lists yet. Create one by chatting with RemcoChat.
+            {t("lists_overview.empty")}
           </div>
         ) : (
           <>
             {owned.length > 0 ? (
               <div className="grid gap-2">
                 <div className="text-xs font-semibold text-muted-foreground">
-                  Your lists
+                  {t("lists_overview.section.owned")}
                 </div>
                 {owned.map((list) => {
                   const meta = kindMeta[list.kind] ?? kindMeta.todo;
                   const Icon = meta.icon;
+                  const kindLabel =
+                    list.kind === "grocery"
+                      ? t("list.kind.grocery")
+                      : t("list.kind.todo");
                   return (
                     <div
                       className="flex items-center gap-3 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm"
@@ -102,7 +110,7 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                     >
                       {canOpen ? (
                         <Button
-                          aria-label={`Open ${list.name}`}
+                          aria-label={t("lists_overview.open_aria", { name: list.name })}
                           className="h-7 w-7"
                           data-testid={`lists-overview:open:${list.id}`}
                           onClick={() => props.onOpenList?.(list)}
@@ -119,7 +127,7 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                         {list.name}
                       </div>
                       <Badge className="text-[10px]" variant="outline">
-                        {meta.label}
+                        {kindLabel}
                       </Badge>
                     </div>
                   );
@@ -129,12 +137,16 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
             {shared.length > 0 ? (
               <div className="grid gap-2">
                 <div className="text-xs font-semibold text-muted-foreground">
-                  Shared with you
+                  {t("lists_overview.section.shared")}
                 </div>
                 {shared.map((list) => {
                   const meta = kindMeta[list.kind] ?? kindMeta.todo;
                   const Icon = meta.icon;
-                  const owner = list.ownerProfileName || "Unknown";
+                  const kindLabel =
+                    list.kind === "grocery"
+                      ? t("list.kind.grocery")
+                      : t("list.kind.todo");
+                  const owner = list.ownerProfileName || t("common.unknown");
                   return (
                     <div
                       className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm"
@@ -142,7 +154,7 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                     >
                       {canOpen ? (
                         <Button
-                          aria-label={`Open ${list.name}`}
+                          aria-label={t("lists_overview.open_aria", { name: list.name })}
                           className="h-7 w-7"
                           data-testid={`lists-overview:open:${list.id}`}
                           onClick={() => props.onOpenList?.(list)}
@@ -159,7 +171,7 @@ export function ListsOverviewCard(props: ListsOverviewCardProps) {
                         {list.name}
                       </div>
                       <Badge className="text-[10px]" variant="outline">
-                        {meta.label}
+                        {kindLabel}
                       </Badge>
                       <Badge className="text-[10px]" variant="secondary">
                         {owner}

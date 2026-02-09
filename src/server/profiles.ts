@@ -1,4 +1,5 @@
-import type { Profile } from "@/lib/types";
+import type { Profile, UiLanguage } from "@/lib/types";
+import { normalizeUiLanguage } from "@/lib/i18n";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getActiveProviderConfig } from "@/server/model-registry";
@@ -12,6 +13,7 @@ type ProfileRow = {
   custom_instructions: string;
   custom_instructions_revision: number;
   memory_enabled: 0 | 1;
+  ui_language: string;
 };
 
 function rowToProfile(row: ProfileRow): Profile {
@@ -28,14 +30,15 @@ function rowToProfile(row: ProfileRow): Profile {
     customInstructions: String(row.custom_instructions ?? ""),
     customInstructionsRevision: Number(row.custom_instructions_revision ?? 1),
     memoryEnabled: Boolean(row.memory_enabled),
+    uiLanguage: normalizeUiLanguage(row.ui_language, "en"),
   };
 }
 
-export function listProfiles(): Profile[] {
+export function listProfiles(opts?: { seedUiLanguage?: UiLanguage }): Profile[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled
+      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language
        FROM profiles
        ORDER BY created_at ASC`
     )
@@ -48,16 +51,21 @@ export function listProfiles(): Profile[] {
   const now = new Date().toISOString();
   const id = nanoid();
   const { provider } = getActiveProviderConfig();
+  const uiLanguage = normalizeUiLanguage(opts?.seedUiLanguage, "en");
 
   db.prepare(
-    `INSERT INTO profiles (id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled)
-     VALUES (?, ?, ?, ?, '', 1, 1)`
-  ).run(id, "Default", now, provider.defaultModelId);
+    `INSERT INTO profiles (id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language)
+     VALUES (?, ?, ?, ?, '', 1, 1, ?)`
+  ).run(id, "Default", now, provider.defaultModelId, uiLanguage);
 
   return listProfiles();
 }
 
-export function createProfile(input: { name: string; defaultModelId?: string }) {
+export function createProfile(input: {
+  name: string;
+  defaultModelId?: string;
+  uiLanguage?: UiLanguage;
+}) {
   const name = input.name.trim();
   if (name.length === 0) {
     throw new Error("Profile name is required.");
@@ -72,15 +80,16 @@ export function createProfile(input: { name: string; defaultModelId?: string }) 
     typeof input.defaultModelId === "string" && allowed.has(input.defaultModelId)
       ? input.defaultModelId
       : provider.defaultModelId;
+  const uiLanguage = normalizeUiLanguage(input.uiLanguage, "nl");
 
   const db = getDb();
   const now = new Date().toISOString();
   const id = nanoid();
 
   db.prepare(
-    `INSERT INTO profiles (id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled)
-     VALUES (?, ?, ?, ?, '', 1, 1)`
-  ).run(id, name, now, defaultModelId);
+    `INSERT INTO profiles (id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language)
+     VALUES (?, ?, ?, ?, '', 1, 1, ?)`
+  ).run(id, name, now, defaultModelId, uiLanguage);
 
   return getProfile(id);
 }
@@ -89,7 +98,7 @@ export function getProfile(id: string): Profile {
   const db = getDb();
   const row = db
     .prepare(
-      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled
+      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language
        FROM profiles WHERE id = ?`
     )
     .get(id) as ProfileRow | undefined;
@@ -100,7 +109,12 @@ export function getProfile(id: string): Profile {
 
 export function updateProfile(
   id: string,
-  patch: Partial<Pick<Profile, "name" | "defaultModelId" | "customInstructions" | "memoryEnabled">>
+  patch: Partial<
+    Pick<
+      Profile,
+      "name" | "defaultModelId" | "customInstructions" | "memoryEnabled" | "uiLanguage"
+    >
+  >
 ): Profile {
   const db = getDb();
   const current = getProfile(id);
@@ -140,11 +154,21 @@ export function updateProfile(
         ? 1
         : 0;
 
+  const uiLanguage = normalizeUiLanguage(patch.uiLanguage, current.uiLanguage);
+
   db.prepare(
     `UPDATE profiles
-     SET name = ?, default_model_id = ?, custom_instructions = ?, custom_instructions_revision = ?, memory_enabled = ?
+     SET name = ?, default_model_id = ?, custom_instructions = ?, custom_instructions_revision = ?, memory_enabled = ?, ui_language = ?
      WHERE id = ?`
-  ).run(name, defaultModelId, customInstructions, customInstructionsRevision, memoryEnabled, id);
+  ).run(
+    name,
+    defaultModelId,
+    customInstructions,
+    customInstructionsRevision,
+    memoryEnabled,
+    uiLanguage,
+    id
+  );
 
   return getProfile(id);
 }

@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 import { Brain } from "lucide-react";
 import { Streamdown } from "streamdown";
 
@@ -13,6 +14,7 @@ export type MemoryPromptCardData = {
 };
 
 export function MemoryPromptCard(props: MemoryPromptCardData) {
+  const { t } = useI18n();
   const content = (props.content ?? "").trim();
 
   return (
@@ -23,14 +25,14 @@ export function MemoryPromptCard(props: MemoryPromptCardData) {
       <CardContent className="px-4 py-3">
         <div className="flex items-start gap-3">
           <div
-            aria-label="Memory"
+            aria-label={t("memory.title")}
             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-amber-200/70 bg-amber-50/60 shadow-xs dark:border-amber-800/40 dark:bg-amber-950/20"
           >
             <Brain className="size-5 text-amber-900/70 dark:text-amber-100/70" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-amber-950/90 dark:text-amber-100/90">
-              Save this memory?
+              {t("memory.prompt.title")}
             </div>
             <Streamdown className="mt-1 text-sm text-amber-950/85 dark:text-amber-100/85 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
               {content || " "}
@@ -44,7 +46,7 @@ export function MemoryPromptCard(props: MemoryPromptCardData) {
                 size="sm"
                 type="button"
               >
-                Yes
+                {t("common.yes")}
               </Button>
               <Button
                 className="border-amber-200/70 bg-transparent text-amber-950/80 hover:bg-amber-200/60 dark:border-amber-800/40 dark:text-amber-100/80 dark:hover:bg-amber-900/40"
@@ -55,7 +57,7 @@ export function MemoryPromptCard(props: MemoryPromptCardData) {
                 type="button"
                 variant="outline"
               >
-                No
+                {t("common.no")}
               </Button>
             </div>
           </div>

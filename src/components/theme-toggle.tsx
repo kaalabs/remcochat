@@ -1,11 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 import { MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 export function ThemeToggle() {
+  const { t } = useI18n();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -40,7 +42,7 @@ export function ThemeToggle() {
   if (!mounted) {
     return (
       <Button
-        aria-label="Toggle theme"
+        aria-label={t("theme.toggle.aria")}
         className="h-8 w-8"
         size="icon"
         variant="ghost"
@@ -52,7 +54,7 @@ export function ThemeToggle() {
 
   return (
     <Button
-      aria-label="Toggle theme"
+      aria-label={t("theme.toggle.aria")}
       className="h-8 w-8"
       onClick={() => {
         setTheme(isDark ? "light" : "dark");

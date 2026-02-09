@@ -1,6 +1,7 @@
 "use client";
 
 import type { UrlSummaryToolOutput } from "@/ai/url-summary";
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +14,11 @@ import {
 } from "@/components/ui/card";
 import { ExternalLink, FileText } from "lucide-react";
 
-function formatFetchedAt(value: string) {
+function formatFetchedAt(locale: string, value: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -33,22 +34,26 @@ function formatDomain(value: string) {
   }
 }
 
-function formatLengthLabel(length: UrlSummaryToolOutput["length"]) {
+function formatLengthLabel(
+  t: ReturnType<typeof useI18n>["t"],
+  length: UrlSummaryToolOutput["length"]
+) {
   switch (length) {
     case "short":
-      return "Short";
+      return t("url_summary.length.short");
     case "long":
-      return "Long";
+      return t("url_summary.length.long");
     default:
-      return "Medium";
+      return t("url_summary.length.medium");
   }
 }
 
 export function UrlSummaryCard(props: UrlSummaryToolOutput) {
+  const { locale, t } = useI18n();
   const paragraphs = props.summary.split(/\n{2,}/).filter(Boolean);
   const bullets = Array.isArray(props.bullets) ? props.bullets : [];
   const domain = formatDomain(props.resolvedUrl || props.url);
-  const fetchedAt = formatFetchedAt(props.fetchedAt);
+  const fetchedAt = formatFetchedAt(locale, props.fetchedAt);
 
   return (
     <Card
@@ -63,7 +68,9 @@ export function UrlSummaryCard(props: UrlSummaryToolOutput) {
           <div className="min-w-0 flex-1">
             <CardTitle className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 truncate">{props.title}</span>
-              <Badge variant="secondary">{formatLengthLabel(props.length)}</Badge>
+              <Badge variant="secondary">
+                {formatLengthLabel(t, props.length)}
+              </Badge>
             </CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
               {props.siteName ? (
@@ -96,18 +103,20 @@ export function UrlSummaryCard(props: UrlSummaryToolOutput) {
       <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-4 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           {props.readingTimeMinutes ? (
-            <span>{props.readingTimeMinutes} min read</span>
+            <span>
+              {t("url_summary.reading_time", { minutes: props.readingTimeMinutes })}
+            </span>
           ) : null}
           {fetchedAt ? (
             <>
               <span className="text-muted-foreground">-</span>
-              <span>Fetched {fetchedAt}</span>
+              <span>{t("url_summary.fetched_at", { fetchedAt })}</span>
             </>
           ) : null}
         </div>
         <Button asChild size="sm" variant="secondary">
           <a href={props.resolvedUrl} rel="noreferrer" target="_blank">
-            Open link
+            {t("url_summary.open_link")}
             <ExternalLink className="size-3.5" />
           </a>
         </Button>

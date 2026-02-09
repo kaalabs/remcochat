@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ function hasTruncationNotice(value: string) {
 }
 
 function CopyTextButton(props: { text: string; label: string; className?: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const text = String(props.text ?? "");
 
@@ -54,7 +56,7 @@ function CopyTextButton(props: { text: string; label: string; className?: string
       variant="secondary"
     >
       <CopyIcon className="mr-1 size-3.5" />
-      {copied ? "Copied" : props.label}
+      {copied ? t("common.copied") : props.label}
     </Button>
   );
 }
@@ -65,6 +67,7 @@ function OutputBlock(props: {
   defaultOpen?: boolean;
   maxHeightClass?: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(Boolean(props.defaultOpen));
   const value = String(props.value ?? "");
   const hasValue = Boolean(value);
@@ -80,10 +83,14 @@ function OutputBlock(props: {
           >
             <ChevronDown className={cn("size-3.5 transition-transform", open ? "rotate-180" : "")} />
             <span>{props.label}</span>
-            {!hasValue ? <span className="text-muted-foreground/70">(empty)</span> : null}
+            {!hasValue ? (
+              <span className="text-muted-foreground/70">
+                ({t("common.empty")})
+              </span>
+            ) : null}
           </button>
         </CollapsibleTrigger>
-        {hasValue ? <CopyTextButton label="Copy" text={value} /> : null}
+        {hasValue ? <CopyTextButton label={t("common.copy")} text={value} /> : null}
       </div>
       <CollapsibleContent className="mt-2">
         <pre className={cn(maxHeightClass, "overflow-auto rounded-md border bg-background/60 p-3 text-xs leading-relaxed whitespace-pre font-mono")}>
@@ -95,10 +102,13 @@ function OutputBlock(props: {
 }
 
 export function SkillsToolCard(props: SkillsToolCardProps) {
+  const { t } = useI18n();
   const header = useMemo(() => {
-    if (props.kind === "activate") return { title: "Skills", subtitle: "activate" };
-    return { title: "Skills", subtitle: "readResource" };
-  }, [props.kind]);
+    if (props.kind === "activate") {
+      return { title: t("skills_tool.title"), subtitle: "activate" };
+    }
+    return { title: t("skills_tool.title"), subtitle: "readResource" };
+  }, [props.kind, t]);
 
   const details = useMemo(() => {
     if (props.kind === "activate") {
@@ -139,12 +149,14 @@ export function SkillsToolCard(props: SkillsToolCardProps) {
               <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                 <span>{header.title}</span>
                 <Badge variant="secondary">{header.subtitle}</Badge>
-                {details.truncated ? <Badge variant="outline">Truncated</Badge> : null}
+                {details.truncated ? (
+                  <Badge variant="outline">{t("skills_tool.truncated")}</Badge>
+                ) : null}
                 {props.state === "running" ? (
-                  <Badge variant="outline">Running…</Badge>
+                  <Badge variant="outline">{t("common.running_ellipsis")}</Badge>
                 ) : props.state === "error" ? (
                   <Badge className="border-destructive/50 text-destructive" variant="outline">
-                    Error
+                    {t("common.error")}
                   </Badge>
                 ) : null}
               </CardTitle>
@@ -155,7 +167,11 @@ export function SkillsToolCard(props: SkillsToolCardProps) {
           </div>
           {props.state === "ok" ? (
             <CopyTextButton
-              label={props.kind === "activate" ? "Copy SKILL.md" : "Copy content"}
+              label={
+                props.kind === "activate"
+                  ? t("skills_tool.copy_skill_md")
+                  : t("skills_tool.copy_content")
+              }
               text={details.content}
             />
           ) : null}
@@ -173,20 +189,20 @@ export function SkillsToolCard(props: SkillsToolCardProps) {
             {props.kind === "activate" ? (
               <OutputBlock
                 defaultOpen={details.defaultOpen}
-                label="SKILL.md body"
+                label={t("skills_tool.output.skill_md_body")}
                 value={details.content}
               />
             ) : (
               <OutputBlock
                 defaultOpen={details.defaultOpen}
-                label="content"
+                label={t("skills_tool.output.content")}
                 value={details.content}
               />
             )}
             {props.kind === "activate" ? (
               <OutputBlock
                 defaultOpen={false}
-                label="frontmatter (JSON)"
+                label={t("skills_tool.output.frontmatter_json")}
                 maxHeightClass="max-h-72"
                 value={JSON.stringify(details.frontmatter ?? {}, null, 2)}
               />

@@ -1,5 +1,7 @@
 import type { LanguageModelUsage } from "ai";
 
+export type UiLanguage = "en" | "nl";
+
 export type Profile = {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export type Profile = {
   customInstructions: string;
   customInstructionsRevision: number;
   memoryEnabled: boolean;
+  uiLanguage: UiLanguage;
 };
 
 export type Chat = {

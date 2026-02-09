@@ -1,4 +1,5 @@
 import { deleteProfile, listProfiles, updateProfile } from "@/server/profiles";
+import { parseUiLanguage } from "@/lib/i18n";
 
 export async function PATCH(
   req: Request,
@@ -10,6 +11,7 @@ export async function PATCH(
     defaultModelId?: string;
     customInstructions?: string;
     memoryEnabled?: boolean;
+    uiLanguage?: string;
   };
 
   try {
@@ -18,6 +20,7 @@ export async function PATCH(
       defaultModelId: body.defaultModelId,
       customInstructions: body.customInstructions,
       memoryEnabled: body.memoryEnabled,
+      uiLanguage: parseUiLanguage(body.uiLanguage) ?? undefined,
     });
     return Response.json({ profile });
   } catch (err) {

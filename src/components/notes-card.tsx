@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,10 +32,10 @@ function normalizeOutput(output: NotesToolOutput): NotesState {
   };
 }
 
-function formatTimestamp(value: string) {
+function formatTimestamp(locale: string, value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -43,6 +44,7 @@ function formatTimestamp(value: string) {
 }
 
 export function NotesCard(props: NotesCardProps) {
+  const { locale, t } = useI18n();
   const [state, setState] = useState<NotesState>(() => normalizeOutput(props));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,9 @@ export function NotesCard(props: NotesCardProps) {
   const notes = state.notes ?? [];
   const noteCount = state.totalCount || notes.length;
   const headerLabel =
-    noteCount === 1 ? "1 note" : `${noteCount.toString()} notes`;
+    noteCount === 1
+      ? t("notes.count.one")
+      : t("notes.count.other", { count: noteCount });
 
   const canDelete = Boolean(props.profileId) && !saving;
 
@@ -91,11 +95,13 @@ export function NotesCard(props: NotesCardProps) {
       });
       const data = (await res.json()) as NotesToolOutput & { error?: string };
       if (!res.ok || !data.notes) {
-        throw new Error(data.error || "Failed to update notes.");
+        throw new Error(data.error || t("notes.error.update_failed"));
       }
       setState(normalizeOutput(data));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update notes.");
+      setError(
+        err instanceof Error ? err.message : t("notes.error.update_failed")
+      );
     } finally {
       setSaving(false);
     }
@@ -117,20 +123,22 @@ export function NotesCard(props: NotesCardProps) {
       <CardHeader className="border-b border-border/60 bg-transparent pb-4">
         <div className="flex items-start gap-3">
           <div
-            aria-label="Notes"
+            aria-label={t("notes.title")}
             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-rose-200/70 bg-rose-100/70 shadow-xs dark:border-rose-600/40 dark:bg-rose-900/40"
           >
             <PenLine className="size-5 text-rose-800/80 dark:text-rose-100/80" />
           </div>
           <div className="min-w-0 flex-1">
             <CardTitle className="flex flex-wrap items-center gap-2">
-              <span className="min-w-0 truncate">Quick notes</span>
+              <span className="min-w-0 truncate">{t("notes.title")}</span>
               <Badge variant="secondary">{headerLabel}</Badge>
             </CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
               <span>
-                Showing latest {Math.min(notes.length, state.limit)} of{" "}
-                {noteCount}
+                {t("notes.showing_latest", {
+                  shown: Math.min(notes.length, state.limit),
+                  total: noteCount,
+                })}
               </span>
             </CardDescription>
           </div>
@@ -139,7 +147,7 @@ export function NotesCard(props: NotesCardProps) {
       <CardContent className="grid gap-2 pt-4">
         {notes.length === 0 ? (
           <div className="rounded-md border border-dashed bg-background/60 px-3 py-3 text-sm text-muted-foreground">
-            No notes yet. Add one by chatting with RemcoChat.
+            {t("notes.empty")}
           </div>
         ) : (
           items.map((note) => (
@@ -154,7 +162,7 @@ export function NotesCard(props: NotesCardProps) {
                       #{note.index}
                     </Badge>
                     <span className="truncate font-semibold">
-                      {note.title || "Untitled note"}
+                      {note.title || t("notes.untitled")}
                     </span>
                   </div>
                   {note.body ? (
@@ -164,6 +172,7 @@ export function NotesCard(props: NotesCardProps) {
                   ) : null}
                 </div>
                 <Button
+                  aria-label={t("notes.delete.aria")}
                   className="text-muted-foreground hover:text-foreground"
                   data-testid={`note:delete:${note.id}`}
                   disabled={!canDelete}
@@ -176,14 +185,14 @@ export function NotesCard(props: NotesCardProps) {
                 </Button>
               </div>
               <div className="text-[11px] text-muted-foreground">
-                {formatTimestamp(note.updatedAt) || "Just now"}
+                {formatTimestamp(locale, note.updatedAt) || t("notes.just_now")}
               </div>
             </div>
           ))
         )}
       </CardContent>
       <CardFooter className="border-t border-border/60 pt-4 text-xs text-muted-foreground">
-        Add notes with “note this: …” or ask to show notes.
+        {t("notes.tip")}
       </CardFooter>
       {error ? (
         <div className="border-t border-border/60 px-4 py-2 text-xs text-destructive">

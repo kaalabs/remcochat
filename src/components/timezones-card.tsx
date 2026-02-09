@@ -1,6 +1,7 @@
 "use client";
 
 import type { TimezonesToolOutput } from "@/ai/timezones";
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -11,17 +12,13 @@ import {
 } from "@/components/ui/card";
 import { Clock3 } from "lucide-react";
 
-function dayDiffLabel(dayDiff: number) {
-  if (dayDiff > 0) return "Tomorrow";
-  if (dayDiff < 0) return "Yesterday";
-  return "";
-}
-
 export function TimezonesCard(props: TimezonesToolOutput) {
+  const { t } = useI18n();
   const entries = Array.isArray(props.entries) ? props.entries : [];
   const referenceEntry =
     entries.find((entry) => entry.isReference) ?? entries[0];
-  const modeLabel = props.mode === "converted" ? "Converted" : "Now";
+  const modeLabel =
+    props.mode === "converted" ? t("timezones.mode.converted") : t("timezones.mode.now");
 
   return (
     <Card
@@ -31,7 +28,7 @@ export function TimezonesCard(props: TimezonesToolOutput) {
       <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border/60 bg-transparent pb-4">
         <div className="min-w-0 flex-1 grid gap-1">
           <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
-            Timezones <Badge variant="secondary">{modeLabel}</Badge>
+            {t("timezones.title")} <Badge variant="secondary">{modeLabel}</Badge>
           </CardTitle>
           <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
             <span className="min-w-0 truncate">
@@ -52,7 +49,12 @@ export function TimezonesCard(props: TimezonesToolOutput) {
       </CardHeader>
       <CardContent className="grid gap-2">
         {entries.map((entry) => {
-          const diffLabel = dayDiffLabel(entry.dayDiff);
+          const diffLabel =
+            entry.dayDiff > 0
+              ? t("timezones.day_diff.tomorrow")
+              : entry.dayDiff < 0
+                ? t("timezones.day_diff.yesterday")
+                : "";
           return (
             <div
               className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-2 text-sm ${
@@ -70,7 +72,7 @@ export function TimezonesCard(props: TimezonesToolOutput) {
                       className="border-emerald-300/70 bg-emerald-50/60 text-emerald-900 dark:border-emerald-200/50 dark:bg-emerald-500/10 dark:text-emerald-100"
                       variant="outline"
                     >
-                      Base
+                      {t("common.base")}
                     </Badge>
                   ) : null}
                 </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/components/i18n-provider";
 import { useState } from "react";
 
 type StaticMapPreviewProps = {
@@ -12,6 +13,7 @@ type StaticMapPreviewProps = {
 };
 
 export function StaticMapPreview(props: StaticMapPreviewProps) {
+  const { t } = useI18n();
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
@@ -22,7 +24,7 @@ export function StaticMapPreview(props: StaticMapPreviewProps) {
           "flex items-center justify-center bg-muted/30 text-xs text-muted-foreground"
         )}
       >
-        Map preview unavailable
+        {t("map.preview.unavailable")}
       </div>
     );
   }

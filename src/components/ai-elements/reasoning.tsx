@@ -6,6 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useI18n } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
@@ -115,19 +116,23 @@ export type ReasoningTriggerProps = ComponentProps<typeof CollapsibleTrigger> & 
   getThinkingMessage?: (isStreaming: boolean, duration?: number) => ReactNode;
 };
 
-const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
-  if (isStreaming || duration === 0) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>;
-  }
-  if (duration === undefined) {
-    return <p>Thought for a few seconds</p>;
-  }
-  return <p>Thought for {duration} seconds</p>;
-};
-
 export const ReasoningTrigger = memo(
-  ({ className, children, getThinkingMessage = defaultGetThinkingMessage, ...props }: ReasoningTriggerProps) => {
+  ({ className, children, getThinkingMessage, ...props }: ReasoningTriggerProps) => {
+    const { t } = useI18n();
     const { isStreaming, isOpen, duration } = useReasoning();
+
+    const defaultThinkingMessage = () => {
+      if (isStreaming || duration === 0) {
+        return <Shimmer duration={1}>{t("reasoning.thinking")}</Shimmer>;
+      }
+      if (duration === undefined) {
+        return <p>{t("reasoning.thought_few_seconds")}</p>;
+      }
+      if (duration === 1) {
+        return <p>{t("reasoning.thought_one_second")}</p>;
+      }
+      return <p>{t("reasoning.thought_seconds", { seconds: duration })}</p>;
+    };
 
     return (
       <CollapsibleTrigger
@@ -140,7 +145,9 @@ export const ReasoningTrigger = memo(
         {children ?? (
           <>
             <BrainIcon className="size-4" />
-            {getThinkingMessage(isStreaming, duration)}
+            {getThinkingMessage
+              ? getThinkingMessage(isStreaming, duration)
+              : defaultThinkingMessage()}
             <ChevronDownIcon
               className={cn(
                 "size-4 transition-transform",

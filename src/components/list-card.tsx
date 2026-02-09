@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +28,6 @@ type ListCardProps = {
 
 const listKindMeta = {
   todo: {
-    label: "To-do",
     accent:
       "border-yellow-200/70 bg-yellow-50/85 dark:border-yellow-400/55 dark:bg-yellow-500/15",
     iconBg:
@@ -40,7 +40,6 @@ const listKindMeta = {
     icon: ListChecks,
   },
   grocery: {
-    label: "Boodschappen",
     accent:
       "border-yellow-300/70 bg-yellow-50/90 dark:border-yellow-500/60 dark:bg-yellow-500/20",
     iconBg:
@@ -64,6 +63,7 @@ function normalizeList(list: TaskList) {
 }
 
 export function ListCard({ list, profileId }: ListCardProps) {
+  const { t } = useI18n();
   const [state, setState] = useState<TaskList>(() => normalizeList(list));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +74,8 @@ export function ListCard({ list, profileId }: ListCardProps) {
 
   const meta = listKindMeta[state.kind] ?? listKindMeta.todo;
   const Icon = meta.icon;
+  const kindLabel =
+    state.kind === "grocery" ? t("list.kind.grocery") : t("list.kind.todo");
   const sharedCount = Number(state.sharedCount ?? 0);
   const isShared =
     Boolean(state.profileId && profileId && state.profileId !== profileId) ||
@@ -108,11 +110,13 @@ export function ListCard({ list, profileId }: ListCardProps) {
       });
       const data = (await res.json()) as { list?: TaskList; error?: string };
       if (!res.ok || !data.list) {
-        throw new Error(data.error || "Failed to update list.");
+        throw new Error(data.error || t("list.error.update_failed"));
       }
       setState(normalizeList(data.list));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update list.");
+      setError(
+        err instanceof Error ? err.message : t("list.error.update_failed")
+      );
     } finally {
       setSaving(false);
     }
@@ -146,7 +150,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
       <CardHeader className="border-b border-border/60 bg-transparent pb-4">
         <div className="flex items-start gap-3">
           <div
-            aria-label="List"
+            aria-label={t("list.aria")}
             className={`inline-flex size-10 shrink-0 items-center justify-center rounded-lg border shadow-xs ${meta.iconBg}`}
           >
             <Icon className={`size-5 ${meta.iconColor}`} />
@@ -155,25 +159,25 @@ export function ListCard({ list, profileId }: ListCardProps) {
             <CardTitle className="flex flex-wrap items-center gap-2">
               <span className="min-w-0 truncate">{state.name}</span>
               <Badge className={meta.badge} variant="secondary">
-                {meta.label}
+                {kindLabel}
               </Badge>
               {isDeleted ? (
                 <Badge
                   className="border-destructive/40 bg-destructive/10 text-destructive"
                   variant="outline"
                 >
-                  Deleted
+                  {t("common.deleted")}
                 </Badge>
               ) : isShared ? (
                 <Badge className={meta.sharedBadge} variant="outline">
-                  Shared
+                  {t("common.shared")}
                 </Badge>
               ) : null}
             </CardTitle>
             <CardDescription className="flex flex-wrap items-center gap-2 text-xs">
-              <span>{counts.remaining} open</span>
+              <span>{t("list.count.open", { count: counts.remaining })}</span>
               <span className="text-muted-foreground">•</span>
-              <span>{counts.completed} done</span>
+              <span>{t("list.count.done", { count: counts.completed })}</span>
             </CardDescription>
           </div>
         </div>
@@ -181,11 +185,11 @@ export function ListCard({ list, profileId }: ListCardProps) {
       <CardContent className="grid gap-2 pt-4">
         {isDeleted ? (
           <div className="rounded-md border border-dashed bg-background/60 px-3 py-3 text-sm text-muted-foreground">
-            List deleted. Ask to create it again if needed.
+            {t("list.deleted.help")}
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-md border border-dashed bg-background/60 px-3 py-3 text-sm text-muted-foreground">
-            No items yet. Add items by chatting with RemcoChat.
+            {t("list.empty")}
           </div>
         ) : (
           items.map((item) => (
@@ -221,6 +225,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
                 </div>
               </div>
               <button
+                aria-label={t("list.item.remove_aria")}
                 className="flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100"
                 data-testid={`list:item-remove:${item.id}`}
                 disabled={disabled}
@@ -234,7 +239,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
         )}
       </CardContent>
       <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-4 text-xs text-muted-foreground">
-        <div>{isDeleted ? "List deleted." : "Update items by chatting."}</div>
+        <div>{isDeleted ? t("list.footer.deleted") : t("list.footer.hint")}</div>
         {!isDeleted ? (
           <div className="flex items-center gap-2">
             {isOwner ? (
@@ -246,7 +251,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
                 type="button"
                 variant="ghost"
               >
-                Delete list
+                {t("list.delete.button")}
               </Button>
             ) : null}
             <Button
@@ -256,7 +261,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
               type="button"
               variant="ghost"
             >
-              Clear done
+              {t("list.clear_done.button")}
             </Button>
           </div>
         ) : null}
