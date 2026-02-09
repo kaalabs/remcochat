@@ -12,6 +12,7 @@ import {
   updateProviderAllowedModelIdsInToml,
   updateProviderDefaultModelIdInToml,
   updateRouterModelIdInToml,
+  updateWebToolsSearchProviderInToml,
   writeFileAtomic,
 } from "@/server/config-toml-edit";
 
@@ -201,6 +202,27 @@ export async function updateProviderDefaultModelInConfigToml(input: {
   let updatedToml = updateProviderDefaultModelIdInToml(original, provider.id, defaultModelId);
   updatedToml = updateProviderAllowedModelIdsInToml(updatedToml, provider.id, nextAllowed);
 
+  parseConfigToml(updatedToml);
+
+  writeFileAtomic(filePath, updatedToml);
+  resetConfigCache();
+  resetModelsDevCatalogCache();
+  resetModelsdevProviderShowCache();
+}
+
+export async function updateWebToolsSearchProviderInConfigToml(input: {
+  searchProvider: "exa" | "brave";
+}) {
+  const searchProvider = input.searchProvider;
+  const filePath = getConfigFilePath();
+  const original = fs.readFileSync(filePath, "utf8");
+  const parsed = parseConfigToml(original);
+
+  if (!parsed.webTools || !parsed.webTools.enabled) {
+    throw new Error("Web tools are not enabled in config.toml.");
+  }
+
+  const updatedToml = updateWebToolsSearchProviderInToml(original, searchProvider);
   parseConfigToml(updatedToml);
 
   writeFileAtomic(filePath, updatedToml);

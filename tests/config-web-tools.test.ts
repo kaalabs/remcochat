@@ -34,6 +34,7 @@ default_provider_id = "vercel"
 
 [app.web_tools]
 enabled = true
+search_provider = "brave"
 max_results = 7
 recency = "week"
 allowed_domains = ["vercel.com"]
@@ -51,10 +52,58 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   const config = getConfig();
   assert.ok(config.webTools);
   assert.equal(config.webTools.enabled, true);
+  assert.equal(config.webTools.searchProvider, "brave");
   assert.equal(config.webTools.maxResults, 7);
   assert.equal(config.webTools.recency, "week");
   assert.deepEqual(config.webTools.allowedDomains, ["vercel.com"]);
   assert.deepEqual(config.webTools.blockedDomains, []);
+});
+
+test("defaults web_tools.search_provider to exa when omitted", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.web_tools]
+enabled = true
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const config = getConfig();
+  assert.ok(config.webTools);
+  assert.equal(config.webTools.searchProvider, "exa");
+});
+
+test("rejects invalid web_tools.search_provider", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.web_tools]
+enabled = true
+search_provider = "unknown"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  assert.throws(() => getConfig(), /search_provider/);
 });
 
 test("rejects mixed allowed_domains and blocked_domains", () => {

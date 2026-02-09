@@ -131,6 +131,32 @@ export function updateRouterModelIdInToml(content: string, modelId: string): str
   return content.slice(0, kv.start) + replacement + content.slice(end);
 }
 
+export function updateWebToolsSearchProviderInToml(
+  content: string,
+  provider: "exa" | "brave"
+): string {
+  const table = findTableRange(content, "app.web_tools");
+  const slice = content.slice(table.start, table.end);
+  const hasKey = /^\s*search_provider\s*=/m.test(slice);
+
+  if (hasKey) {
+    const kv = findKeyValueRangeInsideTable(content, table, "search_provider");
+    const lineEnd = content.indexOf("\n", kv.end);
+    const end = lineEnd === -1 ? content.length : lineEnd;
+    const replacement = `${kv.indent}search_provider = "${provider}"`;
+    return content.slice(0, kv.start) + replacement + content.slice(end);
+  }
+
+  const headerIdx = content.indexOf("[app.web_tools]", table.start);
+  if (headerIdx === -1) {
+    throw new Error("config.toml: missing table [app.web_tools]");
+  }
+  const tableHeaderEnd = content.indexOf("\n", headerIdx);
+  const insertAt = tableHeaderEnd === -1 ? table.end : tableHeaderEnd + 1;
+  const insertion = `search_provider = "${provider}"\n`;
+  return content.slice(0, insertAt) + insertion + content.slice(insertAt);
+}
+
 export function writeFileAtomic(filePath: string, content: string) {
   const dir = path.dirname(filePath);
   const tmp = path.join(

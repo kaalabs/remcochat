@@ -112,6 +112,13 @@ type SkillsAdminResponse = {
   };
 };
 
+type WebSearchProviderResponse = {
+  enabled: boolean;
+  searchProvider: "exa" | "brave";
+  hasExaKey: boolean;
+  hasBraveKey: boolean;
+};
+
 function AdminModelPicker(props: {
   value: string;
   onChange: (modelId: string) => void;
@@ -259,6 +266,14 @@ export function AdminClient() {
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillsAdminResponse | null>(null);
+  const [webSearchLoading, setWebSearchLoading] = useState(true);
+  const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [webSearchError, setWebSearchError] = useState<string | null>(null);
+  const [webSearchNotice, setWebSearchNotice] = useState<string | null>(null);
+  const [webSearchConfig, setWebSearchConfig] = useState<WebSearchProviderResponse | null>(
+    null
+  );
+  const [webSearchDraft, setWebSearchDraft] = useState<"exa" | "brave">("exa");
 
   const { locale, t } = useI18n();
 
@@ -307,6 +322,19 @@ export function AdminClient() {
     setSkills(data);
   };
 
+  const loadWebSearchProvider = async () => {
+    const res = await fetch("/api/admin/web-tools/search-provider", {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(json?.error || t("error.admin.web_search_provider_load_failed"));
+    }
+    const data = (await res.json()) as WebSearchProviderResponse;
+    setWebSearchConfig(data);
+    setWebSearchDraft(data.searchProvider);
+  };
+
   useEffect(() => {
     let canceled = false;
     setLoading(true);
@@ -322,6 +350,28 @@ export function AdminClient() {
       .finally(() => {
         if (canceled) return;
         setLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    setWebSearchLoading(true);
+    setWebSearchError(null);
+    loadWebSearchProvider()
+      .catch((err) => {
+        if (canceled) return;
+        setWebSearchError(
+          err instanceof Error
+            ? err.message
+            : t("error.admin.web_search_provider_load_failed")
+        );
+      })
+      .finally(() => {
+        if (canceled) return;
+        setWebSearchLoading(false);
       });
     return () => {
       canceled = true;
@@ -661,6 +711,42 @@ export function AdminClient() {
     }
   };
 
+  const saveWebSearchProvider = async () => {
+    if (!webSearchConfig || !webSearchConfig.enabled || webSearchSaving) return;
+    if (webSearchDraft === webSearchConfig.searchProvider) return;
+
+    setWebSearchSaving(true);
+    setWebSearchError(null);
+    setWebSearchNotice(null);
+    try {
+      const res = await fetch("/api/admin/web-tools/search-provider", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ searchProvider: webSearchDraft }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+      if (!res.ok) {
+        throw new Error(
+          json?.error || t("error.admin.web_search_provider_update_failed")
+        );
+      }
+      await loadWebSearchProvider();
+      setWebSearchNotice(
+        t("admin.web_search.notice.updated", { provider: webSearchDraft })
+      );
+    } catch (err) {
+      setWebSearchError(
+        err instanceof Error
+          ? err.message
+          : t("error.admin.web_search_provider_update_failed")
+      );
+    } finally {
+      setWebSearchSaving(false);
+    }
+  };
+
   const skillsSummary = useMemo(() => {
     const data = skills;
     if (!data) return null;
@@ -804,6 +890,96 @@ export function AdminClient() {
                 <div className="text-xs text-muted-foreground">
                   {t("admin.providers.description")}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("admin.web_search.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {webSearchError ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {webSearchError}
+                  </div>
+                ) : null}
+                {webSearchNotice ? (
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                    {webSearchNotice}
+                  </div>
+                ) : null}
+
+                <div className="text-sm text-muted-foreground">
+                  {t("admin.web_search.description")}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <label
+                      className="text-sm font-medium"
+                      htmlFor="admin:web-search-provider"
+                    >
+                      {t("admin.web_search.provider.label")}
+                    </label>
+                    <Select
+                      disabled={webSearchLoading || webSearchSaving || !webSearchConfig?.enabled}
+                      onValueChange={(value) =>
+                        setWebSearchDraft(value as "exa" | "brave")
+                      }
+                      value={webSearchDraft}
+                    >
+                      <SelectTrigger
+                        data-testid="admin:web-search-provider-select"
+                        id="admin:web-search-provider"
+                      >
+                        <SelectValue
+                          placeholder={
+                            webSearchLoading
+                              ? t("common.loading")
+                              : t("admin.web_search.provider.placeholder")
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="exa">Exa</SelectItem>
+                        <SelectItem value="brave">Brave Search</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button
+                    data-testid="admin:web-search-provider-save"
+                    disabled={
+                      webSearchLoading ||
+                      webSearchSaving ||
+                      !webSearchConfig?.enabled ||
+                      webSearchDraft === webSearchConfig.searchProvider
+                    }
+                    onClick={() => saveWebSearchProvider()}
+                    type="button"
+                  >
+                    {webSearchSaving ? t("common.saving_ellipsis") : t("common.save")}
+                  </Button>
+                </div>
+
+                {webSearchConfig ? (
+                  <div className="text-xs text-muted-foreground">
+                    {t("admin.web_search.enabled")}:{" "}
+                    <span className="font-medium">
+                      {webSearchConfig.enabled ? t("common.yes") : t("common.no")}
+                    </span>{" "}
+                    · EXA_API_KEY:{" "}
+                    <span className="font-medium">
+                      {webSearchConfig.hasExaKey ? t("common.enabled") : t("common.disabled")}
+                    </span>{" "}
+                    · BRAVE_SEARCH_API:{" "}
+                    <span className="font-medium">
+                      {webSearchConfig.hasBraveKey
+                        ? t("common.enabled")
+                        : t("common.disabled")}
+                    </span>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
 

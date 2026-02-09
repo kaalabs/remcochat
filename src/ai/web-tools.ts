@@ -9,6 +9,7 @@ import {
   getOpenAIProviderForProviderId,
 } from "@/server/llm-provider";
 import { createExaSearchTool } from "@/ai/exa-search";
+import { createBraveSearchTool } from "@/ai/brave-search";
 
 export type WebToolsResult = {
   enabled: boolean;
@@ -90,11 +91,17 @@ export function createWebTools(input: {
       };
     }
     case "openai_compatible": {
+      const searchProvider = web.searchProvider;
       return {
         enabled: true,
-        tools: {
-          exa_search: createExaSearchTool(),
-        },
+        tools:
+          searchProvider === "brave"
+            ? {
+                brave_search: createBraveSearchTool(),
+              }
+            : {
+                exa_search: createExaSearchTool(),
+              },
       };
     }
     case "anthropic_messages": {

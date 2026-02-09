@@ -8,6 +8,7 @@ const WEB_TOOL_NAMES = new Set([
   "google_search",
   "url_context",
   "exa_search",
+  "brave_search",
 ]);
 
 function toolNameFromPart(part: unknown): string | null {

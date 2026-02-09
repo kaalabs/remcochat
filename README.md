@@ -72,6 +72,13 @@ CA download endpoints (served by the proxy):
 - Docker: `config.docker.toml.example`
 - Override config path: `REMCOCHAT_CONFIG_PATH=/abs/path/to/config.toml`
 
+### Web search providers (openai_compatible)
+
+- Configure in `app.web_tools.search_provider`:
+  - `"exa"` (requires `EXA_API_KEY`)
+  - `"brave"` (requires `BRAVE_SEARCH_API`)
+- This setting controls which web search tool is exposed for `openai_compatible` models.
+
 ## Hue (optional)
 
 Hue control is implemented via:

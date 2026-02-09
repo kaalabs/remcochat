@@ -152,6 +152,7 @@ test("Natural Dutch rail query prefers ovNlGateway over web search", async ({ re
     "google_search",
     "url_context",
     "exa_search",
+    "brave_search",
   ]);
   const webCalls = toolInputs.filter((name) => webToolNames.has(name));
   expect(webCalls).toEqual([]);

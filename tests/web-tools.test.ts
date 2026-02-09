@@ -91,3 +91,63 @@ allowed_model_ids = ["anthropic/claude-sonnet-4.5"]
   assert.ok("perplexity_search" in tools);
   assert.ok("web_fetch" in tools);
 });
+
+test("openai_compatible with exa search provider exposes exa_search", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.web_tools]
+enabled = true
+search_provider = "exa"
+
+[providers.opencode]
+name = "OpenCode Zen"
+api_key_env = "OPENCODE_API_KEY"
+base_url = "https://opencode.ai/zen/v1"
+default_model_id = "gpt-5.2"
+allowed_model_ids = ["gpt-5.2"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const { enabled, tools } = createWebTools({
+    providerId: "opencode",
+    modelType: "openai_compatible",
+    providerModelId: "gpt-5.2",
+  });
+  assert.equal(enabled, true);
+  assert.ok("exa_search" in tools);
+  assert.ok(!("brave_search" in tools));
+});
+
+test("openai_compatible with brave search provider exposes brave_search", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.web_tools]
+enabled = true
+search_provider = "brave"
+
+[providers.opencode]
+name = "OpenCode Zen"
+api_key_env = "OPENCODE_API_KEY"
+base_url = "https://opencode.ai/zen/v1"
+default_model_id = "gpt-5.2"
+allowed_model_ids = ["gpt-5.2"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const { enabled, tools } = createWebTools({
+    providerId: "opencode",
+    modelType: "openai_compatible",
+    providerModelId: "gpt-5.2",
+  });
+  assert.equal(enabled, true);
+  assert.ok("brave_search" in tools);
+  assert.ok(!("exa_search" in tools));
+});

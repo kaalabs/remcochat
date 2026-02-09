@@ -4,6 +4,7 @@ import {
   updateProviderDefaultModelIdInToml,
   updateProviderAllowedModelIdsInToml,
   updateRouterModelIdInToml,
+  updateWebToolsSearchProviderInToml,
 } from "../src/server/config-toml-edit";
 
 test("updateProviderAllowedModelIdsInToml replaces only the target provider allowed_model_ids", () => {
@@ -102,5 +103,46 @@ test("updateProviderAllowedModelIdsInToml throws when provider table missing", (
   assert.throws(
     () => updateProviderAllowedModelIdsInToml("version = 2\n", "missing", ["a"]),
     /missing table \[providers\.missing\]/
+  );
+});
+
+test("updateWebToolsSearchProviderInToml replaces existing search_provider", () => {
+  const original = `
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.web_tools]
+enabled = true
+search_provider = "exa"
+max_results = 8
+`;
+
+  const updated = updateWebToolsSearchProviderInToml(original, "brave");
+  assert.match(updated, /^\s*search_provider = "brave"\s*$/m);
+  assert.doesNotMatch(updated, /^\s*search_provider = "exa"\s*$/m);
+});
+
+test("updateWebToolsSearchProviderInToml inserts missing search_provider", () => {
+  const original = `
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.web_tools]
+enabled = true
+max_results = 8
+`;
+
+  const updated = updateWebToolsSearchProviderInToml(original, "brave");
+  assert.match(updated, /\[app\.web_tools\]\nsearch_provider = "brave"\nenabled = true/m);
+});
+
+test("updateWebToolsSearchProviderInToml throws when app.web_tools is missing", () => {
+  assert.throws(
+    () => updateWebToolsSearchProviderInToml("version = 2\n", "exa"),
+    /missing table \[app\.web_tools\]/
   );
 });

@@ -35,6 +35,7 @@ const IntentRouterSchema = z
 const WebToolsSchema = z
   .object({
     enabled: z.boolean().optional(),
+    search_provider: z.enum(["exa", "brave"]).optional(),
     max_results: z.number().int().min(1).max(20).optional(),
     recency: z.enum(["day", "week", "month", "year"]).optional(),
     allowed_domains: z.array(z.string().min(1)).optional(),
@@ -199,6 +200,7 @@ export type RemcoChatConfig = {
   } | null;
   webTools: {
     enabled: boolean;
+    searchProvider: "exa" | "brave";
     maxResults: number;
     recency: "day" | "week" | "month" | "year" | null;
     allowedDomains: string[];
@@ -475,6 +477,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
   const rawWebTools = raw.app.web_tools ?? {};
   const webEnabled = Boolean(rawWebTools.enabled ?? false);
   if (webEnabled) {
+    const searchProvider = rawWebTools.search_provider ?? "exa";
     const maxResults = Math.min(
       20,
       Math.max(1, Math.floor(Number(rawWebTools.max_results ?? 8)))
@@ -495,6 +498,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
 
     webTools = {
       enabled: true,
+      searchProvider,
       maxResults,
       recency,
       allowedDomains,

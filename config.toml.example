@@ -12,6 +12,7 @@ max_input_chars = 600
 
 [app.web_tools]
 enabled = true
+search_provider = "exa" # "exa" | "brave"
 max_results = 8
 recency = "week"
 # allowed_domains and blocked_domains are mutually exclusive.
