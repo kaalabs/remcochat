@@ -449,6 +449,25 @@ export function createHueGatewayTools(input: {
 
         const retryAfterMs = extractRetryAfterMs({ headers: res.headers, json });
         const ok = json?.ok === true;
+        if (
+          !ok &&
+          res.status === 404 &&
+          typeof json?.detail === "string" &&
+          json.detail.trim().toLowerCase() === "not found"
+        ) {
+          return {
+            status: res.status,
+            ok: false,
+            action,
+            requestId,
+            error: {
+              code: "gateway_v2_not_supported",
+              message:
+                "Hue Gateway is reachable, but /v2/actions is not available. This gateway appears to be v1-only.",
+              details: {},
+            },
+          };
+        }
         return ok
           ? {
               status: res.status,

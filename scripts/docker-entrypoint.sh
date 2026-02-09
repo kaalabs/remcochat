@@ -59,6 +59,7 @@ append_section_if_missing() {
 }
 
 # Keep long-lived docker volume configs forward-compatible with new optional features.
+append_section_if_missing "app.hue_gateway"
 append_section_if_missing "app.ov_nl"
 
 exec "$@"

@@ -5,6 +5,10 @@ services:
     container_name: remcochat
     restart: unless-stopped
     init: true
+    extra_hosts:
+      # Linux Docker does not always provide host.docker.internal by default.
+      # Map it explicitly so Hue Gateway fallback URL works from inside the app container.
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:3100:3000"
     environment:
@@ -21,6 +25,9 @@ services:
       BRAVE_SEARCH_API: ${BRAVE_SEARCH_API:-}
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
       NS_APP_SUBSCRIPTION_KEY: ${NS_APP_SUBSCRIPTION_KEY:-}
+      HUE_AUTH_HEADER: ${HUE_AUTH_HEADER:-}
+      HUE_TOKEN: ${HUE_TOKEN:-}
+      HUE_API_KEY: ${HUE_API_KEY:-}
     volumes:
       - remcochat_data:/app/data
       - remcochat_config:/app/config

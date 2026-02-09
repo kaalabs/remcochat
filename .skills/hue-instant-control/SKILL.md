@@ -8,8 +8,8 @@ description: |
 license: MIT
 compatibility: |
   Requires reachability to the Hue Gateway and ability to make HTTP requests. The base URL depends on where commands
-  execute (host vs sandbox). Requires curl; jq/python3 are optional helpers. If the Bash tool is enabled, prefer using
-  curl via Bash; otherwise, provide exact curl commands for the user.
+  execute (host vs sandbox). Requires curl; jq/python3 are optional helpers. Use the server-side `hueGateway` tool when
+  available; use Bash/curl only as fallback or when explicitly requested.
 allowed-tools: Read Bash
 metadata:
   author: remcochat
