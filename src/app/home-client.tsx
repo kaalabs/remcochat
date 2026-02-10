@@ -3002,15 +3002,15 @@ export function HomeClient({
                     {!folder.collapsed ? (
 	                      <div className="space-y-1 pl-6">
                         {folderChats.map((chat) => (
-                          <div
-                            className={
-                              "group flex items-center gap-1 rounded-md transition-colors " +
-                              (chat.id === activeChatId && !isTemporaryChat
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                : "hover:bg-sidebar-accent/70")
-                            }
-                            key={chat.id}
-                          >
+	                            <div
+	                              className={
+	                                "group flex items-center gap-1 rounded-md transition-colors " +
+	                                (chat.id === activeChatId && !isTemporaryChat
+	                                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+	                                  : "")
+	                              }
+	                              key={chat.id}
+	                            >
                             <button
                               className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
 	                              data-testid={`sidebar:chat:${chat.id}`}
@@ -3038,7 +3038,7 @@ export function HomeClient({
 	                                "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                                (chatIsPinned(chat)
 	                                  ? "opacity-100"
-	                                  : "opacity-50 group-hover:opacity-100")
+	                                  : "opacity-50 hover:opacity-100 focus-visible:opacity-100")
 	                              }
 	                              data-testid={`sidebar:chat-pin:${chat.id}`}
 	                              disabled={!activeProfile || status !== "ready"}
@@ -3049,7 +3049,7 @@ export function HomeClient({
 	                              }}
 	                              suppressHydrationWarning
 	                              type="button"
-	                              variant="outline"
+	                              variant="ghost"
 	                            >
 	                              {chatIsPinned(chat) ? (
 	                                <PinIcon className="size-4 text-sidebar-primary" />
@@ -3061,8 +3061,8 @@ export function HomeClient({
 	                            <DropdownMenu>
 	                              <DropdownMenuTrigger asChild>
 	                                <Button
-                                  className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                                  data-testid={`sidebar:chat-menu:${chat.id}`}
+	                                  className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+	                                  data-testid={`sidebar:chat-menu:${chat.id}`}
                                   disabled={
                                     !activeProfile ||
                                     status !== "ready" ||
@@ -3070,7 +3070,7 @@ export function HomeClient({
                                   }
                                   suppressHydrationWarning
                                   type="button"
-                                  variant="outline"
+                                  variant="ghost"
                                 >
                                   <MoreVerticalIcon className="size-4" />
                                 </Button>
@@ -3270,15 +3270,15 @@ export function HomeClient({
 	                            {!folder.collapsed ? (
 		                              <div className="space-y-1 pl-6">
 	                                {folderChats.map((chat) => (
-                                  <div
-                                    className={
-                                      "group flex items-center gap-1 rounded-md transition-colors " +
-                                      (chat.id === activeChatId && !isTemporaryChat
-                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                        : "hover:bg-sidebar-accent/70")
-                                    }
-                                    key={chat.id}
-                                  >
+	                                  <div
+	                                    className={
+	                                      "group flex items-center gap-1 rounded-md transition-colors " +
+	                                      (chat.id === activeChatId && !isTemporaryChat
+	                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+	                                        : "")
+	                                    }
+	                                    key={chat.id}
+	                                  >
                                     <button
                                       className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
                                       data-testid={`sidebar:chat:${chat.id}`}
@@ -3306,7 +3306,7 @@ export function HomeClient({
 	                                        "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                                        (chatIsPinned(chat)
 	                                          ? "opacity-100"
-	                                          : "opacity-50 group-hover:opacity-100")
+	                                          : "opacity-50 hover:opacity-100 focus-visible:opacity-100")
 	                                      }
 	                                      data-testid={`sidebar:chat-pin:${chat.id}`}
 	                                      disabled={!activeProfile || status !== "ready"}
@@ -3317,7 +3317,7 @@ export function HomeClient({
 	                                      }}
 	                                      suppressHydrationWarning
 	                                      type="button"
-	                                      variant="outline"
+	                                      variant="ghost"
 	                                    >
 	                                      {chatIsPinned(chat) ? (
 	                                        <PinIcon className="size-4 text-sidebar-primary" />
@@ -3329,8 +3329,8 @@ export function HomeClient({
 	                                    <DropdownMenu>
 	                                      <DropdownMenuTrigger asChild>
 	                                        <Button
-                                          className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                                          data-testid={`sidebar:chat-menu:${chat.id}`}
+	                                          className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+	                                          data-testid={`sidebar:chat-menu:${chat.id}`}
                                           disabled={
                                             !activeProfile ||
                                             status !== "ready" ||
@@ -3338,7 +3338,7 @@ export function HomeClient({
                                           }
                                           suppressHydrationWarning
                                           type="button"
-                                          variant="outline"
+                                          variant="ghost"
                                         >
                                           <MoreVerticalIcon className="size-4" />
                                         </Button>
@@ -3465,7 +3465,7 @@ export function HomeClient({
 	                    "group flex items-center gap-1 rounded-md transition-colors " +
 	                    (chat.id === activeChatId && !isTemporaryChat
 	                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-	                      : "hover:bg-sidebar-accent/70")
+	                      : "")
 	                  }
 	                  key={chat.id}
 	                >
@@ -3494,7 +3494,7 @@ export function HomeClient({
 	                      "h-9 w-9 shrink-0 px-0 transition-opacity " +
 	                      (chatIsPinned(chat)
 	                        ? "opacity-100"
-	                        : "opacity-50 group-hover:opacity-100")
+	                        : "opacity-50 hover:opacity-100 focus-visible:opacity-100")
 	                    }
 	                    data-testid={`sidebar:chat-pin:${chat.id}`}
 	                    disabled={!activeProfile || status !== "ready"}
@@ -3505,7 +3505,7 @@ export function HomeClient({
 	                    }}
 	                    suppressHydrationWarning
 	                    type="button"
-	                    variant="outline"
+	                    variant="ghost"
 	                  >
 	                    {chatIsPinned(chat) ? (
 	                      <PinIcon className="size-4 text-sidebar-primary" />
@@ -3517,8 +3517,8 @@ export function HomeClient({
 	                  <DropdownMenu>
 	                    <DropdownMenuTrigger asChild>
 	                      <Button
-                        className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                        data-testid={`sidebar:chat-menu:${chat.id}`}
+	                        className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+	                        data-testid={`sidebar:chat-menu:${chat.id}`}
                         disabled={
                           !activeProfile ||
                           status !== "ready" ||
@@ -3526,7 +3526,7 @@ export function HomeClient({
                         }
                         suppressHydrationWarning
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                       >
                         <MoreVerticalIcon className="size-4" />
                       </Button>
@@ -3657,15 +3657,15 @@ export function HomeClient({
                     {chats
                       .filter((c) => Boolean(c.archivedAt))
                       .map((chat) => (
-                        <div
-                          className={
-                            "group flex items-center gap-1 rounded-md transition-colors " +
-                            (chat.id === activeChatId && !isTemporaryChat
-                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                              : "hover:bg-sidebar-accent/70")
-                          }
-                          key={chat.id}
-                        >
+	                        <div
+	                          className={
+	                            "group flex items-center gap-1 rounded-md transition-colors " +
+	                            (chat.id === activeChatId && !isTemporaryChat
+	                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+	                              : "")
+	                          }
+	                          key={chat.id}
+	                        >
                           <button
                             className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
 	                            data-testid={`sidebar:archived-chat:${chat.id}`}
@@ -3684,9 +3684,9 @@ export function HomeClient({
 
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button
-                                className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity group-hover:opacity-100"
-                                data-testid={`sidebar:archived-chat-menu:${chat.id}`}
+	                              <Button
+	                                className="h-9 w-9 shrink-0 px-0 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+	                                data-testid={`sidebar:archived-chat-menu:${chat.id}`}
                                 disabled={
                                   !activeProfile ||
                                   status !== "ready" ||
@@ -3694,8 +3694,8 @@ export function HomeClient({
                                 }
                                 suppressHydrationWarning
                                 type="button"
-                                variant="outline"
-                              >
+	                                variant="ghost"
+	                              >
                                 <MoreVerticalIcon className="size-4" />
                               </Button>
                             </DropdownMenuTrigger>
