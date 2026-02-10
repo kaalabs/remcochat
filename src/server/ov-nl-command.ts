@@ -4,6 +4,10 @@ import { getConfig } from "@/server/config";
 import { getLanguageModelForProvider } from "@/server/llm-provider";
 import { extractJsonObject } from "@/server/llm-json";
 import type { OvNlIntent, OvNlToolAction, OvNlToolOutput } from "@/lib/types";
+import {
+  applyTripsTextHeuristicsToArgs,
+  extractRouteFromText,
+} from "@/lib/ov-nl-route-heuristics";
 
 const OV_NL_ACTIONS = [
   "stations.search",
@@ -165,6 +169,7 @@ const ROUTER_PROMPT = [
   "Return JSON only and match the schema exactly.",
   "Prefer preserving existing route context when the user sends a follow-up refinement.",
   "Follow-up refinements include phrases like: make it direct, fewer transfers, earlier, later, quicker, only NS, zonder overstap, liever direct, eerder, later.",
+  "When the user asks for direct options (for example 'directe treinopties'), treat that as strict and map to intent.hard directOnly/maxTransfers=0 unless they explicitly express a preference (for example liefst/bij voorkeur).",
   "If the user uses hard language (only/must/no/without/geen/alleen/zonder/niet), map to intent.hard.",
   "If the user uses preference language (prefer/liefst/best/bij voorkeur), map to intent.soft.rankBy.",
   "Use intent.soft.rankBy=fewest_transfers when the user prefers direct options.",
@@ -173,83 +178,17 @@ const ROUTER_PROMPT = [
   "Supported rankBy values: fastest, fewest_transfers, earliest_departure, earliest_arrival, realtime_first, least_walking.",
 ].join("\n");
 
-const ROUTE_QUERY_SIGNAL_RE =
-  /\b(van|from)\b[\s\S]{0,120}\b(naar|to)\b|\btussen\b[\s\S]{0,120}\ben\b|\bbetween\b[\s\S]{0,120}\band\b/i;
-const ROUTE_FROM_TO_RE = /\bfrom\s+(.+?)\s+to\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_BETWEEN_AND_RE = /\bbetween\s+(.+?)\s+and\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_VAN_NAAR_RE = /\bvan\s+(.+?)\s+naar\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_TUSSEN_EN_RE = /\btussen\s+(.+?)\s+en\s+(.+?)(?:$|[.?!,;])/i;
-const STATION_SEGMENT_STOP_RE =
-  /\b(geef|give|toon|show|please|alstublieft|met|with|zonder|without|liefst|prefer|bij\s+voorkeur|direct|directe|rechtstreeks|treinopties|train\s+options?)\b/i;
-
-function inferDateTimeTokenFromText(text: string): string | undefined {
-  const normalized = text.toLowerCase();
-  if (/\b(vandaag|today)\b/.test(normalized)) return "today";
-  if (/\b(morgen|tomorrow)\b/.test(normalized)) return "tomorrow";
-  if (/\b(gisteren|yesterday)\b/.test(normalized)) return "yesterday";
-  if (/\b(nu|now)\b/.test(normalized)) return "now";
-  return undefined;
-}
-
-function shouldInferDirectOnlyFromText(text: string): boolean {
-  const normalized = text.toLowerCase();
-  const soft = /\b(liefst|prefer|bij\s+voorkeur|best)\b/i.test(normalized);
-  if (soft) return false;
-  return /\b(direct|directe|rechtstreeks|zonder\s+overstap|geen\s+overstap|geen\s+overstappen|no\s+transfers?)\b/i.test(
-    normalized
-  );
-}
-
-function trimStationSegment(value: string): string {
-  let out = value.trim();
-  if (!out) return "";
-  const stopIdx = out.search(STATION_SEGMENT_STOP_RE);
-  if (stopIdx > 0) out = out.slice(0, stopIdx).trim();
-  out = out.replace(/^[("'`]+/, "").replace(/[)"'`]+$/, "");
-  out = out.replace(/[.,;:!?]+$/, "");
-  out = out.replace(/\s+/g, " ").trim();
-  return out;
-}
-
-function extractRouteFromText(text: string): { from: string; to: string } | null {
-  const raw = text.trim();
-  if (!raw) return null;
-  if (!ROUTE_QUERY_SIGNAL_RE.test(raw)) return null;
-
-  const match =
-    ROUTE_VAN_NAAR_RE.exec(raw) ??
-    ROUTE_TUSSEN_EN_RE.exec(raw) ??
-    ROUTE_FROM_TO_RE.exec(raw) ??
-    ROUTE_BETWEEN_AND_RE.exec(raw);
-  if (!match) return null;
-
-  const from = trimStationSegment(match[1] ?? "");
-  const to = trimStationSegment(match[2] ?? "");
-  if (!from || !to) return null;
-  if (from.length > 120 || to.length > 120) return null;
-  return { from, to };
-}
-
 function deterministicCommandFromText(text: string): OvNlCommand | null {
   const route = extractRouteFromText(text);
   if (!route) return null;
 
-  const args: Record<string, unknown> = {
-    from: route.from,
-    to: route.to,
-  };
-
-  const dateTime = inferDateTimeTokenFromText(text);
-  if (dateTime) args.dateTime = dateTime;
-
-  if (shouldInferDirectOnlyFromText(text)) {
-    args.intent = {
-      hard: {
-        directOnly: true,
-        maxTransfers: 0,
-      },
-    };
-  }
+  const args = applyTripsTextHeuristicsToArgs({
+    text,
+    args: {
+      from: route.from,
+      to: route.to,
+    },
+  });
 
   const intent =
     args.intent && typeof args.intent === "object" ? (args.intent as OvNlIntent) : undefined;
@@ -583,6 +522,16 @@ export async function routeOvNlCommand(input: {
       lastOvOutput: input.context?.lastOvOutput ?? null,
     },
   });
+  if (merged.action === "trips.search") {
+    merged.args = applyTripsTextHeuristicsToArgs({
+      text,
+      args: merged.args,
+    });
+    merged.intent =
+      merged.args.intent && typeof merged.args.intent === "object"
+        ? (merged.args.intent as OvNlIntent)
+        : undefined;
+  }
   merged.missing = requiredMissingForAction(merged);
 
   if (merged.confidence < router.minConfidence) {

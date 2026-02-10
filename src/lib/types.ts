@@ -429,6 +429,10 @@ export type OvNlToolOutput =
       to: OvNlStation;
       via: OvNlStation | null;
       trips: OvNlTripSummary[];
+      directOnlyAlternatives?: {
+        maxTransfers: number;
+        trips: OvNlTripSummary[];
+      };
       intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;

@@ -235,13 +235,32 @@ test("Direct-only rail query returns direct trips or clear no-match without web 
   expect(ovOutputs.length).toBeGreaterThan(0);
 
   const lastOvOutput = ovOutputs[ovOutputs.length - 1] as {
-    output?: { kind?: unknown; trips?: Array<{ transfers?: unknown }>; error?: { code?: unknown } };
+    output?: {
+      kind?: unknown;
+      trips?: Array<{ transfers?: unknown }>;
+      directOnlyAlternatives?: {
+        maxTransfers?: unknown;
+        trips?: Array<{ transfers?: unknown }>;
+      };
+      error?: { code?: unknown };
+    };
   };
   const kind = String(lastOvOutput.output?.kind ?? "");
   if (kind === "trips.search") {
     const trips = Array.isArray(lastOvOutput.output?.trips) ? lastOvOutput.output?.trips ?? [] : [];
-    for (const trip of trips) {
-      expect(Number(trip.transfers ?? NaN)).toBe(0);
+    const alternatives = Array.isArray(lastOvOutput.output?.directOnlyAlternatives?.trips)
+      ? lastOvOutput.output?.directOnlyAlternatives?.trips ?? []
+      : [];
+
+    if (trips.length > 0) {
+      for (const trip of trips) {
+        expect(Number(trip.transfers ?? NaN)).toBe(0);
+      }
+    } else {
+      expect(alternatives.length).toBeGreaterThan(0);
+      for (const trip of alternatives) {
+        expect(Number(trip.transfers ?? NaN)).toBeGreaterThan(0);
+      }
     }
   } else if (kind === "error") {
     const code = String(lastOvOutput.output?.error?.code ?? "");

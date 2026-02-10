@@ -528,12 +528,20 @@ function TripsView({
   onRequestTripDetails?: (ctxRecon: string) => void;
 }) {
   const { locale, t, uiLanguage } = i18n;
-  const tripOptions: OvNlTripSummary[] =
+  const primaryTripOptions: OvNlTripSummary[] =
     output.kind === "trips.search"
       ? output.trips
       : output.kind === "trips.detail" && output.trip
         ? [output.trip]
         : [];
+  const directOnlyAlternatives =
+    output.kind === "trips.search" ? output.directOnlyAlternatives : undefined;
+  const alternativeTripOptions: OvNlTripSummary[] =
+    output.kind === "trips.search" ? (directOnlyAlternatives?.trips ?? []) : [];
+  const tripOptions: OvNlTripSummary[] =
+    output.kind === "trips.search"
+      ? [...primaryTripOptions, ...alternativeTripOptions]
+      : primaryTripOptions;
   const journeyLegs = output.kind === "journey.detail" ? output.legs : [];
 
   const isTripDetail = output.kind === "trips.detail";
@@ -591,6 +599,59 @@ function TripsView({
     ? tripOptions.find((trip) => trip.uid === selectedTripUid) || tripOptions[0]
     : null;
 
+  const renderTripOptionRows = (trips: OvNlTripSummary[], startIndex: number) =>
+    trips.map((trip, index) => {
+      const selected = selectedTrip?.uid === trip.uid;
+      const isRecommended = trip.uid === recommendedTripUid;
+      const isDirect = tripBadges.directTripUids.has(trip.uid);
+      const isFastest = tripBadges.fastestTripUids.has(trip.uid);
+      const isMinTransfers = tripBadges.minTransfersTripUids.has(trip.uid);
+      const badges: Array<{ label: string; tone: "primary" | "secondary" }> = [];
+      if (isRecommended) badges.push({ label: t("ov_nl.trips.badge.best"), tone: "primary" });
+      if (isDirect) badges.push({ label: t("ov_nl.trips.badge.direct"), tone: "secondary" });
+      if (isFastest) badges.push({ label: t("ov_nl.trips.badge.fastest"), tone: "secondary" });
+      if (isMinTransfers && !isDirect) {
+        badges.push({ label: t("ov_nl.trips.badge.fewest_transfers"), tone: "secondary" });
+      }
+
+      const optionIndex = startIndex + index;
+      return (
+        <button
+          className={`${styles.optionRow} ${selected ? styles.optionRowSelected : ""}`}
+          data-testid={`ov-nl-card:trip-option:${optionIndex}`}
+          key={trip.uid || optionIndex}
+          onClick={() => setSelectedTripUid(trip.uid)}
+          type="button"
+        >
+          <div className={styles.optionMain}>
+            <div className={styles.optionTimes}>
+              {formatTime(trip.departureActualDateTime || trip.departurePlannedDateTime, locale)} →{" "}
+              {formatTime(trip.arrivalActualDateTime || trip.arrivalPlannedDateTime, locale)}
+            </div>
+            <div className={styles.optionSubline}>
+              {transfersLabel(trip.transfers, t)} •{" "}
+              {formatDuration(
+                trip.actualDurationMinutes || trip.plannedDurationMinutes,
+                uiLanguage
+              )}
+            </div>
+          </div>
+          {badges.length > 0 ? (
+            <div className={styles.badgeStack} aria-label={t("ov_nl.trips.badges.aria")}>
+              {badges.map((badge) => (
+                <span
+                  className={`${styles.badge} ${badge.tone === "primary" ? styles.badgePrimary : styles.badgeSecondary}`}
+                  key={badge.label}
+                >
+                  {badge.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </button>
+      );
+    });
+
   return (
     <div
       className={`${styles.tripsLayout} ${isTripDetail ? styles.tripsLayoutSingle : ""}`}
@@ -607,59 +668,34 @@ function TripsView({
                   : output.journeyId}
               </div>
             </div>
+          ) : output.kind === "trips.search" && directOnlyAlternatives ? (
+            <>
+              <div className={styles.optionSectionHeader}>{t("ov_nl.trips.section.direct")}</div>
+              {primaryTripOptions.length === 0 ? (
+                <div className={`${styles.emptyState} ${styles.optionSectionEmpty}`}>
+                  {t("ov_nl.trips.direct_only_empty")}
+                </div>
+              ) : (
+                renderTripOptionRows(primaryTripOptions, 0)
+              )}
+
+              <div className={styles.optionSectionHeader}>
+                {t("ov_nl.trips.section.alternatives", {
+                  label: transfersLabel(directOnlyAlternatives.maxTransfers, t),
+                })}
+              </div>
+              {alternativeTripOptions.length === 0 ? (
+                <div className={`${styles.emptyState} ${styles.optionSectionEmpty}`}>
+                  {t("ov_nl.trips.empty")}
+                </div>
+              ) : (
+                renderTripOptionRows(alternativeTripOptions, primaryTripOptions.length)
+              )}
+            </>
           ) : tripOptions.length === 0 ? (
             <div className={styles.emptyState}>{t("ov_nl.trips.empty")}</div>
           ) : (
-            tripOptions.map((trip, index) => {
-              const selected = selectedTrip?.uid === trip.uid;
-              const isRecommended = trip.uid === recommendedTripUid;
-              const isDirect = tripBadges.directTripUids.has(trip.uid);
-              const isFastest = tripBadges.fastestTripUids.has(trip.uid);
-              const isMinTransfers = tripBadges.minTransfersTripUids.has(trip.uid);
-              const badges: Array<{ label: string; tone: "primary" | "secondary" }> = [];
-              if (isRecommended) badges.push({ label: t("ov_nl.trips.badge.best"), tone: "primary" });
-              if (isDirect) badges.push({ label: t("ov_nl.trips.badge.direct"), tone: "secondary" });
-              if (isFastest) badges.push({ label: t("ov_nl.trips.badge.fastest"), tone: "secondary" });
-              if (isMinTransfers && !isDirect) {
-                badges.push({ label: t("ov_nl.trips.badge.fewest_transfers"), tone: "secondary" });
-              }
-
-              return (
-                <button
-                  className={`${styles.optionRow} ${selected ? styles.optionRowSelected : ""}`}
-                  data-testid={`ov-nl-card:trip-option:${index}`}
-                  key={trip.uid || index}
-                  onClick={() => setSelectedTripUid(trip.uid)}
-                  type="button"
-                >
-                <div className={styles.optionMain}>
-                  <div className={styles.optionTimes}>
-                    {formatTime(trip.departureActualDateTime || trip.departurePlannedDateTime, locale)} →{" "}
-                    {formatTime(trip.arrivalActualDateTime || trip.arrivalPlannedDateTime, locale)}
-                  </div>
-                  <div className={styles.optionSubline}>
-                    {transfersLabel(trip.transfers, t)} •{" "}
-                    {formatDuration(
-                      trip.actualDurationMinutes || trip.plannedDurationMinutes,
-                      uiLanguage
-                    )}
-                  </div>
-                </div>
-                  {badges.length > 0 ? (
-                    <div className={styles.badgeStack} aria-label={t("ov_nl.trips.badges.aria")}>
-                      {badges.map((badge) => (
-                        <span
-                          className={`${styles.badge} ${badge.tone === "primary" ? styles.badgePrimary : styles.badgeSecondary}`}
-                          key={badge.label}
-                        >
-                          {badge.label}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </button>
-              );
-            })
+            renderTripOptionRows(tripOptions, 0)
           )}
         </div>
       ) : null}

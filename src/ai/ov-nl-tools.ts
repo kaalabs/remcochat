@@ -4,6 +4,10 @@ import { getConfig } from "@/server/config";
 import { logEvent } from "@/server/log";
 import { isLocalhostRequest, isRequestAllowedByAdminPolicy } from "@/server/request-auth";
 import { getOvNlJson, type OvNlClientError } from "@/server/integrations/ov-nl/client";
+import {
+  applyTripsTextHeuristicsToArgs,
+  extractRouteFromText,
+} from "@/lib/ov-nl-route-heuristics";
 import type {
   OvNlArrival,
   OvNlDeparture,
@@ -445,82 +449,6 @@ function sanitizeLooseToolArgs(value: unknown): unknown {
   return value;
 }
 
-const ROUTE_QUERY_SIGNAL_RE =
-  /\b(van|from)\b[\s\S]{0,120}\b(naar|to)\b|\btussen\b[\s\S]{0,120}\ben\b|\bbetween\b[\s\S]{0,120}\band\b/i;
-const ROUTE_FROM_TO_RE = /\bfrom\s+(.+?)\s+to\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_BETWEEN_AND_RE = /\bbetween\s+(.+?)\s+and\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_VAN_NAAR_RE = /\bvan\s+(.+?)\s+naar\s+(.+?)(?:$|[.?!,;])/i;
-const ROUTE_TUSSEN_EN_RE = /\btussen\s+(.+?)\s+en\s+(.+?)(?:$|[.?!,;])/i;
-const STATION_SEGMENT_STOP_RE =
-  /\b(geef|give|toon|show|please|alstublieft|met|with|zonder|without|liefst|prefer|bij\s+voorkeur|direct|directe|rechtstreeks|treinopties|train\s+options?)\b/i;
-
-function inferDateTimeTokenFromText(text: string): string | undefined {
-  const normalized = text.toLowerCase();
-  if (/\b(vandaag|today)\b/.test(normalized)) return "today";
-  if (/\b(morgen|tomorrow)\b/.test(normalized)) return "tomorrow";
-  if (/\b(gisteren|yesterday)\b/.test(normalized)) return "yesterday";
-  if (/\b(nu|now)\b/.test(normalized)) return "now";
-  return undefined;
-}
-
-function trimStationSegment(value: string): string {
-  let out = value.trim();
-  if (!out) return "";
-  const stopIdx = out.search(STATION_SEGMENT_STOP_RE);
-  if (stopIdx > 0) out = out.slice(0, stopIdx).trim();
-  out = out.replace(/^[("'`]+/, "").replace(/[)"'`]+$/, "");
-  out = out.replace(/[.,;:!?]+$/, "");
-  out = out.replace(/\s+/g, " ").trim();
-  return out;
-}
-
-function extractRouteFromText(text: string): { from: string; to: string } | null {
-  const raw = text.trim();
-  if (!raw) return null;
-  if (!ROUTE_QUERY_SIGNAL_RE.test(raw)) return null;
-
-  const match =
-    ROUTE_VAN_NAAR_RE.exec(raw) ??
-    ROUTE_TUSSEN_EN_RE.exec(raw) ??
-    ROUTE_FROM_TO_RE.exec(raw) ??
-    ROUTE_BETWEEN_AND_RE.exec(raw);
-  if (!match) return null;
-
-  const from = trimStationSegment(match[1] ?? "");
-  const to = trimStationSegment(match[2] ?? "");
-  if (!from || !to) return null;
-  if (from.length > 120 || to.length > 120) return null;
-  return { from, to };
-}
-
-function shouldInferDirectOnlyFromText(text: string): boolean {
-  const normalized = text.toLowerCase();
-  const soft =
-    /\b(liefst|prefer|bij\s+voorkeur|best)\b/i.test(normalized);
-  if (soft) return false;
-  return /\b(direct|directe|rechtstreeks|zonder\s+overstap|geen\s+overstap|geen\s+overstappen|no\s+transfers?)\b/i.test(
-    normalized
-  );
-}
-
-function mergeDirectOnlyIntoIntent(intent: unknown): unknown {
-  const base = intent && typeof intent === "object" && !Array.isArray(intent) ? (intent as Record<string, unknown>) : {};
-  const hardRaw =
-    base.hard && typeof base.hard === "object" && !Array.isArray(base.hard)
-      ? (base.hard as Record<string, unknown>)
-      : {};
-  if (hardRaw.directOnly === true) return base;
-
-  return {
-    ...base,
-    hard: {
-      ...hardRaw,
-      directOnly: true,
-      maxTransfers: typeof hardRaw.maxTransfers === "number" ? hardRaw.maxTransfers : 0,
-    },
-  };
-}
-
 function autoFixActionAndArgs(input: {
   action: OvNlToolAction;
   args: Record<string, unknown>;
@@ -542,32 +470,28 @@ function autoFixActionAndArgs(input: {
   const route = query ? extractRouteFromText(query) : null;
 
   if (input.action === "stations.search" && route) {
-    const nextArgs: Record<string, unknown> = {
+    const nextArgsBase: Record<string, unknown> = {
       from: route.from,
       to: route.to,
     };
-    const inferredDateTime = inferDateTimeTokenFromText(query);
-    if (input.args.dateTime != null) nextArgs.dateTime = input.args.dateTime;
-    else if (inferredDateTime) nextArgs.dateTime = inferredDateTime;
-    if (input.args.searchForArrival != null) nextArgs.searchForArrival = input.args.searchForArrival;
-    if (input.args.limit != null) nextArgs.limit = input.args.limit;
-    if (input.args.lang != null) nextArgs.lang = input.args.lang;
-    if (input.args.intent != null) nextArgs.intent = input.args.intent;
-    if (shouldInferDirectOnlyFromText(query)) {
-      nextArgs.intent = mergeDirectOnlyIntoIntent(nextArgs.intent);
-    }
+    if (input.args.dateTime != null) nextArgsBase.dateTime = input.args.dateTime;
+    if (input.args.searchForArrival != null) nextArgsBase.searchForArrival = input.args.searchForArrival;
+    if (input.args.limit != null) nextArgsBase.limit = input.args.limit;
+    if (input.args.lang != null) nextArgsBase.lang = input.args.lang;
+    if (input.args.intent != null) nextArgsBase.intent = input.args.intent;
+
+    const nextArgs = applyTripsTextHeuristicsToArgs({
+      text: query,
+      args: nextArgsBase,
+    });
     return { action: "trips.search", args: nextArgs };
   }
 
-  if (input.action === "trips.search" && route) {
-    const nextArgs: Record<string, unknown> = { ...input.args };
-    if (!(typeof nextArgs.from === "string" && nextArgs.from.trim())) nextArgs.from = route.from;
-    if (!(typeof nextArgs.to === "string" && nextArgs.to.trim())) nextArgs.to = route.to;
-    const inferredDateTime = inferDateTimeTokenFromText(query);
-    if (nextArgs.dateTime == null && inferredDateTime) nextArgs.dateTime = inferredDateTime;
-    if (shouldInferDirectOnlyFromText(query)) {
-      nextArgs.intent = mergeDirectOnlyIntoIntent(nextArgs.intent);
-    }
+  if (input.action === "trips.search" && query) {
+    const nextArgs = applyTripsTextHeuristicsToArgs({
+      text: query,
+      args: { ...input.args },
+    });
     return { action: input.action, args: nextArgs };
   }
 
@@ -777,6 +701,35 @@ function normalizeDateTimeInput(value: unknown, nowMs = Date.now()): string | un
 
   const base = new Date(nowMs);
   const normalized = trimmed.toLowerCase();
+
+  const relativeMatch = normalized.match(/^(today|tomorrow|yesterday)@(\d{2}):(\d{2})$/);
+  if (relativeMatch) {
+    const dayKey = relativeMatch[1];
+    const hour = Number(relativeMatch[2]);
+    const minute = Number(relativeMatch[3]);
+    if (
+      Number.isFinite(hour) &&
+      Number.isFinite(minute) &&
+      hour >= 0 &&
+      hour <= 23 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      const dayDelta = dayKey === "tomorrow" ? 1 : dayKey === "yesterday" ? -1 : 0;
+      const dateParts = addDaysToDateParts(
+        currentDatePartsInTimeZone(OV_NL_TIME_ZONE, nowMs),
+        dayDelta
+      );
+      const targetMs = zonedLocalDateTimeToUtcMs({
+        timeZone: OV_NL_TIME_ZONE,
+        ...dateParts,
+        hour,
+        minute,
+      });
+      return new Date(targetMs).toISOString();
+    }
+  }
+
   if (normalized === "now" || normalized === "nu" || normalized === "today" || normalized === "vandaag") {
     return base.toISOString();
   }
@@ -789,6 +742,18 @@ function normalizeDateTimeInput(value: unknown, nowMs = Date.now()): string | un
     const d = new Date(nowMs);
     d.setDate(d.getDate() - 1);
     return d.toISOString();
+  }
+  if (normalized === "vanmorgen" || normalized === "this morning") {
+    return normalizeDateTimeInput("today@09:00", nowMs);
+  }
+  if (normalized === "vanmiddag" || normalized === "this afternoon") {
+    return normalizeDateTimeInput("today@15:00", nowMs);
+  }
+  if (normalized === "vanavond" || normalized === "this evening") {
+    return normalizeDateTimeInput("today@19:00", nowMs);
+  }
+  if (normalized === "vannacht" || normalized === "tonight") {
+    return normalizeDateTimeInput("today@23:30", nowMs);
   }
 
   return Number.isNaN(Date.parse(trimmed)) ? undefined : trimmed;
@@ -1378,6 +1343,205 @@ function buildConstraintNoMatchError(input: {
       },
     }),
     cacheTtlSeconds: null,
+  };
+}
+
+type TripsHardFilterResult =
+  | {
+      ok: true;
+      trips: OvNlTripSummary[];
+      appliedHard: string[];
+    }
+  | {
+      ok: false;
+      error: OvNlToolError;
+    };
+
+function isStrictDirectOnlyRequested(hard: OvNlIntentHard | undefined): boolean {
+  if (!hard) return false;
+  if (hard.directOnly === true) return true;
+  if (typeof hard.maxTransfers === "number" && Number.isFinite(hard.maxTransfers)) {
+    return hard.maxTransfers <= 0;
+  }
+  return false;
+}
+
+function removeStrictDirectOnlyConstraints(hard: OvNlIntentHard | undefined): OvNlIntentHard | undefined {
+  if (!hard) return undefined;
+  const next: OvNlIntentHard = { ...hard };
+  delete (next as Record<string, unknown>).directOnly;
+  delete (next as Record<string, unknown>).maxTransfers;
+
+  const hasRemaining = OV_NL_INTENT_HARD_KEYS.some((key) =>
+    hasOwnKey(next, key) ? hasMeaningfulHardValue(next[key]) : false
+  );
+  return hasRemaining ? next : undefined;
+}
+
+function applyTripsHardConstraints(input: {
+  trips: OvNlTripSummary[];
+  hard: OvNlIntentHard | undefined;
+  nowMs: number;
+}): TripsHardFilterResult {
+  const hard = input.hard;
+  let filteredTrips = input.trips.slice();
+  const appliedHard: string[] = [];
+
+  if (hard?.directOnly) {
+    appliedHard.push("directOnly");
+    filteredTrips = filteredTrips.filter((trip) => trip.transfers === 0);
+  }
+
+  if (typeof hard?.maxTransfers === "number" && Number.isFinite(hard.maxTransfers)) {
+    appliedHard.push("maxTransfers");
+    filteredTrips = filteredTrips.filter((trip) => trip.transfers <= hard.maxTransfers!);
+  }
+
+  if (
+    typeof hard?.maxDurationMinutes === "number" &&
+    Number.isFinite(hard.maxDurationMinutes)
+  ) {
+    appliedHard.push("maxDurationMinutes");
+    filteredTrips = filteredTrips.filter((trip) => {
+      const duration = tripDurationMinutes(trip);
+      return duration == null || duration <= hard.maxDurationMinutes!;
+    });
+  }
+
+  const depAfter = resolveIntentDateConstraintMs({
+    raw: hard?.departureAfter,
+    nowMs: input.nowMs,
+    key: "departureAfter",
+  });
+  if (!depAfter.ok) return { ok: false, error: depAfter.error };
+  const depAfterMs = depAfter.ms;
+  if (depAfterMs != null) {
+    appliedHard.push("departureAfter");
+    filteredTrips = filteredTrips.filter((trip) => {
+      const dt = firstTripDepartureMs(trip);
+      return dt == null || dt >= depAfterMs;
+    });
+  }
+
+  const depBefore = resolveIntentDateConstraintMs({
+    raw: hard?.departureBefore,
+    nowMs: input.nowMs,
+    key: "departureBefore",
+  });
+  if (!depBefore.ok) return { ok: false, error: depBefore.error };
+  const depBeforeMs = depBefore.ms;
+  if (depBeforeMs != null) {
+    appliedHard.push("departureBefore");
+    filteredTrips = filteredTrips.filter((trip) => {
+      const dt = firstTripDepartureMs(trip);
+      return dt == null || dt <= depBeforeMs;
+    });
+  }
+
+  const arrAfter = resolveIntentDateConstraintMs({
+    raw: hard?.arrivalAfter,
+    nowMs: input.nowMs,
+    key: "arrivalAfter",
+  });
+  if (!arrAfter.ok) return { ok: false, error: arrAfter.error };
+  const arrAfterMs = arrAfter.ms;
+  if (arrAfterMs != null) {
+    appliedHard.push("arrivalAfter");
+    filteredTrips = filteredTrips.filter((trip) => {
+      const dt = finalTripArrivalMs(trip);
+      return dt == null || dt >= arrAfterMs;
+    });
+  }
+
+  const arrBefore = resolveIntentDateConstraintMs({
+    raw: hard?.arrivalBefore,
+    nowMs: input.nowMs,
+    key: "arrivalBefore",
+  });
+  if (!arrBefore.ok) return { ok: false, error: arrBefore.error };
+  const arrBeforeMs = arrBefore.ms;
+  if (arrBeforeMs != null) {
+    appliedHard.push("arrivalBefore");
+    filteredTrips = filteredTrips.filter((trip) => {
+      const dt = finalTripArrivalMs(trip);
+      return dt == null || dt <= arrBeforeMs;
+    });
+  }
+
+  const includeModes = normalizeModeSet(hard?.includeModes);
+  if (includeModes.size > 0) {
+    appliedHard.push("includeModes");
+    filteredTrips = filteredTrips.filter((trip) =>
+      trip.legs.some((leg) => includeModes.has(leg.mode))
+    );
+  }
+
+  const excludeModes = normalizeModeSet(hard?.excludeModes);
+  if (excludeModes.size > 0) {
+    appliedHard.push("excludeModes");
+    filteredTrips = filteredTrips.filter(
+      (trip) => !trip.legs.some((leg) => excludeModes.has(leg.mode))
+    );
+  }
+
+  const includeOperators = normalizeStringSet(hard?.includeOperators);
+  if (includeOperators.size > 0) {
+    appliedHard.push("includeOperators");
+    filteredTrips = filteredTrips.filter((trip) =>
+      tripMatchesOperatorTokens(trip, includeOperators)
+    );
+  }
+
+  const excludeOperators = normalizeStringSet(hard?.excludeOperators);
+  if (excludeOperators.size > 0) {
+    appliedHard.push("excludeOperators");
+    filteredTrips = filteredTrips.filter(
+      (trip) => !tripMatchesOperatorTokens(trip, excludeOperators)
+    );
+  }
+
+  const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
+  if (includeCategories.size > 0) {
+    appliedHard.push("includeTrainCategories");
+    filteredTrips = filteredTrips.filter((trip) =>
+      tripMatchesCategoryTokens(trip, includeCategories)
+    );
+  }
+
+  const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
+  if (excludeCategories.size > 0) {
+    appliedHard.push("excludeTrainCategories");
+    filteredTrips = filteredTrips.filter(
+      (trip) => !tripMatchesCategoryTokens(trip, excludeCategories)
+    );
+  }
+
+  const avoidStations = normalizeStringSet(hard?.avoidStations);
+  if (avoidStations.size > 0) {
+    appliedHard.push("avoidStations");
+    filteredTrips = filteredTrips.filter((trip) => !tripTouchesStation(trip, avoidStations));
+  }
+
+  if (hard?.excludeCancelled) {
+    appliedHard.push("excludeCancelled");
+    filteredTrips = filteredTrips.filter((trip) => !trip.legs.some((leg) => leg.cancelled));
+  }
+
+  if (hard?.requireRealtime) {
+    appliedHard.push("requireRealtime");
+    filteredTrips = filteredTrips.filter((trip) => trip.realtime);
+  }
+
+  const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
+  if (normalizedPlatform) {
+    appliedHard.push("platformEquals");
+    filteredTrips = filteredTrips.filter((trip) => tripHasPlatform(trip, normalizedPlatform));
+  }
+
+  return {
+    ok: true,
+    trips: filteredTrips,
+    appliedHard,
   };
 }
 
@@ -3561,167 +3725,84 @@ async function executeAction(
       });
 
     const normalizedTrips = filterDepartedTrips(allTrips, nowMs);
-    const appliedHard: string[] = [];
-    let filteredTrips = normalizedTrips.slice();
-
-    if (hard?.directOnly) {
-      appliedHard.push("directOnly");
-      filteredTrips = filteredTrips.filter((trip) => trip.transfers === 0);
-    }
-    if (typeof hard?.maxTransfers === "number" && Number.isFinite(hard.maxTransfers)) {
-      appliedHard.push("maxTransfers");
-      filteredTrips = filteredTrips.filter((trip) => trip.transfers <= hard.maxTransfers!);
-    }
-    if (
-      typeof hard?.maxDurationMinutes === "number" &&
-      Number.isFinite(hard.maxDurationMinutes)
-    ) {
-      appliedHard.push("maxDurationMinutes");
-      filteredTrips = filteredTrips.filter((trip) => {
-        const duration = tripDurationMinutes(trip);
-        return duration == null || duration <= hard.maxDurationMinutes!;
-      });
-    }
-
-    const depAfter = resolveIntentDateConstraintMs({
-      raw: hard?.departureAfter,
+    const hardConstraintResult = applyTripsHardConstraints({
+      trips: normalizedTrips,
+      hard,
       nowMs,
-      key: "departureAfter",
     });
-    if (!depAfter.ok) {
-      return { output: makeErrorOutput({ action, ...depAfter.error }), cacheTtlSeconds: null };
-    }
-    const depAfterMs = depAfter.ms;
-    if (depAfterMs != null) {
-      appliedHard.push("departureAfter");
-      filteredTrips = filteredTrips.filter((trip) => {
-        const dt = firstTripDepartureMs(trip);
-        return dt == null || dt >= depAfterMs;
-      });
+    if (!hardConstraintResult.ok) {
+      return {
+        output: makeErrorOutput({ action, ...hardConstraintResult.error }),
+        cacheTtlSeconds: null,
+      };
     }
 
-    const depBefore = resolveIntentDateConstraintMs({
-      raw: hard?.departureBefore,
-      nowMs,
-      key: "departureBefore",
-    });
-    if (!depBefore.ok) {
-      return { output: makeErrorOutput({ action, ...depBefore.error }), cacheTtlSeconds: null };
-    }
-    const depBeforeMs = depBefore.ms;
-    if (depBeforeMs != null) {
-      appliedHard.push("departureBefore");
-      filteredTrips = filteredTrips.filter((trip) => {
-        const dt = firstTripDepartureMs(trip);
-        return dt == null || dt <= depBeforeMs;
-      });
-    }
+    const appliedHard = hardConstraintResult.appliedHard;
+    const strictDirectOnlyRequested = isStrictDirectOnlyRequested(hard);
+    const alternativeRanks: OvNlIntentRank[] = [
+      "fewest_transfers",
+      ...appliedSoft.filter((rank) => rank !== "fewest_transfers"),
+    ];
 
-    const arrAfter = resolveIntentDateConstraintMs({
-      raw: hard?.arrivalAfter,
-      nowMs,
-      key: "arrivalAfter",
-    });
-    if (!arrAfter.ok) {
-      return { output: makeErrorOutput({ action, ...arrAfter.error }), cacheTtlSeconds: null };
-    }
-    const arrAfterMs = arrAfter.ms;
-    if (arrAfterMs != null) {
-      appliedHard.push("arrivalAfter");
-      filteredTrips = filteredTrips.filter((trip) => {
-        const dt = finalTripArrivalMs(trip);
-        return dt == null || dt >= arrAfterMs;
-      });
-    }
+    if (hardConstraintResult.trips.length === 0 && appliedHard.length > 0) {
+      if (strictDirectOnlyRequested && normalizedTrips.length > 0) {
+        const relaxedHard = removeStrictDirectOnlyConstraints(hard);
+        const relaxedResult = applyTripsHardConstraints({
+          trips: normalizedTrips,
+          hard: relaxedHard,
+          nowMs,
+        });
+        if (!relaxedResult.ok) {
+          return {
+            output: makeErrorOutput({ action, ...relaxedResult.error }),
+            cacheTtlSeconds: null,
+          };
+        }
 
-    const arrBefore = resolveIntentDateConstraintMs({
-      raw: hard?.arrivalBefore,
-      nowMs,
-      key: "arrivalBefore",
-    });
-    if (!arrBefore.ok) {
-      return { output: makeErrorOutput({ action, ...arrBefore.error }), cacheTtlSeconds: null };
-    }
-    const arrBeforeMs = arrBefore.ms;
-    if (arrBeforeMs != null) {
-      appliedHard.push("arrivalBefore");
-      filteredTrips = filteredTrips.filter((trip) => {
-        const dt = finalTripArrivalMs(trip);
-        return dt == null || dt <= arrBeforeMs;
-      });
-    }
+        const transferCandidates = relaxedResult.trips.filter(
+          (trip) => typeof trip.transfers === "number" && Number.isFinite(trip.transfers) && trip.transfers > 0
+        );
+        if (transferCandidates.length > 0) {
+          const minTransfers = transferCandidates.reduce(
+            (best, trip) => Math.min(best, trip.transfers),
+            Number.POSITIVE_INFINITY
+          );
+          const rankedTransferCandidates = sortTripsBySoftRanks(transferCandidates, alternativeRanks).filter(
+            (trip) => trip.transfers === minTransfers
+          );
+          const alternativeTrips = rankedTransferCandidates.slice(0, limit);
 
-    const includeModes = normalizeModeSet(hard?.includeModes);
-    if (includeModes.size > 0) {
-      appliedHard.push("includeModes");
-      filteredTrips = filteredTrips.filter((trip) =>
-        trip.legs.some((leg) => includeModes.has(leg.mode))
-      );
-    }
+          if (alternativeTrips.length > 0) {
+            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+            return {
+              output: {
+                kind: "trips.search",
+                from: fromResolved.station,
+                to: toResolved.station,
+                via,
+                trips: [],
+                directOnlyAlternatives: {
+                  maxTransfers: minTransfers,
+                  trips: alternativeTrips,
+                },
+                intentMeta: buildIntentMeta({
+                  intent,
+                  appliedHard,
+                  appliedSoft,
+                  ignoredSoft,
+                  beforeCount: normalizedTrips.length,
+                  afterCount: 0,
+                }),
+                cacheTtlSeconds,
+                fetchedAt,
+                cached: false,
+              },
+              cacheTtlSeconds,
+            };
+          }
+        }
+      }
 
-    const excludeModes = normalizeModeSet(hard?.excludeModes);
-    if (excludeModes.size > 0) {
-      appliedHard.push("excludeModes");
-      filteredTrips = filteredTrips.filter(
-        (trip) => !trip.legs.some((leg) => excludeModes.has(leg.mode))
-      );
-    }
-
-    const includeOperators = normalizeStringSet(hard?.includeOperators);
-    if (includeOperators.size > 0) {
-      appliedHard.push("includeOperators");
-      filteredTrips = filteredTrips.filter((trip) =>
-        tripMatchesOperatorTokens(trip, includeOperators)
-      );
-    }
-
-    const excludeOperators = normalizeStringSet(hard?.excludeOperators);
-    if (excludeOperators.size > 0) {
-      appliedHard.push("excludeOperators");
-      filteredTrips = filteredTrips.filter(
-        (trip) => !tripMatchesOperatorTokens(trip, excludeOperators)
-      );
-    }
-
-    const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
-    if (includeCategories.size > 0) {
-      appliedHard.push("includeTrainCategories");
-      filteredTrips = filteredTrips.filter((trip) =>
-        tripMatchesCategoryTokens(trip, includeCategories)
-      );
-    }
-
-    const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
-    if (excludeCategories.size > 0) {
-      appliedHard.push("excludeTrainCategories");
-      filteredTrips = filteredTrips.filter(
-        (trip) => !tripMatchesCategoryTokens(trip, excludeCategories)
-      );
-    }
-
-    const avoidStations = normalizeStringSet(hard?.avoidStations);
-    if (avoidStations.size > 0) {
-      appliedHard.push("avoidStations");
-      filteredTrips = filteredTrips.filter((trip) => !tripTouchesStation(trip, avoidStations));
-    }
-
-    if (hard?.excludeCancelled) {
-      appliedHard.push("excludeCancelled");
-      filteredTrips = filteredTrips.filter((trip) => !trip.legs.some((leg) => leg.cancelled));
-    }
-
-    if (hard?.requireRealtime) {
-      appliedHard.push("requireRealtime");
-      filteredTrips = filteredTrips.filter((trip) => trip.realtime);
-    }
-
-    const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
-    if (normalizedPlatform) {
-      appliedHard.push("platformEquals");
-      filteredTrips = filteredTrips.filter((trip) => tripHasPlatform(trip, normalizedPlatform));
-    }
-
-    if (filteredTrips.length === 0 && appliedHard.length > 0) {
       return buildConstraintNoMatchError({
         action,
         appliedHard,
@@ -3730,7 +3811,7 @@ async function executeAction(
       });
     }
 
-    const rankedTrips = sortTripsBySoftRanks(filteredTrips, appliedSoft);
+    const rankedTrips = sortTripsBySoftRanks(hardConstraintResult.trips, appliedSoft);
     const trips = rankedTrips.slice(0, limit);
 
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);

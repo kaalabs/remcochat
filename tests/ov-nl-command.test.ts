@@ -139,7 +139,59 @@ test("routeOvNlCommand deterministically routes simple Dutch trips.search when r
   assert.equal(String(result.command.args.to ?? "").toLowerCase(), "groningen");
   assert.equal(String(result.command.args.dateTime ?? ""), "today");
 
-  const intent = result.command.args.intent as { hard?: { directOnly?: unknown; maxTransfers?: unknown } } | undefined;
+  const intent = result.command.args.intent as
+    | { hard?: { directOnly?: unknown; maxTransfers?: unknown }; soft?: { rankBy?: string[] } }
+    | undefined;
   assert.equal(intent?.hard?.directOnly, true);
   assert.equal(intent?.hard?.maxTransfers, 0);
+  assert.deepEqual(intent?.soft?.rankBy ?? [], []);
+});
+
+test("routeOvNlCommand keeps strict direct intent for explicit no-transfer wording", async () => {
+  const result = await routeOvNlCommand({
+    text: "ik wil van Almere Centrum naar Groningen, zonder overstap.",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const intent = result.command.args.intent as
+    | { hard?: { directOnly?: unknown; maxTransfers?: unknown } }
+    | undefined;
+  assert.equal(intent?.hard?.directOnly, true);
+  assert.equal(intent?.hard?.maxTransfers, 0);
+});
+
+test("routeOvNlCommand infers vanmiddag as afternoon datetime hint", async () => {
+  const result = await routeOvNlCommand({
+    text: "ik wil vanmiddag van almere muziekwijk naar groningen. geef me directe treinopties.",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(String(result.command.args.dateTime ?? ""), "today@15:00");
+
+  const intent = result.command.args.intent as
+    | { hard?: { directOnly?: unknown; maxTransfers?: unknown }; soft?: { rankBy?: string[] } }
+    | undefined;
+  assert.equal(intent?.hard?.directOnly, true);
+  assert.equal(intent?.hard?.maxTransfers, 0);
+  assert.deepEqual(intent?.soft?.rankBy ?? [], []);
+});
+
+test("routeOvNlCommand parses 'zo min mogelijk overstappen' as transfer-minimizing preference", async () => {
+  const result = await routeOvNlCommand({
+    text: "ik wil vanmiddag van almere muziekwijk naar groningen, met zo min mogelijk overstappen.",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const intent = result.command.args.intent as
+    | { hard?: { directOnly?: unknown; maxTransfers?: unknown }; soft?: { rankBy?: string[] } }
+    | undefined;
+  assert.equal(intent?.hard?.directOnly, undefined);
+  assert.equal(intent?.hard?.maxTransfers, undefined);
+  assert.deepEqual(intent?.soft?.rankBy, ["fewest_transfers"]);
 });
