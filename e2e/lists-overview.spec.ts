@@ -140,7 +140,9 @@ test("Lists overview shows owned lists (WebKit)", async ({ page }) => {
   await expect(card).toContainText(/Projecten/i);
   await expect(card).toContainText(/Boodschappen/i);
 
-  await card.getByRole("button", { name: /Open Projecten/i }).click();
+  await card
+    .getByRole("button", { name: /(?:Open list|Lijst openen): Projecten/i })
+    .click();
   const opened = page.getByTestId("tool:displayList").last();
   await expect(opened).toBeVisible({ timeout: 120_000 });
   await expect(opened).toContainText(/Projecten/i);

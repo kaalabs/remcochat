@@ -151,3 +151,34 @@ allowed_model_ids = ["gpt-5.2"]
   assert.ok("brave_search" in tools);
   assert.ok(!("exa_search" in tools));
 });
+
+test("xai enables native live search path without local search function tools", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "xai"
+
+[app.web_tools]
+enabled = true
+search_provider = "exa"
+allowed_domains = []
+blocked_domains = []
+
+[providers.xai]
+name = "xAI"
+api_key_env = "XAI_API_KEY"
+base_url = "https://api.x.ai/v1"
+default_model_id = "grok-4"
+allowed_model_ids = ["grok-4"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const { enabled, tools } = createWebTools({
+    providerId: "xai",
+    modelType: "xai",
+    providerModelId: "grok-4",
+  });
+  assert.equal(enabled, true);
+  assert.deepEqual(tools, {});
+});

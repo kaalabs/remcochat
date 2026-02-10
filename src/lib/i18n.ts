@@ -201,7 +201,7 @@ export const enMessages = {
     "Switching is global and persistent for this server instance. Existing chats keep their stored model ids; RemcoChat clamps them to the active provider’s allowed models.",
   "admin.web_search.title": "Web search provider",
   "admin.web_search.description":
-    "Select the web search provider used for openai_compatible models.",
+    "Select the web search provider used for openai_compatible models and xAI live search domain filters.",
   "admin.web_search.provider.label": "Default provider",
   "admin.web_search.provider.placeholder": "Select a search provider",
   "admin.web_search.enabled": "Web tools enabled",
@@ -758,7 +758,7 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
     "Wisselen is globaal en blijvend voor deze server-instantie. Bestaande chats behouden hun opgeslagen model-id’s; RemcoChat beperkt ze tot de toegestane modellen van de actieve provider.",
   "admin.web_search.title": "Webzoekprovider",
   "admin.web_search.description":
-    "Selecteer de webzoekprovider voor openai_compatible modellen.",
+    "Selecteer de webzoekprovider voor openai_compatible modellen en xAI live search domeinfilters.",
   "admin.web_search.provider.label": "Standaardprovider",
   "admin.web_search.provider.placeholder": "Kies een zoekprovider",
   "admin.web_search.enabled": "Web tools ingeschakeld",

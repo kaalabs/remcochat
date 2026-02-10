@@ -23,6 +23,11 @@ test("allowedReasoningEfforts returns standard set for anthropic", () => {
   assert.deepEqual(options, ["low", "medium", "high"]);
 });
 
+test("allowedReasoningEfforts returns xai chat set for xai", () => {
+  const options = allowedReasoningEfforts({ modelType: "xai" });
+  assert.deepEqual(options, ["low", "high"]);
+});
+
 test("normalizeReasoningEffort keeps valid values", () => {
   const options = ["low", "medium", "high"] as const;
   assert.equal(normalizeReasoningEffort("low", [...options]), "low");

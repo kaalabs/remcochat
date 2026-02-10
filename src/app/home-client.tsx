@@ -1036,12 +1036,17 @@ export function HomeClient({
     let nextChats = data.chats ?? [];
     const hasUnarchived = nextChats.some((c) => !c.archivedAt);
     if (input.ensureAtLeastOne && !hasUnarchived) {
+      const storedModelId =
+        window.localStorage.getItem(lastUsedModelKey(input.profileId)) ?? "";
+      const createModelId = isAllowedModel(storedModelId)
+        ? storedModelId
+        : profileDefaultModelId;
       const createRes = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profileId: input.profileId,
-          modelId: providerDefaultModelId,
+          modelId: createModelId,
         }),
       });
       const created = (await createRes.json()) as { chat?: Chat };
@@ -1093,46 +1098,45 @@ export function HomeClient({
         : firstUnarchivedChatId || storedChatId || nextChats[0]?.id || "";
 
     setActiveChatId(nextActiveChatId);
-  }, [providerDefaultModelId]);
+  }, [isAllowedModel, lastUsedModelKey, profileDefaultModelId]);
 
   const refreshFoldersNonceRef = useRef(0);
-	  const refreshFolders = useCallback(async (profileId: string) => {
-	    const refreshNonce = (refreshFoldersNonceRef.current += 1);
-	    const res = await fetch(`/api/folders?profileId=${profileId}`);
-	    const data = (await res.json().catch(() => null)) as
-	      | { folders?: ChatFolder[]; error?: string }
-	      | null;
-	    const nextFolders = Array.isArray(data?.folders) ? data!.folders! : [];
-	    if (refreshNonce !== refreshFoldersNonceRef.current) return;
-	    setFolders(nextFolders);
-	  }, []);
+  const refreshFolders = useCallback(async (profileId: string) => {
+    const refreshNonce = (refreshFoldersNonceRef.current += 1);
+    const res = await fetch(`/api/folders?profileId=${profileId}`);
+    const data = (await res.json().catch(() => null)) as
+      | { folders?: ChatFolder[]; error?: string }
+      | null;
+    const nextFolders = Array.isArray(data?.folders) ? data!.folders! : [];
+    if (refreshNonce !== refreshFoldersNonceRef.current) return;
+    setFolders(nextFolders);
+  }, []);
 
-		  const ownedFolders = useMemo(() => {
-		    return folders.filter((f) => f.scope !== "shared");
-		  }, [folders]);
+  const ownedFolders = useMemo(() => {
+    return folders.filter((f) => f.scope !== "shared");
+  }, [folders]);
 
-	    const sharedFoldersByOwner = useMemo(() => {
-	      const map = new Map<string, ChatFolder[]>();
-	      for (const folder of folders) {
-	        if (folder.scope !== "shared") continue;
-	        const owner = String(folder.ownerName ?? "").trim() || "Unknown";
-	        const entry = map.get(owner);
-	        if (entry) entry.push(folder);
-	        else map.set(owner, [folder]);
-	      }
-	      return Array.from(map.entries()).sort(([a], [b]) =>
-	        a.localeCompare(b, undefined, { sensitivity: "base" })
-	      );
-	    }, [folders]);
+  const sharedFoldersByOwner = useMemo(() => {
+    const map = new Map<string, ChatFolder[]>();
+    for (const folder of folders) {
+      if (folder.scope !== "shared") continue;
+      const owner = String(folder.ownerName ?? "").trim() || "Unknown";
+      const entry = map.get(owner);
+      if (entry) entry.push(folder);
+      else map.set(owner, [folder]);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [folders]);
 
-		  const activeProfileId = activeProfile?.id ?? "";
-		  const folderGroupCollapsedStorageKey = useMemo(() => {
-		    return activeProfileId ? `remcochat:folderGroupCollapsed:${activeProfileId}` : "";
-		  }, [activeProfileId]);
+  const folderGroupCollapsedStorageKey = useMemo(() => {
+    return activeProfileId ? `remcochat:folderGroupCollapsed:${activeProfileId}` : "";
+  }, [activeProfileId]);
 
-	  const [folderGroupCollapsed, setFolderGroupCollapsed] = useState<
-	    Record<string, boolean>
-	  >({});
+  const [folderGroupCollapsed, setFolderGroupCollapsed] = useState<
+    Record<string, boolean>
+  >({});
 
 	  useEffect(() => {
 	    if (!folderGroupCollapsedStorageKey) {
@@ -1243,9 +1247,17 @@ export function HomeClient({
       if (!state) return;
       if (state.pointerId !== event.pointerId) return;
       const delta = event.clientX - state.startX;
-      setDesktopSidebarWidthPx(
-        clampDesktopSidebarWidth(state.startWidth + delta)
-      );
+      const nextWidth = clampDesktopSidebarWidth(state.startWidth + delta);
+      setDesktopSidebarWidthPx(nextWidth);
+      // Persist immediately so a fast reload doesn't miss the useEffect write.
+      try {
+        window.localStorage.setItem(
+          DESKTOP_SIDEBAR_STORAGE_KEY,
+          JSON.stringify({ collapsed: false, width: nextWidth })
+        );
+      } catch {
+        // ignore
+      }
       event.preventDefault();
     },
     []
@@ -1280,7 +1292,7 @@ export function HomeClient({
         body: JSON.stringify({
           name,
           defaultModelId: profileDefaultModelId,
-          uiLanguage: "nl",
+          uiLanguage,
         }),
       });
 
@@ -1312,12 +1324,17 @@ export function HomeClient({
     if (status !== "ready") stop();
     setIsTemporaryChat(false);
 
+    const storedModelId =
+      window.localStorage.getItem(lastUsedModelKey(profileId)) ?? "";
+    const createModelId = isAllowedModel(storedModelId)
+      ? storedModelId
+      : profileDefaultModelId;
     const res = await fetch("/api/chats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         profileId,
-        modelId: providerDefaultModelId,
+        modelId: createModelId,
       }),
     });
 
@@ -1331,7 +1348,14 @@ export function HomeClient({
       return next;
     });
     setActiveChatId(data.chat.id);
-  }, [activeProfile?.id, providerDefaultModelId, status, stop]);
+  }, [
+    activeProfile?.id,
+    isAllowedModel,
+    lastUsedModelKey,
+    profileDefaultModelId,
+    status,
+    stop,
+  ]);
 
   const archiveChatById = useCallback(
     async (chatId: string) => {
@@ -5105,6 +5129,7 @@ export function HomeClient({
                           if (!reasoningTokens) return null;
                           return (
                             <div className="text-xs text-muted-foreground">
+                              {" "}
                               {t("reasoning.tokens", { count: reasoningTokens })}
                             </div>
                           );

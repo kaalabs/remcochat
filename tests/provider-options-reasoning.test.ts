@@ -79,6 +79,21 @@ test("openai_compatible sets openai-compatible.reasoningEffort", () => {
   });
 });
 
+test("xai maps reasoning effort to xai.reasoningEffort", () => {
+  const providerOptions = createProviderOptions({
+    modelType: "xai",
+    providerModelId: "grok-4-fast-reasoning",
+    capabilities: reasoningCaps,
+    webToolsEnabled: false,
+    reasoning: reasoningConfig,
+  });
+  assert.deepEqual(providerOptions, {
+    xai: {
+      reasoningEffort: "high",
+    },
+  });
+});
+
 test("anthropic_messages enables thinking without streaming thoughts", () => {
   const providerOptions = createProviderOptions({
     modelType: "anthropic_messages",

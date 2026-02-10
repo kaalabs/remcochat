@@ -104,6 +104,13 @@ export function createWebTools(input: {
               },
       };
     }
+    case "xai": {
+      // xAI live search is configured via providerOptions.xai.searchParameters.
+      return {
+        enabled: true,
+        tools: {},
+      };
+    }
     case "anthropic_messages": {
       const anthropic = getAnthropicProviderForProviderId(input.providerId);
       const allowedDomains =

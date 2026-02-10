@@ -8,6 +8,7 @@ export const MODEL_TYPES = [
   "vercel_ai_gateway",
   "openai_responses",
   "openai_compatible",
+  "xai",
   "anthropic_messages",
   "google_generative_ai",
 ] as const;

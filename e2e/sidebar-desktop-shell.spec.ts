@@ -6,7 +6,11 @@ test("Desktop sidebar can resize, collapse, and persist across reloads", async (
   page,
 }) => {
   await page.addInitScript(() => {
-    window.localStorage.removeItem("remcochat:desktopSidebar:v1");
+    const key = "remcochat:desktopSidebar:v1";
+    const sentinel = "remcochat:e2e:desktopSidebarClearedOnce";
+    if (window.sessionStorage.getItem(sentinel) === "1") return;
+    window.localStorage.removeItem(key);
+    window.sessionStorage.setItem(sentinel, "1");
   });
 
   const sidebarWidth = () =>

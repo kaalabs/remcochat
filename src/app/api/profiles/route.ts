@@ -11,6 +11,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const headerStore = await headers();
+  const seedUiLanguage = detectUiLanguageFromAcceptLanguage(
+    headerStore.get("accept-language")
+  );
+
   const body = (await req.json()) as {
     name?: string;
     defaultModelId?: string;
@@ -22,7 +27,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const uiLanguage = parseUiLanguage(body.uiLanguage) ?? "nl";
+    const uiLanguage = parseUiLanguage(body.uiLanguage) ?? seedUiLanguage ?? "nl";
     const profile = createProfile({
       name: body.name,
       defaultModelId: body.defaultModelId,

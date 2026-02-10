@@ -96,7 +96,7 @@ test("Notes tool renders a card and deletes notes (WebKit)", async ({ page }) =>
 
   const card = page.getByTestId("tool:displayNotes");
   await expect(card).toBeVisible({ timeout: 120_000 });
-  await expect(card).toContainText(/Quick notes/i);
+  await expect(card).toContainText(/(?:Notes|Notities|Quick notes)/i);
   await expect(card).toContainText(/Bel de tandarts/i);
 
   const deleteButton = card.locator('[data-testid^="note:delete:"]').first();

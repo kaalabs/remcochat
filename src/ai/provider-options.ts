@@ -1,6 +1,7 @@
 import type { ModelType } from "@/server/config";
 import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
 import type { ModelCapabilities } from "@/lib/models";
+import { getConfig } from "@/server/config";
 
 export type ReasoningConfig = {
   enabled: boolean;
@@ -26,6 +27,13 @@ function reasoningEffortForOpenAI(effort: ReasoningConfig["effort"]) {
 function reasoningEffortForOpenAICompatible(effort: ReasoningConfig["effort"]) {
   // OpenAI-compatible gateways typically accept a string value.
   return effort;
+}
+
+function reasoningEffortForXaiChat(
+  effort: ReasoningConfig["effort"]
+): "low" | "high" {
+  if (effort === "minimal" || effort === "low") return "low";
+  return "high";
 }
 
 function thinkingLevelForGoogle(effort: ReasoningConfig["effort"]) {
@@ -57,15 +65,13 @@ export function createProviderOptions(input: {
   webToolsEnabled: boolean;
   reasoning: ReasoningConfig;
 }): SharedV3ProviderOptions | undefined {
-  // Web tools currently don't require providerOptions.
-  void input.webToolsEnabled;
-
-  if (!input.reasoning.enabled) return undefined;
-  if (!input.capabilities.reasoning) return undefined;
-
   const out: SharedV3ProviderOptions = {};
   const effort = input.reasoning.effort;
   const vendor = vendorFromProviderModelId(input.providerModelId);
+  const reasoningEnabled =
+    input.reasoning.enabled && input.capabilities.reasoning;
+
+  if (!reasoningEnabled) return undefined;
 
   switch (input.modelType) {
     case "openai_responses": {
@@ -80,6 +86,12 @@ export function createProviderOptions(input: {
     case "openai_compatible": {
       appendOptions(out, "openai-compatible", {
         reasoningEffort: reasoningEffortForOpenAICompatible(effort),
+      });
+      break;
+    }
+    case "xai": {
+      appendOptions(out, "xai", {
+        reasoningEffort: reasoningEffortForXaiChat(effort),
       });
       break;
     }
@@ -149,6 +161,27 @@ export function createProviderOptions(input: {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function firstNTrimmed(values: string[], maxItems: number): string[] {
+  const out: string[] = [];
+  for (const raw of values) {
+    const value = String(raw ?? "").trim();
+    if (!value) continue;
+    out.push(value);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function mergeProviderOptions(
+  base: SharedV3ProviderOptions | undefined,
+  provider: string,
+  patch: Record<string, unknown>
+): SharedV3ProviderOptions {
+  const out: SharedV3ProviderOptions = base ? { ...base } : {};
+  appendOptions(out, provider, patch);
+  return out;
+}
+
 export function createProviderOptionsForWebTools(input: {
   modelType: ModelType;
   providerModelId: string;
@@ -156,11 +189,34 @@ export function createProviderOptionsForWebTools(input: {
   capabilities: ModelCapabilities;
   reasoning: ReasoningConfig;
 }): SharedV3ProviderOptions | undefined {
-  return createProviderOptions({
+  const base = createProviderOptions({
     modelType: input.modelType,
     providerModelId: input.providerModelId,
     webToolsEnabled: input.webToolsEnabled,
     capabilities: input.capabilities,
     reasoning: input.reasoning,
+  });
+
+  if (!input.webToolsEnabled || input.modelType !== "xai") {
+    return base;
+  }
+
+  const webConfig = getConfig().webTools;
+  const allowedDomains = firstNTrimmed(webConfig?.allowedDomains ?? [], 5);
+  const blockedDomains = firstNTrimmed(webConfig?.blockedDomains ?? [], 5);
+
+  const webSource: Record<string, unknown> = { type: "web" };
+  if (allowedDomains.length > 0) {
+    webSource.allowedWebsites = allowedDomains;
+  } else if (blockedDomains.length > 0) {
+    webSource.excludedWebsites = blockedDomains;
+  }
+
+  return mergeProviderOptions(base, "xai", {
+    searchParameters: {
+      mode: "on",
+      returnCitations: true,
+      sources: [webSource],
+    },
   });
 }

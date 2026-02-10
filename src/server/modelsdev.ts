@@ -129,9 +129,7 @@ export function tryModelTypeFromNpm(npm: string): ModelType | null {
     case "@ai-sdk/openai-compatible":
       return "openai_compatible";
     case "@ai-sdk/xai":
-      // models.dev reports xAI via its dedicated adapter, but RemcoChat can
-      // safely route it through the OpenAI-compatible adapter.
-      return "openai_compatible";
+      return "xai";
     case "@ai-sdk/anthropic":
       return "anthropic_messages";
     case "@ai-sdk/google":
@@ -175,6 +173,8 @@ export function descriptionFromModelId(modelId: string, npm: string): string | u
       return "Google";
     case "@ai-sdk/openai-compatible":
       return "OpenAI Compatible";
+    case "@ai-sdk/xai":
+      return "xAI";
     case "@ai-sdk/gateway":
       return "Vercel AI Gateway";
     default:

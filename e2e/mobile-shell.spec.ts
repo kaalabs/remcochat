@@ -28,9 +28,6 @@ test("Mobile shell uses a sidebar drawer", async ({ page }) => {
   await expect(drawer).toHaveCount(0);
   await expect(page.getByTestId("composer:textarea")).toBeFocused();
 
-  await page.getByLabel("Open menu").click();
-  await expect(drawer).toBeVisible();
-
-  await drawer.getByTestId("admin:open").click();
+  await page.getByTestId("admin:open").click();
   await expect(page).toHaveURL(/\/admin$/);
 });

@@ -2315,6 +2315,10 @@ export async function POST(req: Request) {
     resolved.capabilities.tools;
 
   if (wantsSkillsToolsSmokeTest && skillsRegistry) {
+    const smokeTestSkillName = skillInvocation.explicitSkillName;
+    if (!smokeTestSkillName) {
+      throw new Error("skills tools smoke test requires an explicit skill name.");
+    }
     const messageId = nanoid();
     const activateCallId = nanoid();
     const readCallId = nanoid();
@@ -2342,7 +2346,7 @@ export async function POST(req: Request) {
           type: "tool-input-available",
           toolCallId: activateCallId,
           toolName: "skillsActivate",
-          input: { name: skillInvocation.explicitSkillName },
+          input: { name: smokeTestSkillName },
         });
         try {
           const activate = (
@@ -2353,7 +2357,7 @@ export async function POST(req: Request) {
           if (typeof activate !== "function") {
             throw new Error("skillsActivate tool is unavailable.");
           }
-          const output = await activate({ name: skillInvocation.explicitSkillName });
+          const output = await activate({ name: smokeTestSkillName });
           writer.write({
             type: "tool-output-available",
             toolCallId: activateCallId,
@@ -2371,7 +2375,7 @@ export async function POST(req: Request) {
           type: "tool-input-available",
           toolCallId: readCallId,
           toolName: "skillsReadResource",
-          input: { name: skillInvocation.explicitSkillName, path: "references/REFERENCE.md" },
+          input: { name: smokeTestSkillName, path: "references/REFERENCE.md" },
         });
         try {
           const readResource = (
@@ -2385,7 +2389,7 @@ export async function POST(req: Request) {
             throw new Error("skillsReadResource tool is unavailable.");
           }
           const output = await readResource({
-            name: skillInvocation.explicitSkillName,
+            name: smokeTestSkillName,
             path: "references/REFERENCE.md",
           });
           writer.write({

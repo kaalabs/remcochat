@@ -184,6 +184,14 @@ try {
     });
   }
 
+  // Enable Hue Gateway tooling for E2E. Hue tests still skip if the gateway isn't reachable.
+  configText = configText.replace(/\[app\.hue_gateway\][\s\S]*?(?=\n\[|$)/, (block) => {
+    let out = block;
+    out = out.replace(/\benabled\s*=\s*false\b/, "enabled = true");
+    out = out.replace(/\baccess\s*=\s*"[^"]+"/, 'access = "localhost"');
+    return out;
+  });
+
   fs.writeFileSync(configPath, `${configText}\n\n${extra}`);
 } catch (err) {
   console.error("Failed to prepare E2E config file:", err);

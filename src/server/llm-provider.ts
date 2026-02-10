@@ -3,6 +3,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import type { ModelCapabilities } from "@/lib/models";
 import type { ModelType, RemcoChatProvider } from "@/server/config";
@@ -117,6 +118,24 @@ function getOpenAICompatibleClient(provider: RemcoChatProvider) {
   return client;
 }
 
+const xaiClients = new Map<
+  string,
+  ReturnType<typeof createXai>
+>();
+
+function getXaiClient(provider: RemcoChatProvider) {
+  const cached = xaiClients.get(provider.id);
+  if (cached) return cached;
+
+  const apiKey = requiredEnv(provider.apiKeyEnv, provider.id);
+  const client = createXai({
+    apiKey,
+    baseURL: provider.baseUrl,
+  });
+  xaiClients.set(provider.id, client);
+  return client;
+}
+
 const anthropicClients = new Map<
   string,
   ReturnType<typeof createAnthropic>
@@ -200,6 +219,17 @@ async function resolveModelForProvider(
         providerModelId,
         capabilities,
         model: openaiCompatible.chatModel(providerModelId),
+      };
+    }
+    case "xai": {
+      const xai = getXaiClient(provider);
+      return {
+        providerId,
+        modelType,
+        modelId: resolvedModelId,
+        providerModelId,
+        capabilities,
+        model: xai(providerModelId),
       };
     }
     case "anthropic_messages": {

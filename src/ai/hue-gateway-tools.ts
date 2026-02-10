@@ -532,8 +532,12 @@ export function createHueGatewayTools(input: {
       const first = await sendOnce();
       if (first.ok) return first;
 
+      const errorValue =
+        "error" in first ? (first as { error?: unknown }).error : null;
       const errorRecord =
-        first.error && typeof first.error === "object" ? (first.error as Record<string, unknown>) : null;
+        errorValue && typeof errorValue === "object"
+          ? (errorValue as Record<string, unknown>)
+          : null;
       const errorCode = String(errorRecord?.code ?? "").trim();
       const shouldRetry =
         (first.status === 409 && errorCode === "idempotency_in_progress") ||

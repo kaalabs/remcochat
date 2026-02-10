@@ -72,12 +72,13 @@ CA download endpoints (served by the proxy):
 - Docker: `config.docker.toml.example`
 - Override config path: `REMCOCHAT_CONFIG_PATH=/abs/path/to/config.toml`
 
-### Web search providers (openai_compatible)
+### Web search providers (openai_compatible + xAI)
 
 - Configure in `app.web_tools.search_provider`:
   - `"exa"` (requires `EXA_API_KEY`)
   - `"brave"` (requires `BRAVE_SEARCH_API`)
 - This setting controls which web search tool is exposed for `openai_compatible` models.
+- For xAI models, web tools enable xAI Live Search (`providerOptions.xai.searchParameters`) and domain filters are applied there.
 
 ## Hue (optional)
 
