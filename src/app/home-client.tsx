@@ -59,6 +59,7 @@ import {
   isCaretOnLastLine,
   navigatePromptHistory,
 } from "@/lib/composer-history";
+import { shouldSuppressAssistantTextForOvOutput } from "@/lib/ov-nl-recovery";
 import { Loader } from "@/components/ai-elements/loader";
 import {
   Reasoning,
@@ -4094,9 +4095,13 @@ export function HomeClient({
                     const hasOvNlCard =
                       role === "assistant" &&
                       parts.some(
-                        (p) =>
-                          p.type === "tool-ovNlGateway" &&
-                          (p as { state?: unknown }).state === "output-available"
+                        (p) => {
+                          if (p.type !== "tool-ovNlGateway") return false;
+                          if ((p as { state?: unknown }).state !== "output-available") return false;
+                          return shouldSuppressAssistantTextForOvOutput(
+                            (p as { output?: unknown }).output
+                          );
+                        }
                       );
                     const suppressAssistantText =
                       hasMemoryAnswerCard || hasMemoryPromptCard || hasOvNlCard;

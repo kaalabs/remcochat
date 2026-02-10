@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { skipUnlessOpencodeApiKey } from "./requirements";
-import { parseUIMessageStreamChunks } from "./ui-message-stream";
+import { getUIMessageStreamText, parseUIMessageStreamChunks } from "./ui-message-stream";
 
 skipUnlessOpencodeApiKey(test);
 
@@ -145,6 +145,30 @@ test("Natural Dutch rail query prefers ovNlGateway over web search", async ({ re
 
   expect(toolInputs).toContain("ovNlGateway");
 
+  const toolNameByCallId = new Map<string, string>();
+  for (const chunk of chunks) {
+    if (chunk.type !== "tool-input-available") continue;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    const toolName = String(chunk.toolName ?? "");
+    if (!toolCallId || !toolName) continue;
+    toolNameByCallId.set(toolCallId, toolName);
+  }
+
+  const ovOutputs = chunks.filter((chunk) => {
+    if (chunk.type !== "tool-output-available") return false;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    return toolNameByCallId.get(toolCallId) === "ovNlGateway";
+  });
+
+  const hasOvErrorLike = ovOutputs.some((chunk) => {
+    const kind = String((chunk.output as { kind?: unknown } | undefined)?.kind ?? "");
+    return kind === "error" || kind === "disambiguation";
+  });
+  if (!hasOvErrorLike) {
+    const assistantText = getUIMessageStreamText(chunks).trim();
+    expect(assistantText).toBe("");
+  }
+
   const webToolNames = new Set([
     "perplexity_search",
     "web_search",
@@ -154,6 +178,81 @@ test("Natural Dutch rail query prefers ovNlGateway over web search", async ({ re
     "exa_search",
     "brave_search",
   ]);
+  const webCalls = toolInputs.filter((name) => webToolNames.has(name));
+  expect(webCalls).toEqual([]);
+});
+
+test("OV error/disambiguation allows follow-up clarification text without web fallback", async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+
+  const profileRes = await request.post("/api/profiles", {
+    data: { name: `E2E ov nl recovery ${Date.now()}` },
+  });
+  expect(profileRes.ok()).toBeTruthy();
+  const profileJson = (await profileRes.json()) as { profile?: { id?: string } };
+  const profileId = String(profileJson.profile?.id ?? "");
+  expect(profileId).toBeTruthy();
+
+  const chatRes = await request.post("/api/chat", {
+    data: {
+      profileId,
+      temporary: true,
+      messages: [
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text:
+                "Gebruik de ovNlGateway tool met action=trips.search en args={from:'zzzzzz',to:'groningen',limit:2}.",
+            },
+          ],
+          metadata: { createdAt: new Date().toISOString() },
+        },
+      ],
+    },
+  });
+  expect(chatRes.ok()).toBeTruthy();
+
+  const chunks = parseUIMessageStreamChunks(await chatRes.body());
+  const toolNameByCallId = new Map<string, string>();
+  for (const chunk of chunks) {
+    if (chunk.type !== "tool-input-available") continue;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    const toolName = String(chunk.toolName ?? "");
+    if (!toolCallId || !toolName) continue;
+    toolNameByCallId.set(toolCallId, toolName);
+  }
+
+  const ovOutputs = chunks.filter((chunk) => {
+    if (chunk.type !== "tool-output-available") return false;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    return toolNameByCallId.get(toolCallId) === "ovNlGateway";
+  });
+  const hasOvErrorLike = ovOutputs.some((chunk) => {
+    const kind = String((chunk.output as { kind?: unknown } | undefined)?.kind ?? "");
+    return kind === "error" || kind === "disambiguation";
+  });
+  expect(hasOvErrorLike).toBeTruthy();
+
+  const assistantText = getUIMessageStreamText(chunks).trim();
+  expect(assistantText.length).toBeGreaterThan(0);
+
+  const webToolNames = new Set([
+    "perplexity_search",
+    "web_search",
+    "web_fetch",
+    "google_search",
+    "url_context",
+    "exa_search",
+    "brave_search",
+  ]);
+  const toolInputs = chunks
+    .filter((chunk) => chunk.type === "tool-input-available")
+    .map((chunk) => String(chunk.toolName ?? ""));
   const webCalls = toolInputs.filter((name) => webToolNames.has(name));
   expect(webCalls).toEqual([]);
 });
