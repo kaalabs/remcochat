@@ -1,4 +1,8 @@
-import type { AgendaToolOutput, RemcoChatMessageMetadata } from "@/lib/types";
+import type {
+  AgendaToolOutput,
+  RemcoChatMessageMetadata,
+  UiLanguage,
+} from "@/lib/types";
 import {
   getChat,
   getChatForViewer,
@@ -459,10 +463,40 @@ function uiBashToolResponse(input: {
 
 function uiSkillsActivateResponse(input: {
   skillName: string;
+  language: UiLanguage;
   executeActivate: (args: { name: string }) => Promise<unknown>;
   messageMetadata?: RemcoChatMessageMetadata;
   headers?: HeadersInit;
 }) {
+  const followUpBySkillName: Record<UiLanguage, Record<string, string>> = {
+    en: {
+      "ov-nl-travel": "Ask your travel question to continue.",
+      "hue-instant-control": "Ask your lighting question to continue.",
+    },
+    nl: {
+      "ov-nl-travel": "Stel je reisvraag om door te gaan.",
+      "hue-instant-control": "Stel je verlichtingsvraag om door te gaan.",
+    },
+  };
+  const genericFollowUpByLanguage: Record<UiLanguage, string> = {
+    en: "Ask your question to continue.",
+    nl: "Stel je vraag om door te gaan.",
+  };
+  const activatedPrefixByLanguage: Record<UiLanguage, string> = {
+    en: `Skill "/${input.skillName}" activated.`,
+    nl: `Skill "/${input.skillName}" geactiveerd.`,
+  };
+  const activationErrorPrefixByLanguage: Record<UiLanguage, string> = {
+    en: "Skill activation error",
+    nl: "Skill-activatiefout",
+  };
+  const fallbackActivationErrorByLanguage: Record<UiLanguage, string> = {
+    en: "Failed to activate skill.",
+    nl: "Skill activeren is mislukt.",
+  };
+  const followUp =
+    followUpBySkillName[input.language][input.skillName] ??
+    genericFollowUpByLanguage[input.language];
   const messageId = nanoid();
   const toolCallId = nanoid();
   const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
@@ -491,12 +525,12 @@ function uiSkillsActivateResponse(input: {
         writer.write({
           type: "text-delta",
           id: messageId,
-          delta: `Skill "/${input.skillName}" activated. Ask your travel question to continue.`,
+          delta: `${activatedPrefixByLanguage[input.language]} ${followUp}`,
         });
         writer.write({ type: "text-end", id: messageId });
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to activate skill.";
+          err instanceof Error ? err.message : fallbackActivationErrorByLanguage[input.language];
         writer.write({
           type: "tool-output-error",
           toolCallId,
@@ -506,7 +540,7 @@ function uiSkillsActivateResponse(input: {
         writer.write({
           type: "text-delta",
           id: messageId,
-          delta: `Skill activation error: ${message}`,
+          delta: `${activationErrorPrefixByLanguage[input.language]}: ${message}`,
         });
         writer.write({ type: "text-end", id: messageId });
       }
@@ -1143,6 +1177,7 @@ export async function POST(req: Request) {
       if (typeof activateTool?.execute === "function") {
         return uiSkillsActivateResponse({
           skillName: skillInvocation.explicitSkillName,
+          language: profile.uiLanguage,
           executeActivate: activateTool.execute,
           messageMetadata: {
             createdAt: now,
@@ -2217,6 +2252,7 @@ export async function POST(req: Request) {
     if (typeof activateTool?.execute === "function") {
       return uiSkillsActivateResponse({
         skillName: skillInvocation.explicitSkillName,
+        language: profile.uiLanguage,
         executeActivate: activateTool.execute,
         messageMetadata: {
           createdAt: now,
