@@ -42,6 +42,9 @@ export function shouldPreferOvNlGatewayTool(input: {
 }): boolean {
   if (!input.ovNlEnabled) return false;
 
+  const text = String(input.text ?? "").trim();
+  if (text && isExplicitWebSearchRequest(text)) return false;
+
   const explicitSkillName = String(input.explicitSkillName ?? "").trim();
   const activated = Array.isArray(input.activatedSkillNames)
     ? input.activatedSkillNames.map((name) => String(name ?? "").trim())
@@ -52,10 +55,7 @@ export function shouldPreferOvNlGatewayTool(input: {
   ) {
     return true;
   }
-
-  const text = String(input.text ?? "").trim();
   if (!text) return false;
-  if (isExplicitWebSearchRequest(text)) return false;
 
   return isOvNlRailIntent(text);
 }

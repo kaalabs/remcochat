@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { __test__, routeOvNlCommand } from "../src/server/ov-nl-command";
+
+test("mergeFollowUpWithContext fills trips.search from/to from previous trips output", () => {
+  const merged = __test__.mergeFollowUpWithContext({
+    command: {
+      action: "trips.search",
+      args: {
+        intent: {
+          hard: {
+            directOnly: true,
+          },
+        },
+      },
+      confidence: 0.94,
+      missing: [],
+      clarification: "",
+      isFollowUp: true,
+    },
+    context: {
+      lastOvOutput: {
+        kind: "trips.search",
+        from: {
+          code: "ALMC",
+          uicCode: "8400058",
+          nameShort: "Almere C.",
+          nameMedium: "Almere Centrum",
+          nameLong: "Almere Centrum",
+          countryCode: "NL",
+          lat: null,
+          lng: null,
+          distanceMeters: null,
+        },
+        to: {
+          code: "GN",
+          uicCode: "8400261",
+          nameShort: "Groningen",
+          nameMedium: "Groningen",
+          nameLong: "Groningen",
+          countryCode: "NL",
+          lat: null,
+          lng: null,
+          distanceMeters: null,
+        },
+        via: null,
+        trips: [],
+        cacheTtlSeconds: 5,
+        fetchedAt: "2030-02-07T12:00:00.000Z",
+        cached: false,
+      },
+    },
+  });
+
+  assert.equal(merged.args.from, "Almere Centrum");
+  assert.equal(merged.args.to, "Groningen");
+});
+
+test("mergeFollowUpWithContext fills board station from previous board output", () => {
+  const merged = __test__.mergeFollowUpWithContext({
+    command: {
+      action: "departures.list",
+      args: {
+        intent: {
+          soft: {
+            rankBy: ["earliest_departure"],
+          },
+        },
+      },
+      confidence: 0.91,
+      missing: [],
+      clarification: "",
+      isFollowUp: true,
+    },
+    context: {
+      lastOvOutput: {
+        kind: "departures.list",
+        station: {
+          code: "UT",
+          uicCode: "8400621",
+          nameShort: "Utrecht C.",
+          nameMedium: "Utrecht Centraal",
+          nameLong: "Utrecht Centraal",
+          countryCode: "NL",
+          lat: null,
+          lng: null,
+          distanceMeters: null,
+        },
+        departures: [],
+        cacheTtlSeconds: 5,
+        fetchedAt: "2030-02-07T12:00:00.000Z",
+        cached: false,
+      },
+    },
+  });
+
+  assert.equal(merged.args.station, "Utrecht Centraal");
+});
+
+test("requiredMissingForAction detects missing trips.search fields", () => {
+  const missing = __test__.requiredMissingForAction({
+    action: "trips.search",
+    args: {},
+    confidence: 0.9,
+    missing: [],
+    clarification: "",
+    isFollowUp: false,
+  });
+
+  assert.deepEqual(missing.sort(), ["from", "to"]);
+});
+
+test("clarificationForMissing returns concise station question", () => {
+  const text = __test__.clarificationForMissing(
+    {
+      action: "departures.list",
+      args: {},
+      confidence: 0.9,
+      missing: ["station"],
+      clarification: "",
+      isFollowUp: false,
+    },
+    ["station"]
+  );
+
+  assert.match(text, /station/i);
+});
+
+test("routeOvNlCommand deterministically routes simple Dutch trips.search when router is disabled", async () => {
+  const result = await routeOvNlCommand({
+    text: "ik wil vandaag van Almere Centrum naar groningen. geef me treinopties met een directe verbinding.",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(result.command.action, "trips.search");
+  assert.equal(String(result.command.args.from ?? ""), "Almere Centrum");
+  assert.equal(String(result.command.args.to ?? "").toLowerCase(), "groningen");
+  assert.equal(String(result.command.args.dateTime ?? ""), "today");
+
+  const intent = result.command.args.intent as { hard?: { directOnly?: unknown; maxTransfers?: unknown } } | undefined;
+  assert.equal(intent?.hard?.directOnly, true);
+  assert.equal(intent?.hard?.maxTransfers, 0);
+});

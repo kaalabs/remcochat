@@ -1,5 +1,6 @@
 import type {
   AgendaToolOutput,
+  OvNlToolOutput,
   RemcoChatMessageMetadata,
   UiLanguage,
 } from "@/lib/types";
@@ -60,6 +61,7 @@ import { routeIntent } from "@/server/intent-router";
 import { routeAgendaCommand } from "@/server/agenda-intent";
 import { parseMemoryAddCommand, parseMemorizeDecision } from "@/server/memory-commands";
 import { getConfig } from "@/server/config";
+import { logEvent } from "@/server/log";
 import { isModelAllowedForActiveProvider } from "@/server/model-registry";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { runAgendaAction, type AgendaActionInput } from "@/server/agenda";
@@ -78,7 +80,11 @@ import {
   stripExplicitSkillInvocationFromMessages,
 } from "@/server/skills/explicit-invocation";
 import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
-import { shouldPreferOvNlGatewayTool } from "@/server/ov-nl-intent";
+import {
+  isExplicitWebSearchRequest,
+  shouldPreferOvNlGatewayTool,
+} from "@/server/ov-nl-intent";
+import { routeOvNlCommand } from "@/server/ov-nl-command";
 import {
   collectUIMessageChunks,
   createUIMessageStreamWithDeferredContinuation,
@@ -132,6 +138,24 @@ function ovErrorCodeFromOutput(output: unknown): string {
   if (!isOvNlErrorLikeOutput(output) || output.kind !== "error") return "";
   const code = output.error?.code;
   return typeof code === "string" ? code : "";
+}
+
+function ovConstraintNoMatchQuestion(output: unknown): string {
+  if (!isOvNlErrorLikeOutput(output) || output.kind !== "error") return "";
+  if (output.error?.code !== "constraint_no_match") return "";
+  const details =
+    output.error?.details && typeof output.error.details === "object"
+      ? (output.error.details as Record<string, unknown>)
+      : null;
+  const suggested = Array.isArray(details?.suggestedRelaxations)
+    ? details?.suggestedRelaxations
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value.length > 0)
+    : [];
+  if (suggested.length > 0) {
+    return `No exact match with your strict constraints. Should I relax this: ${suggested[0]}?`;
+  }
+  return "No exact match with your strict constraints. Which one constraint should I relax?";
 }
 
 function buildOvRecoveryPrompt(input: {
@@ -253,6 +277,25 @@ function lastAssistantContext(messages: UIMessage<RemcoChatMessageMetadata>[]) {
   }
 
   return {};
+}
+
+function lastOvOutputFromMessages(messages: UIMessage<RemcoChatMessageMetadata>[]): OvNlToolOutput | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (!msg || msg.role !== "assistant") continue;
+    for (let j = msg.parts.length - 1; j >= 0; j -= 1) {
+      const part = msg.parts[j] as {
+        type?: unknown;
+        state?: unknown;
+        output?: unknown;
+      };
+      if (part.type !== "tool-ovNlGateway") continue;
+      if (part.state !== "output-available") continue;
+      if (!part.output || typeof part.output !== "object") continue;
+      return part.output as OvNlToolOutput;
+    }
+  }
+  return null;
 }
 
 function readFileForPrompt(filePath: string, maxBytes: number): string {
@@ -833,6 +876,138 @@ function uiAgendaResponse(input: {
   return createUIMessageStreamResponse({ stream });
 }
 
+function uiOvNlResponse(input: {
+  command: { action: string; args?: Record<string, unknown> };
+  executeOvGateway: (input: unknown) => Promise<unknown>;
+  messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
+}) {
+  const messageId = nanoid();
+  const toolCallId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: async ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({
+        type: "tool-input-available",
+        toolCallId,
+        toolName: "ovNlGateway",
+        input: {
+          action: input.command.action,
+          args: input.command.args ?? {},
+        },
+      });
+      try {
+        const output = await input.executeOvGateway({
+          action: input.command.action,
+          args: input.command.args ?? {},
+        });
+        writer.write({
+          type: "tool-output-available",
+          toolCallId,
+          output,
+        });
+        const noMatchQuestion = ovConstraintNoMatchQuestion(output);
+        if (noMatchQuestion) {
+          writer.write({ type: "text-start", id: messageId });
+          writer.write({
+            type: "text-delta",
+            id: messageId,
+            delta: noMatchQuestion,
+          });
+          writer.write({ type: "text-end", id: messageId });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to execute ovNlGateway.";
+        writer.write({
+          type: "tool-output-error",
+          toolCallId,
+          errorText: message,
+        });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `OV NL error: ${message}`,
+        });
+        writer.write({ type: "text-end", id: messageId });
+      }
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
+}
+
+async function tryOvIntentFastPath(input: {
+  enabled: boolean;
+  shouldTry: boolean;
+  explicitWebSearchRequested: boolean;
+  executeOvGateway: ((input: unknown) => Promise<unknown>) | null;
+  text: string;
+  previousUserText: string;
+  messages: UIMessage<RemcoChatMessageMetadata>[];
+  messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
+}): Promise<Response | null> {
+  if (!input.enabled) return null;
+  if (!input.shouldTry) return null;
+  if (input.explicitWebSearchRequested) return null;
+  if (typeof input.executeOvGateway !== "function") return null;
+
+  const routed = await routeOvNlCommand({
+    text: input.text,
+    context: {
+      previousUserText: input.previousUserText,
+      lastOvOutput: lastOvOutputFromMessages(input.messages),
+    },
+  });
+
+  if (!routed.ok) {
+    if (routed.reason === "missing_required" && routed.clarification.trim()) {
+      logEvent("info", "ov_intent_clarification", {
+        reason: routed.reason,
+        confidence: routed.confidence,
+        missing: routed.missing,
+      });
+      return uiTextResponse({
+        text: routed.clarification.trim(),
+        messageMetadata: input.messageMetadata,
+        headers: input.headers,
+      });
+    }
+    logEvent("info", "ov_intent_parse_fallback", {
+      reason: routed.reason,
+      confidence: routed.confidence,
+      missing: routed.missing,
+    });
+    return null;
+  }
+
+  logEvent("info", "ov_intent_parse_success", {
+    action: routed.command.action,
+    confidence: routed.command.confidence,
+    isFollowUp: routed.command.isFollowUp,
+  });
+  return uiOvNlResponse({
+    command: {
+      action: routed.command.action,
+      args: routed.command.args,
+    },
+    executeOvGateway: input.executeOvGateway,
+    messageMetadata: input.messageMetadata,
+    headers: input.headers,
+  });
+}
+
 function hash8(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
 }
@@ -1254,6 +1429,31 @@ export async function POST(req: Request) {
       ovNlEnabled: ovNlTools.enabled,
       explicitSkillName: skillInvocation.explicitSkillName,
     });
+    const ovGatewayExecute = (
+      ovNlTools.tools as {
+        ovNlGateway?: { execute?: (input: unknown) => Promise<unknown> };
+      }
+    ).ovNlGateway?.execute;
+    const ovFastPath = await tryOvIntentFastPath({
+      enabled: ovNlTools.enabled,
+      shouldTry: !explicitBashCommand && forceOvNlGatewayTool,
+      explicitWebSearchRequested: isExplicitWebSearchRequest(lastUserText),
+      executeOvGateway: typeof ovGatewayExecute === "function" ? ovGatewayExecute : null,
+      text: lastUserText,
+      previousUserText,
+      messages: skillInvocation.messages,
+      messageMetadata: {
+        createdAt: now,
+        turnUserMessageId: lastUserMessageId || undefined,
+      },
+      headers: {
+        "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+        "x-remcochat-temporary": "1",
+        "x-remcochat-profile-id": profile.id,
+      },
+    });
+    if (ovFastPath) return ovFastPath;
+
     const forcedToolChoice = explicitBashCommand
       ? ({ type: "tool", toolName: "bash" } as const)
       : forceOvNlGatewayTool
@@ -1300,9 +1500,12 @@ export async function POST(req: Request) {
 	      system = [
 	        system,
 	        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+	        'When extracting constraints: treat hard words ("must", "only", "without", "no", "geen", "alleen", "zonder", "niet") as strict filters in args.intent.hard.',
+	        'Treat preference words ("prefer", "best", "liefst", "bij voorkeur") as ranking hints in args.intent.soft.rankBy.',
 	        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
 	        'If the user asks for more detail about a specific trip option (for example "details for option 2" after a trips.search), call ovNlGateway with action="trips.detail" and args { ctxRecon } taken from that option.',
 	        'If the user provides a ctxRecon and asks to show detailed trip legs, call ovNlGateway with action="trips.detail" and args { ctxRecon }.',
+	        "If strict constraints produce no matches, ask one concise clarification question to relax exactly one hard constraint.",
 	        "Only use web search first when the user explicitly asks for internet/web sources.",
 	      ].join("\n\n");
 	    }
@@ -2472,9 +2675,12 @@ export async function POST(req: Request) {
 	    systemParts.push(
 	      [
 	        'If the user asks about Dutch rail travel (NS), stations, departures/arrivals, journey options, or disruptions, prefer the "ovNlGateway" tool.',
+	        'When extracting constraints: treat hard words ("must", "only", "without", "no", "geen", "alleen", "zonder", "niet") as strict filters in args.intent.hard.',
+	        'Treat preference words ("prefer", "best", "liefst", "bij voorkeur") as ranking hints in args.intent.soft.rankBy.',
 	        'If the user asks for a departure board within a specific time window (for example "tussen 18:00 en 19:00"), call ovNlGateway with action="departures.window" and args { station, fromTime, toTime, date? }. Interpret times in Europe/Amsterdam.',
 	        'If the user asks for more detail about a specific trip option (for example "details for option 2" after a trips.search), call ovNlGateway with action="trips.detail" and args { ctxRecon } taken from that option.',
 	        'If the user provides a ctxRecon and asks to show detailed trip legs, call ovNlGateway with action="trips.detail" and args { ctxRecon }.',
+	        "If strict constraints produce no matches, ask one concise clarification question to relax exactly one hard constraint.",
 	        "Only use web search first when the user explicitly asks for internet/web sources.",
 	      ].join("\n")
 	    );
@@ -2602,6 +2808,34 @@ export async function POST(req: Request) {
     explicitSkillName: skillInvocation.explicitSkillName,
     activatedSkillNames: effectiveChat.activatedSkillNames,
   });
+  const ovGatewayExecute = (
+    ovNlTools.tools as {
+      ovNlGateway?: { execute?: (input: unknown) => Promise<unknown> };
+    }
+  ).ovNlGateway?.execute;
+  const ovFastPath = await tryOvIntentFastPath({
+    enabled: ovNlTools.enabled,
+    shouldTry: !forceMemoryAnswerTool && !explicitBashCommand && forceOvNlGatewayTool,
+    explicitWebSearchRequested: isExplicitWebSearchRequest(lastUserText),
+    executeOvGateway: typeof ovGatewayExecute === "function" ? ovGatewayExecute : null,
+    text: lastUserText,
+    previousUserText,
+    messages: skillInvocation.messages,
+    messageMetadata: {
+      createdAt: now,
+      turnUserMessageId: lastUserMessageId || undefined,
+      profileInstructionsRevision: currentProfileRevision,
+      chatInstructionsRevision: currentChatRevision,
+    },
+    headers: {
+      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+      "x-remcochat-temporary": "0",
+      "x-remcochat-profile-id": profile.id,
+      "x-remcochat-chat-id": effectiveChat.id,
+    },
+  });
+  if (ovFastPath) return ovFastPath;
+
   const forcedToolChoice = forceMemoryAnswerTool
     ? ({ type: "tool", toolName: "displayMemoryAnswer" } as const)
     : explicitBashCommand

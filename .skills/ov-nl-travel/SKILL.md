@@ -36,15 +36,23 @@ Use the `ovNlGateway` tool first for Dutch railway (NS) questions.
 
 - `stations.search` — `{ query, limit?, countryCodes? }`
 - `stations.nearest` — `{ latitude/longitude or lat/lng, limit? }`
-- `departures.list` — `{ station? | stationCode? | uicCode?, dateTime?, maxJourneys?, lang? }` (station identifier required)
-- `departures.window` — `{ station? | stationCode? | uicCode?, fromDateTime+toDateTime OR fromTime+toTime, date?, maxJourneys?, lang? }`
-- `arrivals.list` — `{ station? | stationCode? | uicCode?, dateTime?, maxJourneys?, lang? }` (station identifier required)
-- `trips.search` — `{ from, to, via?, dateTime?, searchForArrival?, limit?, lang? }`
-- `trips.detail` — `{ ctxRecon, date?, lang? }`
-- `journey.detail` — `{ id? | train?, dateTime?, departureUicCode?, transferUicCode?, arrivalUicCode?, omitCrowdForecast? }` (id or train required)
-- `disruptions.list` — `{ type? (one or more of CALAMITY/DISRUPTION/MAINTENANCE), isActive?, lang? }`
-- `disruptions.by_station` — `{ station }`
-- `disruptions.detail` — `{ type (CALAMITY/DISRUPTION/MAINTENANCE), id }`
+- `departures.list` — `{ station? | stationCode? | uicCode?, dateTime?, maxJourneys?, lang?, intent? }` (station identifier required)
+- `departures.window` — `{ station? | stationCode? | uicCode?, fromDateTime+toDateTime OR fromTime+toTime, date?, maxJourneys?, lang?, intent? }`
+- `arrivals.list` — `{ station? | stationCode? | uicCode?, dateTime?, maxJourneys?, lang?, intent? }` (station identifier required)
+- `trips.search` — `{ from, to, via?, dateTime?, searchForArrival?, limit?, lang?, intent? }`
+- `trips.detail` — `{ ctxRecon, date?, lang?, intent? }`
+- `journey.detail` — `{ id? | train?, dateTime?, departureUicCode?, transferUicCode?, arrivalUicCode?, omitCrowdForecast?, intent? }` (id or train required)
+- `disruptions.list` — `{ type? (one or more of CALAMITY/DISRUPTION/MAINTENANCE), isActive?, lang?, intent? }`
+- `disruptions.by_station` — `{ station, intent? }`
+- `disruptions.detail` — `{ type (CALAMITY/DISRUPTION/MAINTENANCE), id, intent? }`
+
+### Intent contract (`args.intent`)
+
+- `intent.hard` (strict filters): `directOnly`, `maxTransfers`, `maxDurationMinutes`, `departureAfter`, `departureBefore`, `arrivalAfter`, `arrivalBefore`, `includeModes`, `excludeModes`, `includeOperators`, `excludeOperators`, `includeTrainCategories`, `excludeTrainCategories`, `avoidStations`, `excludeCancelled`, `requireRealtime`, `platformEquals`, `disruptionTypes`, `activeOnly`.
+- `intent.soft.rankBy` (ranking hints): one or more of `fastest`, `fewest_transfers`, `earliest_departure`, `earliest_arrival`, `realtime_first`, `least_walking`.
+- Use hard constraints for wording like `must/only/without/no/geen/alleen/zonder/niet`.
+- Use soft ranking for wording like `prefer/liefst/best/bij voorkeur`.
+- If hard constraints produce no matches, ask one concise clarification to relax a single hard constraint.
 
 ### Date/time guidance
 
@@ -126,6 +134,37 @@ Most actions return a matching `kind` (e.g. `kind: "trips.search"`). Two special
 
 ```json
 { "action": "trips.search", "args": { "from": "Almere Centrum", "to": "Groningen", "dateTime": "today", "limit": 3 } }
+```
+
+### Trip search with strict direct-only filtering
+
+```json
+{
+  "action": "trips.search",
+  "args": {
+    "from": "Almere Centrum",
+    "to": "Groningen",
+    "limit": 6,
+    "intent": {
+      "hard": { "directOnly": true }
+    }
+  }
+}
+```
+
+### Departures with soft ranking preference
+
+```json
+{
+  "action": "departures.list",
+  "args": {
+    "station": "Utrecht Centraal",
+    "maxJourneys": 20,
+    "intent": {
+      "soft": { "rankBy": ["realtime_first", "earliest_departure"] }
+    }
+  }
+}
 ```
 
 ## Reference

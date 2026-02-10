@@ -76,3 +76,22 @@ test("shouldPreferOvNlGatewayTool follows OV skill activation", () => {
     true
   );
 });
+
+test("shouldPreferOvNlGatewayTool does not force OV when web is explicit even with OV skill", () => {
+  assert.equal(
+    shouldPreferOvNlGatewayTool({
+      text: "Use web search and include sources for NS disruptions.",
+      ovNlEnabled: true,
+      explicitSkillName: OV_NL_SKILL_NAME,
+    }),
+    false
+  );
+  assert.equal(
+    shouldPreferOvNlGatewayTool({
+      text: "Gebruik internet bronnen voor live NS updates.",
+      ovNlEnabled: true,
+      activatedSkillNames: [OV_NL_SKILL_NAME],
+    }),
+    false
+  );
+});

@@ -179,6 +179,7 @@ export type OvNlErrorCode =
   | "invalid_tool_input"
   | "access_denied"
   | "config_error"
+  | "constraint_no_match"
   | "station_not_found"
   | "station_ambiguous"
   | "upstream_unreachable"
@@ -283,6 +284,63 @@ export type OvNlTripLeg = {
   stops?: OvNlTripLegStop[];
 };
 
+export type OvNlIntentMode =
+  | "PUBLIC_TRANSIT"
+  | "WALK"
+  | "TRANSFER"
+  | "BIKE"
+  | "CAR"
+  | "KISS"
+  | "TAXI"
+  | "UNKNOWN";
+
+export type OvNlIntentRank =
+  | "fastest"
+  | "fewest_transfers"
+  | "earliest_departure"
+  | "earliest_arrival"
+  | "realtime_first"
+  | "least_walking";
+
+export type OvNlIntentHard = {
+  directOnly?: boolean;
+  maxTransfers?: number;
+  maxDurationMinutes?: number;
+  departureAfter?: string;
+  departureBefore?: string;
+  arrivalAfter?: string;
+  arrivalBefore?: string;
+  includeModes?: OvNlIntentMode[];
+  excludeModes?: OvNlIntentMode[];
+  includeOperators?: string[];
+  excludeOperators?: string[];
+  includeTrainCategories?: string[];
+  excludeTrainCategories?: string[];
+  avoidStations?: string[];
+  excludeCancelled?: boolean;
+  requireRealtime?: boolean;
+  platformEquals?: string;
+  disruptionTypes?: Array<"CALAMITY" | "DISRUPTION" | "MAINTENANCE">;
+  activeOnly?: boolean;
+};
+
+export type OvNlIntentSoft = {
+  rankBy?: OvNlIntentRank[];
+};
+
+export type OvNlIntent = {
+  hard?: OvNlIntentHard;
+  soft?: OvNlIntentSoft;
+};
+
+export type OvNlIntentMeta = {
+  appliedHard: string[];
+  appliedSoft: OvNlIntentRank[];
+  ignoredSoft: OvNlIntentRank[];
+  beforeCount: number;
+  afterCount: number;
+};
+
 export type OvNlTripSummary = {
   uid: string;
   status: string;
@@ -318,6 +376,7 @@ export type OvNlToolOutput =
       kind: "stations.search";
       query: string;
       stations: OvNlStation[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -327,6 +386,7 @@ export type OvNlToolOutput =
       latitude: number;
       longitude: number;
       stations: OvNlStation[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -335,6 +395,7 @@ export type OvNlToolOutput =
       kind: "departures.list";
       station: OvNlStation | null;
       departures: OvNlDeparture[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -348,6 +409,7 @@ export type OvNlToolOutput =
         timeZone: string;
       };
       departures: OvNlDeparture[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -356,6 +418,7 @@ export type OvNlToolOutput =
       kind: "arrivals.list";
       station: OvNlStation | null;
       arrivals: OvNlArrival[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -366,6 +429,7 @@ export type OvNlToolOutput =
       to: OvNlStation;
       via: OvNlStation | null;
       trips: OvNlTripSummary[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -373,6 +437,7 @@ export type OvNlToolOutput =
   | {
       kind: "trips.detail";
       trip: OvNlTripSummary | null;
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -382,6 +447,7 @@ export type OvNlToolOutput =
       journeyId: string;
       trainNumber: string | null;
       legs: OvNlTripLeg[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -389,6 +455,7 @@ export type OvNlToolOutput =
   | {
       kind: "disruptions.list";
       disruptions: OvNlDisruption[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -397,6 +464,7 @@ export type OvNlToolOutput =
       kind: "disruptions.by_station";
       station: OvNlStation | null;
       disruptions: OvNlDisruption[];
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;
@@ -404,6 +472,7 @@ export type OvNlToolOutput =
   | {
       kind: "disruptions.detail";
       disruption: OvNlDisruption | null;
+      intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;
       cached: boolean;

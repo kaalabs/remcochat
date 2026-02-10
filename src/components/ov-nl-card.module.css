@@ -581,6 +581,23 @@
   text-transform: uppercase;
 }
 
+.noMatchHint {
+  margin-top: 8px;
+  border-top: 1px dashed var(--ov-ns-line);
+  padding-top: 8px;
+  color: #6a1c1c;
+}
+
+.noMatchTitle {
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.noMatchText {
+  margin-top: 3px;
+  font-size: 0.82rem;
+}
+
 @media (width <= 900px) {
   .headerTop {
     flex-direction: column;

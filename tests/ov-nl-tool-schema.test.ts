@@ -154,10 +154,48 @@ test("ovNlGateway wire input schema accepts over-specified args payload", () => 
       omitCrowdForecast: true,
       type: "DISRUPTION",
       isActive: true,
+      intent: {
+        hard: {
+          directOnly: true,
+          maxTransfers: 0,
+          excludeCancelled: true,
+        },
+        soft: {
+          rankBy: ["fewest_transfers", "fastest"],
+        },
+      },
     },
   });
 
   assert.equal(parsed.success, true);
+});
+
+test("ovNlGateway validated schema keeps intent payload for trips.search", () => {
+  const parsed = ovNlToolTest.OvNlGatewayToolValidatedInputSchema.parse({
+    action: "trips.search",
+    args: {
+      from: "Almere Centrum",
+      to: "Groningen",
+      limit: 5,
+      intent: {
+        hard: {
+          directOnly: true,
+          maxTransfers: 0,
+        },
+        soft: {
+          rankBy: ["fewest_transfers", "fastest"],
+        },
+      },
+    },
+  });
+
+  assert.equal(parsed.action, "trips.search");
+  assert.equal(parsed.args.intent?.hard?.directOnly, true);
+  assert.equal(parsed.args.intent?.hard?.maxTransfers, 0);
+  assert.deepEqual(parsed.args.intent?.soft?.rankBy, [
+    "fewest_transfers",
+    "fastest",
+  ]);
 });
 
 test("ovNlGateway wire input schema accepts whitespace placeholders in optional fields", () => {

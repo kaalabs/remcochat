@@ -10,6 +10,11 @@ import type {
   OvNlDisambiguationCandidate,
   OvNlDisruption,
   OvNlErrorCode,
+  OvNlIntent,
+  OvNlIntentHard,
+  OvNlIntentMeta,
+  OvNlIntentMode,
+  OvNlIntentRank,
   OvNlStation,
   OvNlToolAction,
   OvNlToolError,
@@ -44,12 +49,68 @@ const StationCodeSchema = z.string().trim().min(1).max(32);
 const UicCodeSchema = z.string().trim().min(1).max(32);
 const DateTimeInputSchema = z.string().trim().min(1).max(64);
 const LooseString = (max: number) => z.string().max(max).optional();
+const OvNlIntentModeSchema = z.enum([
+  "PUBLIC_TRANSIT",
+  "WALK",
+  "TRANSFER",
+  "BIKE",
+  "CAR",
+  "KISS",
+  "TAXI",
+  "UNKNOWN",
+]);
+const OvNlIntentRankSchema = z.enum([
+  "fastest",
+  "fewest_transfers",
+  "earliest_departure",
+  "earliest_arrival",
+  "realtime_first",
+  "least_walking",
+]);
+const OvNlDisruptionTypeSchema = z.enum(["CALAMITY", "DISRUPTION", "MAINTENANCE"]);
+const OvNlIntentHardSchema = z
+  .object({
+    directOnly: z.boolean().optional(),
+    maxTransfers: z.number().int().min(0).max(8).optional(),
+    maxDurationMinutes: z.number().int().min(1).max(24 * 60).optional(),
+    departureAfter: DateTimeInputSchema.optional(),
+    departureBefore: DateTimeInputSchema.optional(),
+    arrivalAfter: DateTimeInputSchema.optional(),
+    arrivalBefore: DateTimeInputSchema.optional(),
+    includeModes: z.array(OvNlIntentModeSchema).max(8).optional(),
+    excludeModes: z.array(OvNlIntentModeSchema).max(8).optional(),
+    includeOperators: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+    excludeOperators: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+    includeTrainCategories: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+    excludeTrainCategories: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+    avoidStations: z.array(z.string().trim().min(1).max(120)).max(24).optional(),
+    excludeCancelled: z.boolean().optional(),
+    requireRealtime: z.boolean().optional(),
+    platformEquals: z.string().trim().min(1).max(32).optional(),
+    disruptionTypes: z.array(OvNlDisruptionTypeSchema).max(3).optional(),
+    activeOnly: z.boolean().optional(),
+  })
+  .strip();
+
+const OvNlIntentSoftSchema = z
+  .object({
+    rankBy: z.array(OvNlIntentRankSchema).max(6).optional(),
+  })
+  .strip();
+
+const OvNlIntentSchema = z
+  .object({
+    hard: OvNlIntentHardSchema.optional(),
+    soft: OvNlIntentSoftSchema.optional(),
+  })
+  .strip();
 
 const StationsSearchArgsSchema = z
   .object({
     query: z.string().trim().min(2).max(120),
     limit: z.number().int().min(1).max(30).optional(),
     countryCodes: z.array(z.string().trim().min(1).max(8)).max(8).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
@@ -60,6 +121,7 @@ const StationsNearestArgsSchema = z
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
     limit: z.number().int().min(1).max(20).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip()
   .refine(
@@ -77,6 +139,7 @@ const DeparturesListArgsSchema = z
     dateTime: DateTimeInputSchema.optional(),
     maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip()
   .refine(
@@ -96,6 +159,7 @@ const DeparturesWindowArgsSchema = z
     toDateTime: DateTimeInputSchema.optional(),
     maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip()
   .refine(
@@ -115,6 +179,7 @@ const ArrivalsListArgsSchema = z
     dateTime: DateTimeInputSchema.optional(),
     maxJourneys: z.number().int().min(1).max(200).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip()
   .refine(
@@ -131,6 +196,7 @@ const TripsSearchArgsSchema = z
     searchForArrival: z.boolean().optional(),
     limit: z.number().int().min(1).max(20).optional(),
     lang: z.string().trim().min(2).max(12).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
@@ -139,6 +205,7 @@ const TripsDetailArgsSchema = z
     ctxRecon: z.string().trim().min(1).max(4000),
     date: DateTimeInputSchema.optional(),
     lang: z.string().trim().min(2).max(12).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
@@ -151,6 +218,7 @@ const JourneyDetailArgsSchema = z
     transferUicCode: UicCodeSchema.optional(),
     arrivalUicCode: UicCodeSchema.optional(),
     omitCrowdForecast: z.boolean().optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip()
   .refine((v) => Boolean(v.id || v.train), "journey.detail requires id or train");
@@ -158,24 +226,27 @@ const JourneyDetailArgsSchema = z
 const DisruptionsListArgsSchema = z
   .object({
     type: z
-      .array(z.enum(["CALAMITY", "DISRUPTION", "MAINTENANCE"]))
+      .array(OvNlDisruptionTypeSchema)
       .max(3)
       .optional(),
     isActive: z.boolean().optional(),
     lang: z.string().trim().min(2).max(64).optional(),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
 const DisruptionsByStationArgsSchema = z
   .object({
     station: z.string().trim().min(1).max(120),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
 const DisruptionsDetailArgsSchema = z
   .object({
-    type: z.enum(["CALAMITY", "DISRUPTION", "MAINTENANCE"]),
+    type: OvNlDisruptionTypeSchema,
     id: z.string().trim().min(1).max(120),
+    intent: OvNlIntentSchema.optional(),
   })
   .strip();
 
@@ -217,11 +288,46 @@ const OvNlGatewayToolWireArgsSchema = z
 
     type: z
       .union([
-        z.enum(["CALAMITY", "DISRUPTION", "MAINTENANCE"]),
-        z.array(z.enum(["CALAMITY", "DISRUPTION", "MAINTENANCE"])).max(3),
+        OvNlDisruptionTypeSchema,
+        z.array(OvNlDisruptionTypeSchema).max(3),
       ])
       .optional(),
     isActive: z.boolean().optional(),
+    intent: z
+      .object({
+        hard: z
+          .object({
+            directOnly: z.boolean().optional(),
+            maxTransfers: z.number().int().optional(),
+            maxDurationMinutes: z.number().int().optional(),
+            departureAfter: LooseString(64),
+            departureBefore: LooseString(64),
+            arrivalAfter: LooseString(64),
+            arrivalBefore: LooseString(64),
+            includeModes: z.array(OvNlIntentModeSchema).optional(),
+            excludeModes: z.array(OvNlIntentModeSchema).optional(),
+            includeOperators: z.array(LooseString(64)).optional(),
+            excludeOperators: z.array(LooseString(64)).optional(),
+            includeTrainCategories: z.array(LooseString(64)).optional(),
+            excludeTrainCategories: z.array(LooseString(64)).optional(),
+            avoidStations: z.array(LooseString(120)).optional(),
+            excludeCancelled: z.boolean().optional(),
+            requireRealtime: z.boolean().optional(),
+            platformEquals: LooseString(32),
+            disruptionTypes: z.array(OvNlDisruptionTypeSchema).optional(),
+            activeOnly: z.boolean().optional(),
+          })
+          .passthrough()
+          .optional(),
+        soft: z
+          .object({
+            rankBy: z.array(OvNlIntentRankSchema).optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
@@ -316,6 +422,7 @@ function makeCacheKey(action: OvNlToolAction, args: unknown) {
 }
 
 function sanitizeLooseToolArgs(value: unknown): unknown {
+  if (value === null) return undefined;
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
@@ -336,6 +443,272 @@ function sanitizeLooseToolArgs(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+const ROUTE_QUERY_SIGNAL_RE =
+  /\b(van|from)\b[\s\S]{0,120}\b(naar|to)\b|\btussen\b[\s\S]{0,120}\ben\b|\bbetween\b[\s\S]{0,120}\band\b/i;
+const ROUTE_FROM_TO_RE = /\bfrom\s+(.+?)\s+to\s+(.+?)(?:$|[.?!,;])/i;
+const ROUTE_BETWEEN_AND_RE = /\bbetween\s+(.+?)\s+and\s+(.+?)(?:$|[.?!,;])/i;
+const ROUTE_VAN_NAAR_RE = /\bvan\s+(.+?)\s+naar\s+(.+?)(?:$|[.?!,;])/i;
+const ROUTE_TUSSEN_EN_RE = /\btussen\s+(.+?)\s+en\s+(.+?)(?:$|[.?!,;])/i;
+const STATION_SEGMENT_STOP_RE =
+  /\b(geef|give|toon|show|please|alstublieft|met|with|zonder|without|liefst|prefer|bij\s+voorkeur|direct|directe|rechtstreeks|treinopties|train\s+options?)\b/i;
+
+function inferDateTimeTokenFromText(text: string): string | undefined {
+  const normalized = text.toLowerCase();
+  if (/\b(vandaag|today)\b/.test(normalized)) return "today";
+  if (/\b(morgen|tomorrow)\b/.test(normalized)) return "tomorrow";
+  if (/\b(gisteren|yesterday)\b/.test(normalized)) return "yesterday";
+  if (/\b(nu|now)\b/.test(normalized)) return "now";
+  return undefined;
+}
+
+function trimStationSegment(value: string): string {
+  let out = value.trim();
+  if (!out) return "";
+  const stopIdx = out.search(STATION_SEGMENT_STOP_RE);
+  if (stopIdx > 0) out = out.slice(0, stopIdx).trim();
+  out = out.replace(/^[("'`]+/, "").replace(/[)"'`]+$/, "");
+  out = out.replace(/[.,;:!?]+$/, "");
+  out = out.replace(/\s+/g, " ").trim();
+  return out;
+}
+
+function extractRouteFromText(text: string): { from: string; to: string } | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  if (!ROUTE_QUERY_SIGNAL_RE.test(raw)) return null;
+
+  const match =
+    ROUTE_VAN_NAAR_RE.exec(raw) ??
+    ROUTE_TUSSEN_EN_RE.exec(raw) ??
+    ROUTE_FROM_TO_RE.exec(raw) ??
+    ROUTE_BETWEEN_AND_RE.exec(raw);
+  if (!match) return null;
+
+  const from = trimStationSegment(match[1] ?? "");
+  const to = trimStationSegment(match[2] ?? "");
+  if (!from || !to) return null;
+  if (from.length > 120 || to.length > 120) return null;
+  return { from, to };
+}
+
+function shouldInferDirectOnlyFromText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const soft =
+    /\b(liefst|prefer|bij\s+voorkeur|best)\b/i.test(normalized);
+  if (soft) return false;
+  return /\b(direct|directe|rechtstreeks|zonder\s+overstap|geen\s+overstap|geen\s+overstappen|no\s+transfers?)\b/i.test(
+    normalized
+  );
+}
+
+function mergeDirectOnlyIntoIntent(intent: unknown): unknown {
+  const base = intent && typeof intent === "object" && !Array.isArray(intent) ? (intent as Record<string, unknown>) : {};
+  const hardRaw =
+    base.hard && typeof base.hard === "object" && !Array.isArray(base.hard)
+      ? (base.hard as Record<string, unknown>)
+      : {};
+  if (hardRaw.directOnly === true) return base;
+
+  return {
+    ...base,
+    hard: {
+      ...hardRaw,
+      directOnly: true,
+      maxTransfers: typeof hardRaw.maxTransfers === "number" ? hardRaw.maxTransfers : 0,
+    },
+  };
+}
+
+function autoFixActionAndArgs(input: {
+  action: OvNlToolAction;
+  args: Record<string, unknown>;
+}): { action: OvNlToolAction; args: Record<string, unknown> } {
+  // Detail endpoints return a single entity, so intent constraints (filters/ranking) do not apply.
+  // Models sometimes carry over intent from the previous search; strip it to avoid user-visible errors.
+  if (
+    (input.action === "trips.detail" ||
+      input.action === "journey.detail" ||
+      input.action === "disruptions.detail") &&
+    input.args.intent != null
+  ) {
+    const nextArgs = { ...input.args };
+    delete nextArgs.intent;
+    return { action: input.action, args: nextArgs };
+  }
+
+  const query = typeof input.args.query === "string" ? input.args.query.trim() : "";
+  const route = query ? extractRouteFromText(query) : null;
+
+  if (input.action === "stations.search" && route) {
+    const nextArgs: Record<string, unknown> = {
+      from: route.from,
+      to: route.to,
+    };
+    const inferredDateTime = inferDateTimeTokenFromText(query);
+    if (input.args.dateTime != null) nextArgs.dateTime = input.args.dateTime;
+    else if (inferredDateTime) nextArgs.dateTime = inferredDateTime;
+    if (input.args.searchForArrival != null) nextArgs.searchForArrival = input.args.searchForArrival;
+    if (input.args.limit != null) nextArgs.limit = input.args.limit;
+    if (input.args.lang != null) nextArgs.lang = input.args.lang;
+    if (input.args.intent != null) nextArgs.intent = input.args.intent;
+    if (shouldInferDirectOnlyFromText(query)) {
+      nextArgs.intent = mergeDirectOnlyIntoIntent(nextArgs.intent);
+    }
+    return { action: "trips.search", args: nextArgs };
+  }
+
+  if (input.action === "trips.search" && route) {
+    const nextArgs: Record<string, unknown> = { ...input.args };
+    if (!(typeof nextArgs.from === "string" && nextArgs.from.trim())) nextArgs.from = route.from;
+    if (!(typeof nextArgs.to === "string" && nextArgs.to.trim())) nextArgs.to = route.to;
+    const inferredDateTime = inferDateTimeTokenFromText(query);
+    if (nextArgs.dateTime == null && inferredDateTime) nextArgs.dateTime = inferredDateTime;
+    if (shouldInferDirectOnlyFromText(query)) {
+      nextArgs.intent = mergeDirectOnlyIntoIntent(nextArgs.intent);
+    }
+    return { action: input.action, args: nextArgs };
+  }
+
+  return input;
+}
+
+function parseBooleanLike(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return undefined;
+    if (["true", "1", "yes", "y", "ja"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "nee"].includes(normalized)) return false;
+  }
+  return undefined;
+}
+
+function parseNumberLike(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function parseIntegerLike(value: unknown): number | undefined {
+  const parsed = parseNumberLike(value);
+  if (parsed == null) return undefined;
+  if (!Number.isFinite(parsed)) return undefined;
+  if (!Number.isInteger(parsed)) return Math.trunc(parsed);
+  return parsed;
+}
+
+function coerceArrayLike(value: unknown): unknown[] | undefined {
+  if (value == null) return undefined;
+  if (Array.isArray(value)) return value;
+  return [value];
+}
+
+function coerceToolArgsForValidation(action: OvNlToolAction, args: unknown): unknown {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return args;
+
+  const out: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+
+  const numericKeys: ReadonlyArray<string> = ["latitude", "longitude", "lat", "lng"];
+  for (const key of numericKeys) {
+    if (!(key in out)) continue;
+    const coerced = parseNumberLike(out[key]);
+    if (coerced != null) out[key] = coerced;
+  }
+
+  const integerKeys: ReadonlyArray<string> = ["limit", "maxJourneys", "train"];
+  for (const key of integerKeys) {
+    if (!(key in out)) continue;
+    const coerced = parseIntegerLike(out[key]);
+    if (coerced != null) out[key] = coerced;
+  }
+
+  const booleanKeys: ReadonlyArray<string> = ["searchForArrival", "omitCrowdForecast", "isActive"];
+  for (const key of booleanKeys) {
+    if (!(key in out)) continue;
+    const coerced = parseBooleanLike(out[key]);
+    if (coerced != null) out[key] = coerced;
+  }
+
+  if (action === "disruptions.list" && typeof out.type === "string") {
+    out.type = [out.type];
+  }
+
+  if (out.intent && typeof out.intent === "object" && !Array.isArray(out.intent)) {
+    const intent = { ...(out.intent as Record<string, unknown>) };
+
+    if (intent.soft && typeof intent.soft === "object" && !Array.isArray(intent.soft)) {
+      const soft = { ...(intent.soft as Record<string, unknown>) };
+      if (typeof soft.rankBy === "string") {
+        soft.rankBy = [soft.rankBy];
+      }
+      intent.soft = soft;
+    }
+
+    if (intent.hard && typeof intent.hard === "object" && !Array.isArray(intent.hard)) {
+      const hard = { ...(intent.hard as Record<string, unknown>) };
+      const hardBooleanKeys: ReadonlyArray<string> = [
+        "directOnly",
+        "excludeCancelled",
+        "requireRealtime",
+        "activeOnly",
+      ];
+      for (const key of hardBooleanKeys) {
+        if (!(key in hard)) continue;
+        const coerced = parseBooleanLike(hard[key]);
+        if (coerced != null) hard[key] = coerced;
+      }
+
+      const hardIntegerKeys: ReadonlyArray<string> = ["maxTransfers", "maxDurationMinutes"];
+      for (const key of hardIntegerKeys) {
+        if (!(key in hard)) continue;
+        const coerced = parseIntegerLike(hard[key]);
+        if (coerced != null) hard[key] = coerced;
+      }
+      if ("maxTransfers" in hard) {
+        const raw = parseIntegerLike(hard.maxTransfers);
+        if (raw == null || raw < 0) delete hard.maxTransfers;
+        else hard.maxTransfers = Math.min(8, raw);
+      }
+      if ("maxDurationMinutes" in hard) {
+        const raw = parseIntegerLike(hard.maxDurationMinutes);
+        if (raw == null || raw < 1) delete hard.maxDurationMinutes;
+        else hard.maxDurationMinutes = Math.min(24 * 60, raw);
+      }
+
+      const hardArrayKeys: ReadonlyArray<string> = [
+        "includeModes",
+        "excludeModes",
+        "includeOperators",
+        "excludeOperators",
+        "includeTrainCategories",
+        "excludeTrainCategories",
+        "avoidStations",
+        "disruptionTypes",
+      ];
+      for (const key of hardArrayKeys) {
+        if (!(key in hard)) continue;
+        const coerced = coerceArrayLike(hard[key]);
+        if (coerced != null) hard[key] = coerced;
+      }
+
+      intent.hard = hard;
+    }
+
+    out.intent = intent;
+  }
+
+  return out;
 }
 
 function getCachedOutput(cacheKey: string): OvNlToolOutput | null {
@@ -664,6 +1037,403 @@ function filterDepartedTrips(trips: OvNlTripSummary[], nowMs: number): OvNlTripS
     const parsed = Date.parse(dt);
     if (!Number.isFinite(parsed)) return true;
     return parsed >= cutoffMs;
+  });
+}
+
+const OV_NL_INTENT_HARD_KEYS = [
+  "directOnly",
+  "maxTransfers",
+  "maxDurationMinutes",
+  "departureAfter",
+  "departureBefore",
+  "arrivalAfter",
+  "arrivalBefore",
+  "includeModes",
+  "excludeModes",
+  "includeOperators",
+  "excludeOperators",
+  "includeTrainCategories",
+  "excludeTrainCategories",
+  "avoidStations",
+  "excludeCancelled",
+  "requireRealtime",
+  "platformEquals",
+  "disruptionTypes",
+  "activeOnly",
+] as const;
+
+type OvNlIntentHardKey = (typeof OV_NL_INTENT_HARD_KEYS)[number];
+type BoardRow = OvNlDeparture | OvNlArrival;
+
+function hasOwnKey<T extends object>(value: T, key: PropertyKey): key is keyof T {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function hasMeaningfulHardValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function hasIntentPayload(intent: OvNlIntent | undefined): boolean {
+  if (!intent) return false;
+  const hard = intent.hard;
+  const soft = intent.soft;
+  if (hard) {
+    for (const key of OV_NL_INTENT_HARD_KEYS) {
+      if (hasOwnKey(hard, key) && hasMeaningfulHardValue(hard[key])) return true;
+    }
+  }
+  if (Array.isArray(soft?.rankBy) && soft.rankBy.length > 0) return true;
+  return false;
+}
+
+function presentHardKeys(hard: OvNlIntentHard | undefined): OvNlIntentHardKey[] {
+  if (!hard) return [];
+  const keys: OvNlIntentHardKey[] = [];
+  for (const key of OV_NL_INTENT_HARD_KEYS) {
+    if (hasOwnKey(hard, key) && hasMeaningfulHardValue(hard[key])) keys.push(key);
+  }
+  return keys;
+}
+
+function uniqueSoftRanks(soft: OvNlIntent["soft"]): OvNlIntentRank[] {
+  if (!Array.isArray(soft?.rankBy)) return [];
+  const out: OvNlIntentRank[] = [];
+  const seen = new Set<OvNlIntentRank>();
+  for (const rank of soft.rankBy) {
+    if (seen.has(rank)) continue;
+    seen.add(rank);
+    out.push(rank);
+  }
+  return out;
+}
+
+function partitionSoftRanks(input: {
+  all: OvNlIntentRank[];
+  supported: readonly OvNlIntentRank[];
+}): { applied: OvNlIntentRank[]; ignored: OvNlIntentRank[] } {
+  const supportedSet = new Set(input.supported);
+  const applied: OvNlIntentRank[] = [];
+  const ignored: OvNlIntentRank[] = [];
+  for (const rank of input.all) {
+    if (supportedSet.has(rank)) applied.push(rank);
+    else ignored.push(rank);
+  }
+  return { applied, ignored };
+}
+
+function normalizeStringSet(values: string[] | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!Array.isArray(values)) return out;
+  for (const value of values) {
+    const normalized = normalizeComparable(value);
+    if (normalized) out.add(normalized);
+  }
+  return out;
+}
+
+function normalizeModeSet(values: OvNlIntentMode[] | undefined): Set<OvNlIntentMode> {
+  const out = new Set<OvNlIntentMode>();
+  if (!Array.isArray(values)) return out;
+  for (const value of values) out.add(value);
+  return out;
+}
+
+function parseDateTimeMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveIntentDateConstraintMs(input: {
+  raw: string | undefined;
+  nowMs: number;
+  key: string;
+}): { ok: true; ms: number | null } | { ok: false; error: OvNlToolError } {
+  if (!input.raw) return { ok: true, ms: null };
+  const normalized = normalizeDateTimeInput(input.raw, input.nowMs);
+  if (!normalized) {
+    return {
+      ok: false,
+      error: {
+        code: "invalid_tool_input",
+        message: `Invalid intent date/time value for ${input.key}.`,
+        details: { key: input.key, value: input.raw },
+      },
+    };
+  }
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) {
+    return {
+      ok: false,
+      error: {
+        code: "invalid_tool_input",
+        message: `Invalid intent date/time value for ${input.key}.`,
+        details: { key: input.key, value: input.raw },
+      },
+    };
+  }
+  return { ok: true, ms: parsed };
+}
+
+function compareNullableNumberAsc(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function stableSort<T>(rows: T[], compare: (a: T, b: T) => number): T[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const c = compare(a.row, b.row);
+      if (c !== 0) return c;
+      return a.index - b.index;
+    })
+    .map((item) => item.row);
+}
+
+function firstTripDepartureMs(trip: OvNlTripSummary): number | null {
+  return parseDateTimeMs(trip.departureActualDateTime || trip.departurePlannedDateTime);
+}
+
+function finalTripArrivalMs(trip: OvNlTripSummary): number | null {
+  return parseDateTimeMs(trip.arrivalActualDateTime || trip.arrivalPlannedDateTime);
+}
+
+function tripDurationMinutes(trip: OvNlTripSummary): number | null {
+  const value = trip.actualDurationMinutes ?? trip.plannedDurationMinutes;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : null;
+}
+
+function tripWalkingLegCount(trip: OvNlTripSummary): number {
+  return trip.legs.filter((leg) => leg.mode === "WALK").length;
+}
+
+function tripTouchesStation(trip: OvNlTripSummary, stationTokens: Set<string>): boolean {
+  if (stationTokens.size === 0) return false;
+  const names: string[] = [trip.departureName, trip.arrivalName];
+  for (const leg of trip.legs) {
+    names.push(leg.originName, leg.destinationName);
+    if (Array.isArray(leg.stops)) {
+      for (const stop of leg.stops) names.push(stop.name);
+    }
+  }
+  return names.some((name) => stationTokens.has(normalizeComparable(name)));
+}
+
+function tripMatchesOperatorTokens(trip: OvNlTripSummary, tokens: Set<string>): boolean {
+  if (tokens.size === 0) return false;
+  return trip.legs.some((leg) => {
+    const normalized = normalizeComparable(leg.name);
+    if (!normalized) return false;
+    for (const token of tokens) {
+      if (normalized.includes(token)) return true;
+    }
+    return false;
+  });
+}
+
+function tripMatchesCategoryTokens(trip: OvNlTripSummary, tokens: Set<string>): boolean {
+  if (tokens.size === 0) return false;
+  return trip.legs.some((leg) => {
+    const normalized = normalizeComparable(leg.name);
+    if (!normalized) return false;
+    for (const token of tokens) {
+      if (normalized.includes(token)) return true;
+    }
+    return false;
+  });
+}
+
+function tripHasPlatform(trip: OvNlTripSummary, normalizedPlatform: string): boolean {
+  if (!normalizedPlatform) return false;
+  return trip.legs.some((leg) => {
+    const values = [
+      leg.originActualTrack,
+      leg.originPlannedTrack,
+      leg.destinationActualTrack,
+      leg.destinationPlannedTrack,
+    ];
+    return values.some((value) => normalizeComparable(String(value ?? "")) === normalizedPlatform);
+  });
+}
+
+function boardRowDateMs(row: BoardRow): number | null {
+  return parseDateTimeMs(row.actualDateTime || row.plannedDateTime);
+}
+
+function boardRowIsRealtime(row: BoardRow): boolean {
+  return Boolean(row.actualDateTime && row.actualDateTime !== row.plannedDateTime);
+}
+
+function boardRowPlatform(row: BoardRow): string {
+  return normalizeComparable(row.actualTrack || row.plannedTrack || "");
+}
+
+function boardRowCounterpartyName(row: BoardRow): string {
+  if ("destination" in row) return row.destination;
+  return row.origin;
+}
+
+function buildIntentMeta(input: {
+  intent: OvNlIntent | undefined;
+  appliedHard: string[];
+  appliedSoft: OvNlIntentRank[];
+  ignoredSoft: OvNlIntentRank[];
+  beforeCount: number;
+  afterCount: number;
+}): OvNlIntentMeta | undefined {
+  if (!hasIntentPayload(input.intent)) return undefined;
+  return {
+    appliedHard: input.appliedHard,
+    appliedSoft: input.appliedSoft,
+    ignoredSoft: input.ignoredSoft,
+    beforeCount: input.beforeCount,
+    afterCount: input.afterCount,
+  };
+}
+
+function resolveUnsupportedHardKeys(input: {
+  hard: OvNlIntentHard | undefined;
+  allowed: readonly OvNlIntentHardKey[];
+}): OvNlIntentHardKey[] {
+  const present = presentHardKeys(input.hard);
+  const allowedSet = new Set(input.allowed);
+  return present.filter((key) => !allowedSet.has(key));
+}
+
+function buildUnsupportedHardError(input: {
+  action: OvNlToolAction;
+  unsupported: OvNlIntentHardKey[];
+  allowed: readonly OvNlIntentHardKey[];
+}): OvNlActionExecutionResult {
+  return {
+    output: makeErrorOutput({
+      action: input.action,
+      code: "invalid_tool_input",
+      message: `Some hard intent constraints are not supported for action "${input.action}": ${input.unsupported.join(
+        ", "
+      )}`,
+      details: {
+        unsupportedHardConstraints: input.unsupported,
+        supportedHardConstraints: input.allowed,
+      },
+    }),
+    cacheTtlSeconds: null,
+  };
+}
+
+function suggestedRelaxationsForHard(appliedHard: string[]): string[] {
+  const hints: string[] = [];
+  for (const key of appliedHard) {
+    if (key === "directOnly") hints.push("Allow 1 transfer instead of direct only.");
+    if (key === "maxTransfers") hints.push("Increase maxTransfers.");
+    if (key === "maxDurationMinutes") hints.push("Increase maxDurationMinutes.");
+    if (key === "departureAfter") hints.push("Use an earlier departureAfter time.");
+    if (key === "departureBefore") hints.push("Use a later departureBefore time.");
+    if (key === "arrivalAfter") hints.push("Use an earlier arrivalAfter time.");
+    if (key === "arrivalBefore") hints.push("Use a later arrivalBefore time.");
+    if (key === "includeModes") hints.push("Allow more transport modes.");
+    if (key === "excludeModes") hints.push("Exclude fewer transport modes.");
+    if (key === "includeOperators") hints.push("Allow more operators.");
+    if (key === "excludeOperators") hints.push("Exclude fewer operators.");
+    if (key === "includeTrainCategories") hints.push("Allow more train categories.");
+    if (key === "excludeTrainCategories") hints.push("Exclude fewer train categories.");
+    if (key === "avoidStations") hints.push("Avoid fewer stations.");
+    if (key === "excludeCancelled") hints.push("Allow cancelled services in results.");
+    if (key === "requireRealtime") hints.push("Allow non-realtime services.");
+    if (key === "platformEquals") hints.push("Remove fixed platform requirement.");
+    if (key === "disruptionTypes") hints.push("Allow more disruption types.");
+    if (key === "activeOnly") hints.push("Allow inactive disruptions.");
+  }
+  return Array.from(new Set(hints));
+}
+
+function buildConstraintNoMatchError(input: {
+  action: OvNlToolAction;
+  appliedHard: string[];
+  beforeCount: number;
+  afterCount: number;
+}): OvNlActionExecutionResult {
+  return {
+    output: makeErrorOutput({
+      action: input.action,
+      code: "constraint_no_match",
+      message: "No results match all required constraints. Please relax at least one hard constraint.",
+      details: {
+        appliedHard: input.appliedHard,
+        beforeCount: input.beforeCount,
+        afterCount: input.afterCount,
+        suggestedRelaxations: suggestedRelaxationsForHard(input.appliedHard),
+      },
+    }),
+    cacheTtlSeconds: null,
+  };
+}
+
+function sortTripsBySoftRanks(trips: OvNlTripSummary[], ranks: OvNlIntentRank[]): OvNlTripSummary[] {
+  if (ranks.length === 0) return trips;
+  return stableSort(trips, (a, b) => {
+    for (const rank of ranks) {
+      if (rank === "fastest") {
+        const cmp = compareNullableNumberAsc(tripDurationMinutes(a), tripDurationMinutes(b));
+        if (cmp !== 0) return cmp;
+      } else if (rank === "fewest_transfers") {
+        const cmp = a.transfers - b.transfers;
+        if (cmp !== 0) return cmp;
+      } else if (rank === "earliest_departure") {
+        const cmp = compareNullableNumberAsc(firstTripDepartureMs(a), firstTripDepartureMs(b));
+        if (cmp !== 0) return cmp;
+      } else if (rank === "earliest_arrival") {
+        const cmp = compareNullableNumberAsc(finalTripArrivalMs(a), finalTripArrivalMs(b));
+        if (cmp !== 0) return cmp;
+      } else if (rank === "realtime_first") {
+        if (a.realtime !== b.realtime) return a.realtime ? -1 : 1;
+      } else if (rank === "least_walking") {
+        const cmp = tripWalkingLegCount(a) - tripWalkingLegCount(b);
+        if (cmp !== 0) return cmp;
+      }
+    }
+    return 0;
+  });
+}
+
+function sortBoardRowsBySoftRanks(rows: BoardRow[], ranks: OvNlIntentRank[]): BoardRow[] {
+  if (ranks.length === 0) return rows;
+  return stableSort(rows, (a, b) => {
+    for (const rank of ranks) {
+      if (rank === "earliest_departure" || rank === "earliest_arrival") {
+        const cmp = compareNullableNumberAsc(boardRowDateMs(a), boardRowDateMs(b));
+        if (cmp !== 0) return cmp;
+      } else if (rank === "realtime_first") {
+        const aRealtime = boardRowIsRealtime(a);
+        const bRealtime = boardRowIsRealtime(b);
+        if (aRealtime !== bRealtime) return aRealtime ? -1 : 1;
+      }
+    }
+    return 0;
+  });
+}
+
+function sortDisruptionsBySoftRanks(rows: OvNlDisruption[], ranks: OvNlIntentRank[]): OvNlDisruption[] {
+  if (ranks.length === 0) return rows;
+  return stableSort(rows, (a, b) => {
+    for (const rank of ranks) {
+      if (rank === "realtime_first") {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      }
+    }
+    return 0;
   });
 }
 
@@ -1646,8 +2416,24 @@ async function executeAction(
 ): Promise<OvNlActionExecutionResult> {
   const action = validatedInput.action;
   const fetchedAt = new Date().toISOString();
+  const intent = validatedInput.args.intent;
+  const hard = intent?.hard;
+  const softRanksAll = uniqueSoftRanks(intent?.soft);
 
   if (action === "stations.search") {
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: [],
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: [],
+      });
+    }
+    const ignoredSoft = softRanksAll;
+
     const searched = await searchStations(ctx, {
       query: validatedInput.args.query,
       limit: validatedInput.args.limit,
@@ -1671,6 +2457,14 @@ async function executeAction(
         kind: "stations.search",
         query: validatedInput.args.query,
         stations: searched.stations,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard: [],
+          appliedSoft: [],
+          ignoredSoft,
+          beforeCount: searched.stations.length,
+          afterCount: searched.stations.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -1680,6 +2474,19 @@ async function executeAction(
   }
 
   if (action === "stations.nearest") {
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: [],
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: [],
+      });
+    }
+    const ignoredSoft = softRanksAll;
+
     const lat = validatedInput.args.latitude ?? validatedInput.args.lat ?? 0;
     const lng = validatedInput.args.longitude ?? validatedInput.args.lng ?? 0;
     const limit = Math.max(1, Math.min(20, Math.floor(validatedInput.args.limit ?? 6)));
@@ -1720,6 +2527,14 @@ async function executeAction(
         latitude: lat,
         longitude: lng,
         stations,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard: [],
+          appliedSoft: [],
+          ignoredSoft,
+          beforeCount: stations.length,
+          afterCount: stations.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -1729,6 +2544,36 @@ async function executeAction(
   }
 
   if (action === "departures.window") {
+    const allowedHard: readonly OvNlIntentHardKey[] = [
+      "departureAfter",
+      "departureBefore",
+      "arrivalAfter",
+      "arrivalBefore",
+      "includeOperators",
+      "excludeOperators",
+      "includeTrainCategories",
+      "excludeTrainCategories",
+      "avoidStations",
+      "excludeCancelled",
+      "requireRealtime",
+      "platformEquals",
+    ];
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: allowedHard,
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: allowedHard,
+      });
+    }
+    const { applied: appliedSoft, ignored: ignoredSoft } = partitionSoftRanks({
+      all: softRanksAll,
+      supported: ["earliest_departure", "realtime_first"],
+    });
+
     const stationResult = await resolveStationFromArgs(ctx, {
       action,
       station: validatedInput.args.station,
@@ -1906,6 +2751,164 @@ async function executeAction(
       return a.destination.localeCompare(b.destination);
     });
 
+    const appliedHard: string[] = [];
+    let filteredDepartures = departures.slice();
+    const depAfter = resolveIntentDateConstraintMs({
+      raw: hard?.departureAfter,
+      nowMs,
+      key: "departureAfter",
+    });
+    if (!depAfter.ok) {
+      return { output: makeErrorOutput({ action, ...depAfter.error }), cacheTtlSeconds: null };
+    }
+    const depAfterMs = depAfter.ms;
+    if (depAfterMs != null) {
+      appliedHard.push("departureAfter");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt >= depAfterMs;
+      });
+    }
+
+    const depBefore = resolveIntentDateConstraintMs({
+      raw: hard?.departureBefore,
+      nowMs,
+      key: "departureBefore",
+    });
+    if (!depBefore.ok) {
+      return { output: makeErrorOutput({ action, ...depBefore.error }), cacheTtlSeconds: null };
+    }
+    const depBeforeMs = depBefore.ms;
+    if (depBeforeMs != null) {
+      appliedHard.push("departureBefore");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt <= depBeforeMs;
+      });
+    }
+
+    const arrAfter = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalAfter,
+      nowMs,
+      key: "arrivalAfter",
+    });
+    if (!arrAfter.ok) {
+      return { output: makeErrorOutput({ action, ...arrAfter.error }), cacheTtlSeconds: null };
+    }
+    const arrAfterMs = arrAfter.ms;
+    if (arrAfterMs != null) {
+      appliedHard.push("arrivalAfter");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt >= arrAfterMs;
+      });
+    }
+
+    const arrBefore = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalBefore,
+      nowMs,
+      key: "arrivalBefore",
+    });
+    if (!arrBefore.ok) {
+      return { output: makeErrorOutput({ action, ...arrBefore.error }), cacheTtlSeconds: null };
+    }
+    const arrBeforeMs = arrBefore.ms;
+    if (arrBeforeMs != null) {
+      appliedHard.push("arrivalBefore");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt <= arrBeforeMs;
+      });
+    }
+
+    if (hard?.excludeCancelled) {
+      appliedHard.push("excludeCancelled");
+      filteredDepartures = filteredDepartures.filter((row) => !row.cancelled);
+    }
+
+    if (hard?.requireRealtime) {
+      appliedHard.push("requireRealtime");
+      filteredDepartures = filteredDepartures.filter((row) => boardRowIsRealtime(row));
+    }
+
+    const includeOperators = normalizeStringSet(hard?.includeOperators);
+    if (includeOperators.size > 0) {
+      appliedHard.push("includeOperators");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const normalized = normalizeComparable(row.operatorName ?? "");
+        if (!normalized) return false;
+        for (const token of includeOperators) {
+          if (normalized.includes(token)) return true;
+        }
+        return false;
+      });
+    }
+
+    const excludeOperators = normalizeStringSet(hard?.excludeOperators);
+    if (excludeOperators.size > 0) {
+      appliedHard.push("excludeOperators");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const normalized = normalizeComparable(row.operatorName ?? "");
+        if (!normalized) return true;
+        for (const token of excludeOperators) {
+          if (normalized.includes(token)) return false;
+        }
+        return true;
+      });
+    }
+
+    const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
+    if (includeCategories.size > 0) {
+      appliedHard.push("includeTrainCategories");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const normalized = normalizeComparable(row.trainCategory);
+        if (!normalized) return false;
+        for (const token of includeCategories) {
+          if (normalized.includes(token)) return true;
+        }
+        return false;
+      });
+    }
+
+    const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
+    if (excludeCategories.size > 0) {
+      appliedHard.push("excludeTrainCategories");
+      filteredDepartures = filteredDepartures.filter((row) => {
+        const normalized = normalizeComparable(row.trainCategory);
+        for (const token of excludeCategories) {
+          if (normalized.includes(token)) return false;
+        }
+        return true;
+      });
+    }
+
+    const avoidStations = normalizeStringSet(hard?.avoidStations);
+    if (avoidStations.size > 0) {
+      appliedHard.push("avoidStations");
+      filteredDepartures = filteredDepartures.filter(
+        (row) => !avoidStations.has(normalizeComparable(row.destination))
+      );
+    }
+
+    const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
+    if (normalizedPlatform) {
+      appliedHard.push("platformEquals");
+      filteredDepartures = filteredDepartures.filter(
+        (row) => boardRowPlatform(row) === normalizedPlatform
+      );
+    }
+
+    if (filteredDepartures.length === 0 && appliedHard.length > 0) {
+      return buildConstraintNoMatchError({
+        action,
+        appliedHard,
+        beforeCount: departures.length,
+        afterCount: 0,
+      });
+    }
+
+    const rankedDepartures = sortBoardRowsBySoftRanks(filteredDepartures, appliedSoft);
+
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
       output: {
@@ -1916,7 +2919,15 @@ async function executeAction(
           toDateTime: window.toIso,
           timeZone: OV_NL_TIME_ZONE,
         },
-        departures,
+        departures: rankedDepartures as OvNlDeparture[],
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard,
+          appliedSoft,
+          ignoredSoft,
+          beforeCount: departures.length,
+          afterCount: rankedDepartures.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -1926,6 +2937,39 @@ async function executeAction(
   }
 
   if (action === "departures.list" || action === "arrivals.list") {
+    const allowedHard: readonly OvNlIntentHardKey[] = [
+      "departureAfter",
+      "departureBefore",
+      "arrivalAfter",
+      "arrivalBefore",
+      "includeOperators",
+      "excludeOperators",
+      "includeTrainCategories",
+      "excludeTrainCategories",
+      "avoidStations",
+      "excludeCancelled",
+      "requireRealtime",
+      "platformEquals",
+    ];
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: allowedHard,
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: allowedHard,
+      });
+    }
+    const { applied: appliedSoft, ignored: ignoredSoft } = partitionSoftRanks({
+      all: softRanksAll,
+      supported:
+        action === "departures.list"
+          ? (["earliest_departure", "realtime_first"] as const)
+          : (["earliest_arrival", "realtime_first"] as const),
+    });
+
     const stationResult = await resolveStationFromArgs(ctx, {
       action,
       station: validatedInput.args.station,
@@ -1994,11 +3038,175 @@ async function executeAction(
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     if (action === "departures.list") {
       const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
+      const baseDepartures = departuresRaw.map((departure, index) => normalizeDeparture(departure, index));
+      const nowMs = Date.now();
+      const appliedHard: string[] = [];
+      let filteredRows: BoardRow[] = baseDepartures.slice();
+
+      const depAfter = resolveIntentDateConstraintMs({
+        raw: hard?.departureAfter,
+        nowMs,
+        key: "departureAfter",
+      });
+      if (!depAfter.ok) {
+        return { output: makeErrorOutput({ action, ...depAfter.error }), cacheTtlSeconds: null };
+      }
+      const depAfterMs = depAfter.ms;
+      if (depAfterMs != null) {
+        appliedHard.push("departureAfter");
+        filteredRows = filteredRows.filter((row) => {
+          const dt = boardRowDateMs(row);
+          return dt == null || dt >= depAfterMs;
+        });
+      }
+
+      const depBefore = resolveIntentDateConstraintMs({
+        raw: hard?.departureBefore,
+        nowMs,
+        key: "departureBefore",
+      });
+      if (!depBefore.ok) {
+        return { output: makeErrorOutput({ action, ...depBefore.error }), cacheTtlSeconds: null };
+      }
+      const depBeforeMs = depBefore.ms;
+      if (depBeforeMs != null) {
+        appliedHard.push("departureBefore");
+        filteredRows = filteredRows.filter((row) => {
+          const dt = boardRowDateMs(row);
+          return dt == null || dt <= depBeforeMs;
+        });
+      }
+
+      const arrAfter = resolveIntentDateConstraintMs({
+        raw: hard?.arrivalAfter,
+        nowMs,
+        key: "arrivalAfter",
+      });
+      if (!arrAfter.ok) {
+        return { output: makeErrorOutput({ action, ...arrAfter.error }), cacheTtlSeconds: null };
+      }
+      const arrAfterMs = arrAfter.ms;
+      if (arrAfterMs != null) {
+        appliedHard.push("arrivalAfter");
+        filteredRows = filteredRows.filter((row) => {
+          const dt = boardRowDateMs(row);
+          return dt == null || dt >= arrAfterMs;
+        });
+      }
+
+      const arrBefore = resolveIntentDateConstraintMs({
+        raw: hard?.arrivalBefore,
+        nowMs,
+        key: "arrivalBefore",
+      });
+      if (!arrBefore.ok) {
+        return { output: makeErrorOutput({ action, ...arrBefore.error }), cacheTtlSeconds: null };
+      }
+      const arrBeforeMs = arrBefore.ms;
+      if (arrBeforeMs != null) {
+        appliedHard.push("arrivalBefore");
+        filteredRows = filteredRows.filter((row) => {
+          const dt = boardRowDateMs(row);
+          return dt == null || dt <= arrBeforeMs;
+        });
+      }
+
+      if (hard?.excludeCancelled) {
+        appliedHard.push("excludeCancelled");
+        filteredRows = filteredRows.filter((row) => !row.cancelled);
+      }
+      if (hard?.requireRealtime) {
+        appliedHard.push("requireRealtime");
+        filteredRows = filteredRows.filter((row) => boardRowIsRealtime(row));
+      }
+
+      const includeOperators = normalizeStringSet(hard?.includeOperators);
+      if (includeOperators.size > 0) {
+        appliedHard.push("includeOperators");
+        filteredRows = filteredRows.filter((row) => {
+          const normalized = normalizeComparable(row.operatorName ?? "");
+          if (!normalized) return false;
+          for (const token of includeOperators) {
+            if (normalized.includes(token)) return true;
+          }
+          return false;
+        });
+      }
+
+      const excludeOperators = normalizeStringSet(hard?.excludeOperators);
+      if (excludeOperators.size > 0) {
+        appliedHard.push("excludeOperators");
+        filteredRows = filteredRows.filter((row) => {
+          const normalized = normalizeComparable(row.operatorName ?? "");
+          if (!normalized) return true;
+          for (const token of excludeOperators) {
+            if (normalized.includes(token)) return false;
+          }
+          return true;
+        });
+      }
+
+      const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
+      if (includeCategories.size > 0) {
+        appliedHard.push("includeTrainCategories");
+        filteredRows = filteredRows.filter((row) => {
+          const normalized = normalizeComparable(row.trainCategory);
+          if (!normalized) return false;
+          for (const token of includeCategories) {
+            if (normalized.includes(token)) return true;
+          }
+          return false;
+        });
+      }
+
+      const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
+      if (excludeCategories.size > 0) {
+        appliedHard.push("excludeTrainCategories");
+        filteredRows = filteredRows.filter((row) => {
+          const normalized = normalizeComparable(row.trainCategory);
+          for (const token of excludeCategories) {
+            if (normalized.includes(token)) return false;
+          }
+          return true;
+        });
+      }
+
+      const avoidStations = normalizeStringSet(hard?.avoidStations);
+      if (avoidStations.size > 0) {
+        appliedHard.push("avoidStations");
+        filteredRows = filteredRows.filter(
+          (row) => !avoidStations.has(normalizeComparable(boardRowCounterpartyName(row)))
+        );
+      }
+
+      const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
+      if (normalizedPlatform) {
+        appliedHard.push("platformEquals");
+        filteredRows = filteredRows.filter((row) => boardRowPlatform(row) === normalizedPlatform);
+      }
+
+      if (filteredRows.length === 0 && appliedHard.length > 0) {
+        return buildConstraintNoMatchError({
+          action,
+          appliedHard,
+          beforeCount: baseDepartures.length,
+          afterCount: 0,
+        });
+      }
+      const rankedRows = sortBoardRowsBySoftRanks(filteredRows, appliedSoft) as OvNlDeparture[];
       return {
         output: {
           kind: "departures.list",
           station,
-          departures: departuresRaw.map((departure, index) => normalizeDeparture(departure, index)),
+          departures: rankedRows,
+          intentMeta: buildIntentMeta({
+            intent,
+            appliedHard,
+            appliedSoft,
+            ignoredSoft,
+            beforeCount: baseDepartures.length,
+            afterCount: rankedRows.length,
+          }),
           cacheTtlSeconds,
           fetchedAt,
           cached: false,
@@ -2008,11 +3216,175 @@ async function executeAction(
     }
 
     const arrivalsRaw = Array.isArray(payload.arrivals) ? payload.arrivals : [];
+    const baseArrivals = arrivalsRaw.map((arrival, index) => normalizeArrival(arrival, index));
+    const nowMs = Date.now();
+    const appliedHard: string[] = [];
+    let filteredRows: BoardRow[] = baseArrivals.slice();
+
+    const depAfter = resolveIntentDateConstraintMs({
+      raw: hard?.departureAfter,
+      nowMs,
+      key: "departureAfter",
+    });
+    if (!depAfter.ok) {
+      return { output: makeErrorOutput({ action, ...depAfter.error }), cacheTtlSeconds: null };
+    }
+    const depAfterMs = depAfter.ms;
+    if (depAfterMs != null) {
+      appliedHard.push("departureAfter");
+      filteredRows = filteredRows.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt >= depAfterMs;
+      });
+    }
+
+    const depBefore = resolveIntentDateConstraintMs({
+      raw: hard?.departureBefore,
+      nowMs,
+      key: "departureBefore",
+    });
+    if (!depBefore.ok) {
+      return { output: makeErrorOutput({ action, ...depBefore.error }), cacheTtlSeconds: null };
+    }
+    const depBeforeMs = depBefore.ms;
+    if (depBeforeMs != null) {
+      appliedHard.push("departureBefore");
+      filteredRows = filteredRows.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt <= depBeforeMs;
+      });
+    }
+
+    const arrAfter = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalAfter,
+      nowMs,
+      key: "arrivalAfter",
+    });
+    if (!arrAfter.ok) {
+      return { output: makeErrorOutput({ action, ...arrAfter.error }), cacheTtlSeconds: null };
+    }
+    const arrAfterMs = arrAfter.ms;
+    if (arrAfterMs != null) {
+      appliedHard.push("arrivalAfter");
+      filteredRows = filteredRows.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt >= arrAfterMs;
+      });
+    }
+
+    const arrBefore = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalBefore,
+      nowMs,
+      key: "arrivalBefore",
+    });
+    if (!arrBefore.ok) {
+      return { output: makeErrorOutput({ action, ...arrBefore.error }), cacheTtlSeconds: null };
+    }
+    const arrBeforeMs = arrBefore.ms;
+    if (arrBeforeMs != null) {
+      appliedHard.push("arrivalBefore");
+      filteredRows = filteredRows.filter((row) => {
+        const dt = boardRowDateMs(row);
+        return dt == null || dt <= arrBeforeMs;
+      });
+    }
+
+    if (hard?.excludeCancelled) {
+      appliedHard.push("excludeCancelled");
+      filteredRows = filteredRows.filter((row) => !row.cancelled);
+    }
+    if (hard?.requireRealtime) {
+      appliedHard.push("requireRealtime");
+      filteredRows = filteredRows.filter((row) => boardRowIsRealtime(row));
+    }
+
+    const includeOperators = normalizeStringSet(hard?.includeOperators);
+    if (includeOperators.size > 0) {
+      appliedHard.push("includeOperators");
+      filteredRows = filteredRows.filter((row) => {
+        const normalized = normalizeComparable(row.operatorName ?? "");
+        if (!normalized) return false;
+        for (const token of includeOperators) {
+          if (normalized.includes(token)) return true;
+        }
+        return false;
+      });
+    }
+
+    const excludeOperators = normalizeStringSet(hard?.excludeOperators);
+    if (excludeOperators.size > 0) {
+      appliedHard.push("excludeOperators");
+      filteredRows = filteredRows.filter((row) => {
+        const normalized = normalizeComparable(row.operatorName ?? "");
+        if (!normalized) return true;
+        for (const token of excludeOperators) {
+          if (normalized.includes(token)) return false;
+        }
+        return true;
+      });
+    }
+
+    const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
+    if (includeCategories.size > 0) {
+      appliedHard.push("includeTrainCategories");
+      filteredRows = filteredRows.filter((row) => {
+        const normalized = normalizeComparable(row.trainCategory);
+        if (!normalized) return false;
+        for (const token of includeCategories) {
+          if (normalized.includes(token)) return true;
+        }
+        return false;
+      });
+    }
+
+    const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
+    if (excludeCategories.size > 0) {
+      appliedHard.push("excludeTrainCategories");
+      filteredRows = filteredRows.filter((row) => {
+        const normalized = normalizeComparable(row.trainCategory);
+        for (const token of excludeCategories) {
+          if (normalized.includes(token)) return false;
+        }
+        return true;
+      });
+    }
+
+    const avoidStations = normalizeStringSet(hard?.avoidStations);
+    if (avoidStations.size > 0) {
+      appliedHard.push("avoidStations");
+      filteredRows = filteredRows.filter(
+        (row) => !avoidStations.has(normalizeComparable(boardRowCounterpartyName(row)))
+      );
+    }
+
+    const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
+    if (normalizedPlatform) {
+      appliedHard.push("platformEquals");
+      filteredRows = filteredRows.filter((row) => boardRowPlatform(row) === normalizedPlatform);
+    }
+
+    if (filteredRows.length === 0 && appliedHard.length > 0) {
+      return buildConstraintNoMatchError({
+        action,
+        appliedHard,
+        beforeCount: baseArrivals.length,
+        afterCount: 0,
+      });
+    }
+    const rankedRows = sortBoardRowsBySoftRanks(filteredRows, appliedSoft) as OvNlArrival[];
     return {
       output: {
         kind: "arrivals.list",
         station,
-        arrivals: arrivalsRaw.map((arrival, index) => normalizeArrival(arrival, index)),
+        arrivals: rankedRows,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard,
+          appliedSoft,
+          ignoredSoft,
+          beforeCount: baseArrivals.length,
+          afterCount: rankedRows.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2022,6 +3394,48 @@ async function executeAction(
   }
 
   if (action === "trips.search") {
+    const allowedHard: readonly OvNlIntentHardKey[] = [
+      "directOnly",
+      "maxTransfers",
+      "maxDurationMinutes",
+      "departureAfter",
+      "departureBefore",
+      "arrivalAfter",
+      "arrivalBefore",
+      "includeModes",
+      "excludeModes",
+      "includeOperators",
+      "excludeOperators",
+      "includeTrainCategories",
+      "excludeTrainCategories",
+      "avoidStations",
+      "excludeCancelled",
+      "requireRealtime",
+      "platformEquals",
+    ];
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: allowedHard,
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: allowedHard,
+      });
+    }
+    const { applied: appliedSoft, ignored: ignoredSoft } = partitionSoftRanks({
+      all: softRanksAll,
+      supported: [
+        "fastest",
+        "fewest_transfers",
+        "earliest_departure",
+        "earliest_arrival",
+        "realtime_first",
+        "least_walking",
+      ],
+    });
+
     const fromResolved = await resolveStationFromSearch(ctx, {
       action,
       query: validatedInput.args.from,
@@ -2146,7 +3560,178 @@ async function executeAction(
         return tripsRaw.map((trip) => normalizeTripSummary(trip, source));
       });
 
-    const trips = filterDepartedTrips(allTrips, nowMs).slice(0, limit);
+    const normalizedTrips = filterDepartedTrips(allTrips, nowMs);
+    const appliedHard: string[] = [];
+    let filteredTrips = normalizedTrips.slice();
+
+    if (hard?.directOnly) {
+      appliedHard.push("directOnly");
+      filteredTrips = filteredTrips.filter((trip) => trip.transfers === 0);
+    }
+    if (typeof hard?.maxTransfers === "number" && Number.isFinite(hard.maxTransfers)) {
+      appliedHard.push("maxTransfers");
+      filteredTrips = filteredTrips.filter((trip) => trip.transfers <= hard.maxTransfers!);
+    }
+    if (
+      typeof hard?.maxDurationMinutes === "number" &&
+      Number.isFinite(hard.maxDurationMinutes)
+    ) {
+      appliedHard.push("maxDurationMinutes");
+      filteredTrips = filteredTrips.filter((trip) => {
+        const duration = tripDurationMinutes(trip);
+        return duration == null || duration <= hard.maxDurationMinutes!;
+      });
+    }
+
+    const depAfter = resolveIntentDateConstraintMs({
+      raw: hard?.departureAfter,
+      nowMs,
+      key: "departureAfter",
+    });
+    if (!depAfter.ok) {
+      return { output: makeErrorOutput({ action, ...depAfter.error }), cacheTtlSeconds: null };
+    }
+    const depAfterMs = depAfter.ms;
+    if (depAfterMs != null) {
+      appliedHard.push("departureAfter");
+      filteredTrips = filteredTrips.filter((trip) => {
+        const dt = firstTripDepartureMs(trip);
+        return dt == null || dt >= depAfterMs;
+      });
+    }
+
+    const depBefore = resolveIntentDateConstraintMs({
+      raw: hard?.departureBefore,
+      nowMs,
+      key: "departureBefore",
+    });
+    if (!depBefore.ok) {
+      return { output: makeErrorOutput({ action, ...depBefore.error }), cacheTtlSeconds: null };
+    }
+    const depBeforeMs = depBefore.ms;
+    if (depBeforeMs != null) {
+      appliedHard.push("departureBefore");
+      filteredTrips = filteredTrips.filter((trip) => {
+        const dt = firstTripDepartureMs(trip);
+        return dt == null || dt <= depBeforeMs;
+      });
+    }
+
+    const arrAfter = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalAfter,
+      nowMs,
+      key: "arrivalAfter",
+    });
+    if (!arrAfter.ok) {
+      return { output: makeErrorOutput({ action, ...arrAfter.error }), cacheTtlSeconds: null };
+    }
+    const arrAfterMs = arrAfter.ms;
+    if (arrAfterMs != null) {
+      appliedHard.push("arrivalAfter");
+      filteredTrips = filteredTrips.filter((trip) => {
+        const dt = finalTripArrivalMs(trip);
+        return dt == null || dt >= arrAfterMs;
+      });
+    }
+
+    const arrBefore = resolveIntentDateConstraintMs({
+      raw: hard?.arrivalBefore,
+      nowMs,
+      key: "arrivalBefore",
+    });
+    if (!arrBefore.ok) {
+      return { output: makeErrorOutput({ action, ...arrBefore.error }), cacheTtlSeconds: null };
+    }
+    const arrBeforeMs = arrBefore.ms;
+    if (arrBeforeMs != null) {
+      appliedHard.push("arrivalBefore");
+      filteredTrips = filteredTrips.filter((trip) => {
+        const dt = finalTripArrivalMs(trip);
+        return dt == null || dt <= arrBeforeMs;
+      });
+    }
+
+    const includeModes = normalizeModeSet(hard?.includeModes);
+    if (includeModes.size > 0) {
+      appliedHard.push("includeModes");
+      filteredTrips = filteredTrips.filter((trip) =>
+        trip.legs.some((leg) => includeModes.has(leg.mode))
+      );
+    }
+
+    const excludeModes = normalizeModeSet(hard?.excludeModes);
+    if (excludeModes.size > 0) {
+      appliedHard.push("excludeModes");
+      filteredTrips = filteredTrips.filter(
+        (trip) => !trip.legs.some((leg) => excludeModes.has(leg.mode))
+      );
+    }
+
+    const includeOperators = normalizeStringSet(hard?.includeOperators);
+    if (includeOperators.size > 0) {
+      appliedHard.push("includeOperators");
+      filteredTrips = filteredTrips.filter((trip) =>
+        tripMatchesOperatorTokens(trip, includeOperators)
+      );
+    }
+
+    const excludeOperators = normalizeStringSet(hard?.excludeOperators);
+    if (excludeOperators.size > 0) {
+      appliedHard.push("excludeOperators");
+      filteredTrips = filteredTrips.filter(
+        (trip) => !tripMatchesOperatorTokens(trip, excludeOperators)
+      );
+    }
+
+    const includeCategories = normalizeStringSet(hard?.includeTrainCategories);
+    if (includeCategories.size > 0) {
+      appliedHard.push("includeTrainCategories");
+      filteredTrips = filteredTrips.filter((trip) =>
+        tripMatchesCategoryTokens(trip, includeCategories)
+      );
+    }
+
+    const excludeCategories = normalizeStringSet(hard?.excludeTrainCategories);
+    if (excludeCategories.size > 0) {
+      appliedHard.push("excludeTrainCategories");
+      filteredTrips = filteredTrips.filter(
+        (trip) => !tripMatchesCategoryTokens(trip, excludeCategories)
+      );
+    }
+
+    const avoidStations = normalizeStringSet(hard?.avoidStations);
+    if (avoidStations.size > 0) {
+      appliedHard.push("avoidStations");
+      filteredTrips = filteredTrips.filter((trip) => !tripTouchesStation(trip, avoidStations));
+    }
+
+    if (hard?.excludeCancelled) {
+      appliedHard.push("excludeCancelled");
+      filteredTrips = filteredTrips.filter((trip) => !trip.legs.some((leg) => leg.cancelled));
+    }
+
+    if (hard?.requireRealtime) {
+      appliedHard.push("requireRealtime");
+      filteredTrips = filteredTrips.filter((trip) => trip.realtime);
+    }
+
+    const normalizedPlatform = normalizeComparable(hard?.platformEquals ?? "");
+    if (normalizedPlatform) {
+      appliedHard.push("platformEquals");
+      filteredTrips = filteredTrips.filter((trip) => tripHasPlatform(trip, normalizedPlatform));
+    }
+
+    if (filteredTrips.length === 0 && appliedHard.length > 0) {
+      return buildConstraintNoMatchError({
+        action,
+        appliedHard,
+        beforeCount: normalizedTrips.length,
+        afterCount: 0,
+      });
+    }
+
+    const rankedTrips = sortTripsBySoftRanks(filteredTrips, appliedSoft);
+    const trips = rankedTrips.slice(0, limit);
 
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
@@ -2156,6 +3741,14 @@ async function executeAction(
         to: toResolved.station,
         via,
         trips,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard,
+          appliedSoft,
+          ignoredSoft,
+          beforeCount: normalizedTrips.length,
+          afterCount: trips.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2165,6 +3758,19 @@ async function executeAction(
   }
 
   if (action === "trips.detail") {
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: [],
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: [],
+      });
+    }
+    const ignoredSoft = softRanksAll;
+
     const lang = normalizeLanguage(validatedInput.args.lang);
     const response = await callOvNlJson(ctx, {
       path: "/api/v3/trips/trip",
@@ -2205,6 +3811,14 @@ async function executeAction(
       output: {
         kind: "trips.detail",
         trip,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard: [],
+          appliedSoft: [],
+          ignoredSoft,
+          beforeCount: trip ? 1 : 0,
+          afterCount: trip ? 1 : 0,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2214,6 +3828,19 @@ async function executeAction(
   }
 
   if (action === "journey.detail") {
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: [],
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: [],
+      });
+    }
+    const ignoredSoft = softRanksAll;
+
     const response = await callOvNlJson(ctx, {
       path: "/api/v2/journey",
       query: {
@@ -2262,6 +3889,14 @@ async function executeAction(
             ? String(validatedInput.args.train)
             : null,
         legs,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard: [],
+          appliedSoft: [],
+          ignoredSoft,
+          beforeCount: legs.length,
+          afterCount: legs.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2271,12 +3906,41 @@ async function executeAction(
   }
 
   if (action === "disruptions.list") {
+    const allowedHard: readonly OvNlIntentHardKey[] = ["disruptionTypes", "activeOnly"];
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: allowedHard,
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: allowedHard,
+      });
+    }
+    const { applied: appliedSoft, ignored: ignoredSoft } = partitionSoftRanks({
+      all: softRanksAll,
+      supported: ["realtime_first"],
+    });
+
     const lang = normalizeLanguage(validatedInput.args.lang);
+    const queryType =
+      validatedInput.args.type && validatedInput.args.type.length > 0
+        ? validatedInput.args.type
+        : hard?.disruptionTypes && hard.disruptionTypes.length > 0
+          ? hard.disruptionTypes
+          : undefined;
+    const queryIsActive =
+      typeof validatedInput.args.isActive === "boolean"
+        ? validatedInput.args.isActive
+        : hard?.activeOnly
+          ? true
+          : undefined;
     const response = await callOvNlJson(ctx, {
       path: "/api/v3/disruptions",
       query: {
-        type: validatedInput.args.type,
-        isActive: validatedInput.args.isActive,
+        type: queryType,
+        isActive: queryIsActive,
       },
       headers: {
         "Accept-Language":
@@ -2306,12 +3970,41 @@ async function executeAction(
       };
     }
 
-    const disruptions = response.json.map((item) => normalizeDisruption(item));
+    const baseDisruptions = response.json.map((item) => normalizeDisruption(item));
+    const appliedHard: string[] = [];
+    let disruptions = baseDisruptions.slice();
+    if (Array.isArray(hard?.disruptionTypes) && hard.disruptionTypes.length > 0) {
+      const allowedTypes = new Set(hard.disruptionTypes);
+      appliedHard.push("disruptionTypes");
+      disruptions = disruptions.filter((item) => allowedTypes.has(item.type));
+    }
+    if (hard?.activeOnly) {
+      appliedHard.push("activeOnly");
+      disruptions = disruptions.filter((item) => item.isActive);
+    }
+    if (disruptions.length === 0 && appliedHard.length > 0) {
+      return buildConstraintNoMatchError({
+        action,
+        appliedHard,
+        beforeCount: baseDisruptions.length,
+        afterCount: 0,
+      });
+    }
+    disruptions = sortDisruptionsBySoftRanks(disruptions, appliedSoft);
+
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
       output: {
         kind: "disruptions.list",
         disruptions,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard,
+          appliedSoft,
+          ignoredSoft,
+          beforeCount: baseDisruptions.length,
+          afterCount: disruptions.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2321,6 +4014,23 @@ async function executeAction(
   }
 
   if (action === "disruptions.by_station") {
+    const allowedHard: readonly OvNlIntentHardKey[] = ["disruptionTypes", "activeOnly"];
+    const unsupportedHard = resolveUnsupportedHardKeys({
+      hard,
+      allowed: allowedHard,
+    });
+    if (unsupportedHard.length > 0) {
+      return buildUnsupportedHardError({
+        action,
+        unsupported: unsupportedHard,
+        allowed: allowedHard,
+      });
+    }
+    const { applied: appliedSoft, ignored: ignoredSoft } = partitionSoftRanks({
+      all: softRanksAll,
+      supported: ["realtime_first"],
+    });
+
     const stationResult = await resolveStationFromSearch(ctx, {
       action,
       query: validatedInput.args.station,
@@ -2373,13 +4083,42 @@ async function executeAction(
       };
     }
 
-    const disruptions = response.json.map((item) => normalizeDisruption(item));
+    const baseDisruptions = response.json.map((item) => normalizeDisruption(item));
+    const appliedHard: string[] = [];
+    let disruptions = baseDisruptions.slice();
+    if (Array.isArray(hard?.disruptionTypes) && hard.disruptionTypes.length > 0) {
+      const allowedTypes = new Set(hard.disruptionTypes);
+      appliedHard.push("disruptionTypes");
+      disruptions = disruptions.filter((item) => allowedTypes.has(item.type));
+    }
+    if (hard?.activeOnly) {
+      appliedHard.push("activeOnly");
+      disruptions = disruptions.filter((item) => item.isActive);
+    }
+    if (disruptions.length === 0 && appliedHard.length > 0) {
+      return buildConstraintNoMatchError({
+        action,
+        appliedHard,
+        beforeCount: baseDisruptions.length,
+        afterCount: 0,
+      });
+    }
+    disruptions = sortDisruptionsBySoftRanks(disruptions, appliedSoft);
+
     const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
       output: {
         kind: "disruptions.by_station",
         station,
         disruptions,
+        intentMeta: buildIntentMeta({
+          intent,
+          appliedHard,
+          appliedSoft,
+          ignoredSoft,
+          beforeCount: baseDisruptions.length,
+          afterCount: disruptions.length,
+        }),
         cacheTtlSeconds,
         fetchedAt,
         cached: false,
@@ -2387,6 +4126,19 @@ async function executeAction(
       cacheTtlSeconds,
     };
   }
+
+  const unsupportedHard = resolveUnsupportedHardKeys({
+    hard,
+    allowed: [],
+  });
+  if (unsupportedHard.length > 0) {
+    return buildUnsupportedHardError({
+      action,
+      unsupported: unsupportedHard,
+      allowed: [],
+    });
+  }
+  const ignoredSoft = softRanksAll;
 
   const response = await callOvNlJson(ctx, {
     path: `/api/v3/disruptions/${encodeURIComponent(validatedInput.args.type)}/${encodeURIComponent(
@@ -2422,6 +4174,14 @@ async function executeAction(
     output: {
       kind: "disruptions.detail",
       disruption,
+      intentMeta: buildIntentMeta({
+        intent,
+        appliedHard: [],
+        appliedSoft: [],
+        ignoredSoft,
+        beforeCount: disruption ? 1 : 0,
+        afterCount: disruption ? 1 : 0,
+      }),
       cacheTtlSeconds,
       fetchedAt,
       cached: false,
@@ -2450,17 +4210,34 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
       const rawArgs = (toolInput as { args?: unknown }).args;
       const looseArgs =
         rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {};
-      const args = sanitizeLooseToolArgs(looseArgs);
-      const parsed = OvNlGatewayToolValidatedInputSchema.safeParse({
+      const sanitizedArgsRaw = sanitizeLooseToolArgs(looseArgs);
+      const fixed = autoFixActionAndArgs({
         action,
+        args:
+          sanitizedArgsRaw && typeof sanitizedArgsRaw === "object" && !Array.isArray(sanitizedArgsRaw)
+            ? (sanitizedArgsRaw as Record<string, unknown>)
+            : {},
+      });
+      const args = coerceToolArgsForValidation(fixed.action, fixed.args);
+      const parsed = OvNlGatewayToolValidatedInputSchema.safeParse({
+        action: fixed.action,
         args,
       });
 
       if (!parsed.success) {
+        const firstIssue = parsed.error.issues[0];
+        const issuePath =
+          firstIssue && Array.isArray(firstIssue.path) && firstIssue.path.length > 0
+            ? firstIssue.path.join(".")
+            : "args";
+        const issueMessage =
+          firstIssue && typeof firstIssue.message === "string"
+            ? firstIssue.message.trim()
+            : "validation failed";
         return makeErrorOutput({
           action: action || "stations.search",
           code: "invalid_tool_input",
-          message: "Invalid ovNlGateway tool input.",
+          message: `Invalid ovNlGateway tool input (${issuePath}: ${issueMessage}).`,
           details: { issues: parsed.error.issues },
         });
       }
@@ -2468,11 +4245,27 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
       const cacheKey = makeCacheKey(parsed.data.action, parsed.data.args);
       const cachedOutput = getCachedOutput(cacheKey);
       if (cachedOutput) {
+        const cachedIntentMeta =
+          "intentMeta" in cachedOutput &&
+          cachedOutput.intentMeta &&
+          typeof cachedOutput.intentMeta === "object"
+            ? cachedOutput.intentMeta
+            : undefined;
         logEvent("info", "ov_nl.gateway_result", {
           action: parsed.data.action,
           kind: cachedOutput.kind,
           cached: true,
           cacheTtlSeconds: "cacheTtlSeconds" in cachedOutput ? cachedOutput.cacheTtlSeconds : null,
+          intent_present: Boolean(cachedIntentMeta),
+          hard_count: cachedIntentMeta?.appliedHard?.length ?? 0,
+          soft_count: cachedIntentMeta?.appliedSoft?.length ?? 0,
+          before_count:
+            typeof cachedIntentMeta?.beforeCount === "number"
+              ? cachedIntentMeta.beforeCount
+              : null,
+          after_count:
+            typeof cachedIntentMeta?.afterCount === "number" ? cachedIntentMeta.afterCount : null,
+          no_match: false,
         });
         return cachedOutput;
       }
@@ -2498,11 +4291,26 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
       if (result.output.kind !== "error" && result.cacheTtlSeconds != null) {
         setCachedOutput(cacheKey, result.output, result.cacheTtlSeconds);
       }
+      const intentMeta =
+        "intentMeta" in result.output &&
+        result.output.intentMeta &&
+        typeof result.output.intentMeta === "object"
+          ? result.output.intentMeta
+          : undefined;
+      const noMatch =
+        result.output.kind === "error" && result.output.error.code === "constraint_no_match";
       logEvent("info", "ov_nl.gateway_result", {
         action: parsed.data.action,
         kind: result.output.kind,
         cached: result.output.cached,
         cacheTtlSeconds: "cacheTtlSeconds" in result.output ? result.output.cacheTtlSeconds : null,
+        error_code: result.output.kind === "error" ? result.output.error.code : null,
+        intent_present: Boolean(intentMeta),
+        hard_count: intentMeta?.appliedHard?.length ?? 0,
+        soft_count: intentMeta?.appliedSoft?.length ?? 0,
+        before_count: typeof intentMeta?.beforeCount === "number" ? intentMeta.beforeCount : null,
+        after_count: typeof intentMeta?.afterCount === "number" ? intentMeta.afterCount : null,
+        no_match: noMatch,
       });
       return result.output;
     },

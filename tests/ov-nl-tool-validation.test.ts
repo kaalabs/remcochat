@@ -308,8 +308,8 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
     const url = new URL(String(input));
 
     if (url.pathname.endsWith("/api/v2/stations")) {
-      const q = String(url.searchParams.get("q") ?? "");
-      if (q === "Almere Centrum") {
+      const q = String(url.searchParams.get("q") ?? "").toLowerCase();
+      if (q === "almere centrum") {
         return new Response(
           JSON.stringify({
             payload: [
@@ -331,7 +331,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
           }
         );
       }
-      if (q === "Groningen") {
+      if (q === "groningen") {
         return new Response(
           JSON.stringify({
             payload: [
@@ -1172,7 +1172,18 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
 
   const result = (await ovNlGateway.execute({
     action: "trips.detail",
-    args: { ctxRecon: "ctx-detail-1" },
+    // Models may carry over constraints from a previous trips.search; these should not break details.
+    args: {
+      ctxRecon: "ctx-detail-1",
+      intent: {
+        hard: {
+          maxTransfers: 0,
+          includeModes: ["PUBLIC_TRANSIT"],
+          excludeModes: ["WALK"],
+          disruptionTypes: ["DISRUPTION"],
+        },
+      },
+    },
   })) as any;
 
   assert.equal(result.kind, "trips.detail");
@@ -1278,7 +1289,237 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(result.stations?.[0]?.code, "ALMC");
 });
 
-test("ovNlGateway trips.search ignores whitespace placeholder optional fields", async () => {
+test("ovNlGateway stations.search rejects unsupported hard constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        payload: [],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "max-age=30" },
+      }
+    );
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  const result = (await ovNlGateway.execute({
+    action: "stations.search",
+    args: {
+      query: "Almere Centrum",
+      intent: {
+        hard: {
+          directOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    error?: { code?: string };
+  };
+
+  assert.equal(result.kind, "error");
+  assert.equal(result.error?.code, "invalid_tool_input");
+});
+
+test("ovNlGateway auto-fixes stations.search route query to trips.search with hard direct intent", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      const q = String(url.searchParams.get("q") ?? "");
+      if (q === "Almere Centrum") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "ALMC",
+                UICCode: "8400058",
+                namen: { kort: "Almere C.", middel: "Almere Centrum", lang: "Almere Centrum" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+
+      if (q === "groningen") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "GN",
+                UICCode: "8400261",
+                namen: { kort: "Groningen", middel: "Groningen", lang: "Groningen" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+    }
+
+    if (url.pathname.endsWith("/api/v3/trips")) {
+      return new Response(
+        JSON.stringify({
+          source: "HARP",
+          trips: [
+            {
+              uid: "trip-direct",
+              ctxRecon: "ctx-direct",
+              transfers: 0,
+              plannedDurationInMinutes: 95,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T13:00:00+01:00",
+                    plannedTrack: "5",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:35:00+01:00",
+                    plannedTrack: "6",
+                  },
+                },
+              ],
+            },
+            {
+              uid: "trip-transfer",
+              ctxRecon: "ctx-transfer",
+              transfers: 1,
+              plannedDurationInMinutes: 85,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Sprinter",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T12:55:00+01:00",
+                    plannedTrack: "2",
+                  },
+                  destination: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T13:55:00+01:00",
+                    plannedTrack: "3",
+                  },
+                },
+                {
+                  idx: "1",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T14:05:00+01:00",
+                    plannedTrack: "4",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:20:00+01:00",
+                    plannedTrack: "5",
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=20" } }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const result = (await ovNlGateway.execute({
+    action: "stations.search",
+    args: {
+      query:
+        "ik wil vandaag van Almere Centrum naar groningen. geef me treinopties met een directe verbinding.",
+      intent: {
+        hard: {
+          directOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    trips?: Array<{ transfers?: unknown; uid?: unknown }>;
+    intentMeta?: { appliedHard?: string[] };
+  };
+
+  assert.equal(result.kind, "trips.search");
+  assert.equal(Array.isArray(result.trips), true);
+  assert.equal(result.trips?.length, 1);
+  assert.equal(result.trips?.[0]?.uid, "trip-direct");
+  assert.equal(Number(result.trips?.[0]?.transfers ?? NaN), 0);
+  assert.equal(result.intentMeta?.appliedHard?.includes("directOnly"), true);
+});
+
+test("ovNlGateway trips.search ignores whitespace and null placeholder optional fields", async () => {
   const configPath = writeTempConfigToml(`
 version = 2
 
@@ -1381,7 +1622,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
     action: "trips.search",
     args: {
       query: "Almere Centrum naar Groningen",
-      limit: 6,
+      limit: null,
       countryCodes: ["NL"],
       latitude: 0,
       longitude: 0,
@@ -1390,23 +1631,29 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
       station: "Almere Centrum",
       stationCode: "Almere Centrum",
       uicCode: "Almere Centrum",
-      dateTime: "2026-02-06T09:00:00+01:00",
+      dateTime: null,
       maxJourneys: 6,
-      lang: "nl",
+      lang: null,
       from: "Almere Centrum",
       to: "Groningen",
-      via: " ",
-      searchForArrival: false,
+      via: null,
+      searchForArrival: null,
       date: "2026-02-06",
-      ctxRecon: " ",
+      ctxRecon: null,
       id: "1",
       train: 1,
-      departureUicCode: " ",
-      transferUicCode: " ",
-      arrivalUicCode: " ",
+      departureUicCode: null,
+      transferUicCode: null,
+      arrivalUicCode: null,
       omitCrowdForecast: true,
       type: ["DISRUPTION"],
-      isActive: true,
+      isActive: null,
+      intent: {
+        hard: {
+          directOnly: true,
+          maxTransfers: null,
+        },
+      },
     },
   }) as {
     kind: string;
@@ -1416,4 +1663,734 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
 
   assert.equal(result.kind, "trips.search");
   assert.equal(result.trips?.[0]?.uid, "trip-whitespace-1");
+});
+
+test("ovNlGateway trips.search enforces hard directOnly intent", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      const q = String(url.searchParams.get("q") ?? "");
+      if (q === "Almere Centrum") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "ALMC",
+                UICCode: "8400058",
+                namen: { kort: "Almere C.", middel: "Almere Centrum", lang: "Almere Centrum" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+      if (q === "Groningen") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "GN",
+                UICCode: "8400261",
+                namen: { kort: "Groningen", middel: "Groningen", lang: "Groningen" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+    }
+
+    if (url.pathname.endsWith("/api/v3/trips")) {
+      return new Response(
+        JSON.stringify({
+          source: "HARP",
+          trips: [
+            {
+              uid: "trip-direct",
+              ctxRecon: "ctx-direct",
+              transfers: 0,
+              plannedDurationInMinutes: 95,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T13:00:00+01:00",
+                    plannedTrack: "5",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:35:00+01:00",
+                    plannedTrack: "6",
+                  },
+                },
+              ],
+            },
+            {
+              uid: "trip-transfer",
+              ctxRecon: "ctx-transfer",
+              transfers: 1,
+              plannedDurationInMinutes: 85,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Sprinter",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T12:55:00+01:00",
+                    plannedTrack: "2",
+                  },
+                  destination: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T13:55:00+01:00",
+                    plannedTrack: "3",
+                  },
+                },
+                {
+                  idx: "1",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T14:05:00+01:00",
+                    plannedTrack: "4",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:20:00+01:00",
+                    plannedTrack: "5",
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=20" } }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const result = (await ovNlGateway.execute({
+    action: "trips.search",
+    args: {
+      from: "Almere Centrum",
+      to: "Groningen",
+      intent: {
+        hard: {
+          directOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    trips?: Array<{ uid?: string }>;
+    intentMeta?: { appliedHard?: string[] };
+  };
+
+  assert.equal(result.kind, "trips.search");
+  assert.equal(result.trips?.length, 1);
+  assert.equal(result.trips?.[0]?.uid, "trip-direct");
+  assert.equal(result.intentMeta?.appliedHard?.includes("directOnly"), true);
+});
+
+test("ovNlGateway trips.search coerces stringified scalar intent fields from tool input", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      const q = String(url.searchParams.get("q") ?? "");
+      if (q === "Almere Centrum") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "ALMC",
+                UICCode: "8400058",
+                namen: { kort: "Almere C.", middel: "Almere Centrum", lang: "Almere Centrum" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+      if (q === "Groningen") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: "GN",
+                UICCode: "8400261",
+                namen: { kort: "Groningen", middel: "Groningen", lang: "Groningen" },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+    }
+
+    if (url.pathname.endsWith("/api/v3/trips")) {
+      return new Response(
+        JSON.stringify({
+          source: "HARP",
+          trips: [
+            {
+              uid: "trip-direct",
+              ctxRecon: "ctx-direct",
+              transfers: 0,
+              plannedDurationInMinutes: 95,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T13:00:00+01:00",
+                    plannedTrack: "5",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:35:00+01:00",
+                    plannedTrack: "6",
+                  },
+                },
+              ],
+            },
+            {
+              uid: "trip-transfer",
+              ctxRecon: "ctx-transfer",
+              transfers: 1,
+              plannedDurationInMinutes: 85,
+              realtime: true,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Sprinter",
+                  origin: {
+                    name: "Almere Centrum",
+                    plannedDateTime: "2030-02-07T12:55:00+01:00",
+                    plannedTrack: "2",
+                  },
+                  destination: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T13:55:00+01:00",
+                    plannedTrack: "3",
+                  },
+                },
+                {
+                  idx: "1",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: {
+                    name: "Zwolle",
+                    plannedDateTime: "2030-02-07T14:05:00+01:00",
+                    plannedTrack: "4",
+                  },
+                  destination: {
+                    name: "Groningen",
+                    plannedDateTime: "2030-02-07T14:20:00+01:00",
+                    plannedTrack: "5",
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=20" } }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const result = (await ovNlGateway.execute({
+    action: "trips.search",
+    args: {
+      from: "Almere Centrum",
+      to: "Groningen",
+      limit: "6",
+      searchForArrival: "false",
+      intent: {
+        hard: {
+          directOnly: "true",
+          maxTransfers: "0",
+          maxDurationMinutes: "0",
+          includeOperators: "NS",
+        },
+        soft: {
+          rankBy: "fewest_transfers",
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    trips?: Array<{ uid?: string }>;
+    intentMeta?: { appliedHard?: string[] };
+  };
+
+  assert.equal(result.kind, "trips.search");
+  assert.equal(result.trips?.length, 1);
+  assert.equal(result.trips?.[0]?.uid, "trip-direct");
+  assert.equal(result.intentMeta?.appliedHard?.includes("directOnly"), true);
+  assert.equal(result.intentMeta?.appliedHard?.includes("maxDurationMinutes"), false);
+});
+
+test("ovNlGateway trips.search applies soft fastest ranking", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      const q = String(url.searchParams.get("q") ?? "");
+      if (q === "Almere Centrum" || q === "Groningen") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: q === "Almere Centrum" ? "ALMC" : "GN",
+                UICCode: q === "Almere Centrum" ? "8400058" : "8400261",
+                namen: { kort: q, middel: q, lang: q },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+    }
+    if (url.pathname.endsWith("/api/v3/trips")) {
+      return new Response(
+        JSON.stringify({
+          source: "HARP",
+          trips: [
+            {
+              uid: "trip-slow",
+              ctxRecon: "ctx-slow",
+              transfers: 0,
+              plannedDurationInMinutes: 120,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: { name: "Almere Centrum", plannedDateTime: "2030-02-07T12:00:00+01:00" },
+                  destination: { name: "Groningen", plannedDateTime: "2030-02-07T14:00:00+01:00" },
+                },
+              ],
+            },
+            {
+              uid: "trip-fast",
+              ctxRecon: "ctx-fast",
+              transfers: 0,
+              plannedDurationInMinutes: 90,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Intercity",
+                  origin: { name: "Almere Centrum", plannedDateTime: "2030-02-07T12:10:00+01:00" },
+                  destination: { name: "Groningen", plannedDateTime: "2030-02-07T13:40:00+01:00" },
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=20" } }
+      );
+    }
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  const result = (await ovNlGateway.execute({
+    action: "trips.search",
+    args: {
+      from: "Almere Centrum",
+      to: "Groningen",
+      intent: {
+        soft: {
+          rankBy: ["fastest"],
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    trips?: Array<{ uid?: string }>;
+    intentMeta?: { appliedSoft?: string[] };
+  };
+
+  assert.equal(result.kind, "trips.search");
+  assert.equal(result.trips?.[0]?.uid, "trip-fast");
+  assert.equal(result.intentMeta?.appliedSoft?.includes("fastest"), true);
+});
+
+test("ovNlGateway trips.search returns constraint_no_match for impossible hard constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      const q = String(url.searchParams.get("q") ?? "");
+      if (q === "Almere Centrum" || q === "Groningen") {
+        return new Response(
+          JSON.stringify({
+            payload: [
+              {
+                code: q === "Almere Centrum" ? "ALMC" : "GN",
+                UICCode: q === "Almere Centrum" ? "8400058" : "8400261",
+                namen: { kort: q, middel: q, lang: q },
+                land: "NL",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+        );
+      }
+    }
+    if (url.pathname.endsWith("/api/v3/trips")) {
+      return new Response(
+        JSON.stringify({
+          source: "HARP",
+          trips: [
+            {
+              uid: "trip-transfer-a",
+              ctxRecon: "ctx-a",
+              transfers: 1,
+              plannedDurationInMinutes: 95,
+              legs: [
+                {
+                  idx: "0",
+                  travelType: "PUBLIC_TRANSIT",
+                  name: "NS Sprinter",
+                  origin: { name: "Almere Centrum", plannedDateTime: "2030-02-07T12:00:00+01:00" },
+                  destination: { name: "Zwolle", plannedDateTime: "2030-02-07T13:00:00+01:00" },
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=20" } }
+      );
+    }
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+
+  const result = (await ovNlGateway.execute({
+    action: "trips.search",
+    args: {
+      from: "Almere Centrum",
+      to: "Groningen",
+      intent: {
+        hard: {
+          directOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    error?: { code?: string; details?: { appliedHard?: string[] } };
+  };
+
+  assert.equal(result.kind, "error");
+  assert.equal(result.error?.code, "constraint_no_match");
+  assert.equal(result.error?.details?.appliedHard?.includes("directOnly"), true);
+});
+
+test("ovNlGateway departures.list filters with hard platform and cancelled constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/api/v2/stations")) {
+      return new Response(
+        JSON.stringify({
+          payload: [
+            {
+              code: "UT",
+              UICCode: "8400621",
+              namen: { kort: "Utrecht C.", middel: "Utrecht Centraal", lang: "Utrecht Centraal" },
+              land: "NL",
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=30" } }
+      );
+    }
+    if (url.pathname.endsWith("/api/v2/departures")) {
+      return new Response(
+        JSON.stringify({
+          payload: {
+            departures: [
+              {
+                plannedDateTime: "2030-02-07T18:05:00+01:00",
+                direction: "Groningen",
+                plannedTrack: "2",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "1234", operatorName: "NS" },
+              },
+              {
+                plannedDateTime: "2030-02-07T18:10:00+01:00",
+                direction: "Amsterdam",
+                plannedTrack: "3",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "4321", operatorName: "NS" },
+              },
+              {
+                plannedDateTime: "2030-02-07T18:12:00+01:00",
+                direction: "Rotterdam",
+                plannedTrack: "2",
+                departureStatus: "CANCELLED",
+                cancelled: true,
+                product: { number: "5555", operatorName: "NS" },
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=5" } }
+      );
+    }
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  const result = (await ovNlGateway.execute({
+    action: "departures.list",
+    args: {
+      station: "Utrecht",
+      intent: {
+        hard: {
+          excludeCancelled: true,
+          platformEquals: "2",
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    departures?: Array<{ destination?: string }>;
+  };
+
+  assert.equal(result.kind, "departures.list");
+  assert.equal(result.departures?.length, 1);
+  assert.equal(result.departures?.[0]?.destination, "Groningen");
+});
+
+test("ovNlGateway disruptions.list filters with hard active/type constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/api/v3/disruptions")) {
+      return new Response(
+        JSON.stringify([
+          { id: "d1", type: "DISRUPTION", title: "D1", isActive: true },
+          { id: "d2", type: "MAINTENANCE", title: "D2", isActive: true },
+          { id: "d3", type: "DISRUPTION", title: "D3", isActive: false },
+        ]),
+        { status: 200, headers: { "content-type": "application/json", "cache-control": "max-age=10" } }
+      );
+    }
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+
+  const result = (await ovNlGateway.execute({
+    action: "disruptions.list",
+    args: {
+      intent: {
+        hard: {
+          disruptionTypes: ["DISRUPTION"],
+          activeOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    disruptions?: Array<{ id?: string }>;
+  };
+
+  assert.equal(result.kind, "disruptions.list");
+  assert.equal(result.disruptions?.length, 1);
+  assert.equal(result.disruptions?.[0]?.id, "d1");
 });

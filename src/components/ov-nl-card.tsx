@@ -850,6 +850,12 @@ function renderSimple(output: OvNlToolOutput, i18n: OvNlI18n) {
     <div className={styles.errorState} data-testid="ov-nl-card:error">
       <div className={styles.errorCode}>{output.error.code}</div>
       <div>{output.error.message}</div>
+      {output.error.code === "constraint_no_match" ? (
+        <div className={styles.noMatchHint}>
+          <div className={styles.noMatchTitle}>{t("ov_nl.error.no_match.title")}</div>
+          <div className={styles.noMatchText}>{t("ov_nl.error.no_match.relax_hint")}</div>
+        </div>
+      ) : null}
     </div>
   );
 }

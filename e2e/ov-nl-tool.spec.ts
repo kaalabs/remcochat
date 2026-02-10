@@ -182,6 +182,88 @@ test("Natural Dutch rail query prefers ovNlGateway over web search", async ({ re
   expect(webCalls).toEqual([]);
 });
 
+test("Direct-only rail query returns direct trips or clear no-match without web fallback", async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+
+  const profileRes = await request.post("/api/profiles", {
+    data: { name: `E2E ov nl direct ${Date.now()}` },
+  });
+  expect(profileRes.ok()).toBeTruthy();
+  const profileJson = (await profileRes.json()) as { profile?: { id?: string } };
+  const profileId = String(profileJson.profile?.id ?? "");
+  expect(profileId).toBeTruthy();
+
+  const chatRes = await request.post("/api/chat", {
+    data: {
+      profileId,
+      temporary: true,
+      messages: [
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text:
+                "Ik wil alleen directe treinopties van Almere Centrum naar Groningen, geen overstappen.",
+            },
+          ],
+          metadata: { createdAt: new Date().toISOString() },
+        },
+      ],
+    },
+  });
+  expect(chatRes.ok()).toBeTruthy();
+
+  const chunks = parseUIMessageStreamChunks(await chatRes.body());
+  const toolNameByCallId = new Map<string, string>();
+  for (const chunk of chunks) {
+    if (chunk.type !== "tool-input-available") continue;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    const toolName = String(chunk.toolName ?? "");
+    if (!toolCallId || !toolName) continue;
+    toolNameByCallId.set(toolCallId, toolName);
+  }
+
+  const ovOutputs = chunks.filter((chunk) => {
+    if (chunk.type !== "tool-output-available") return false;
+    const toolCallId = String(chunk.toolCallId ?? "");
+    return toolNameByCallId.get(toolCallId) === "ovNlGateway";
+  });
+  expect(ovOutputs.length).toBeGreaterThan(0);
+
+  const lastOvOutput = ovOutputs[ovOutputs.length - 1] as {
+    output?: { kind?: unknown; trips?: Array<{ transfers?: unknown }>; error?: { code?: unknown } };
+  };
+  const kind = String(lastOvOutput.output?.kind ?? "");
+  if (kind === "trips.search") {
+    const trips = Array.isArray(lastOvOutput.output?.trips) ? lastOvOutput.output?.trips ?? [] : [];
+    for (const trip of trips) {
+      expect(Number(trip.transfers ?? NaN)).toBe(0);
+    }
+  } else if (kind === "error") {
+    const code = String(lastOvOutput.output?.error?.code ?? "");
+    expect(code.length).toBeGreaterThan(0);
+  }
+
+  const webToolNames = new Set([
+    "perplexity_search",
+    "web_search",
+    "web_fetch",
+    "google_search",
+    "url_context",
+    "exa_search",
+    "brave_search",
+  ]);
+  const toolInputs = chunks
+    .filter((chunk) => chunk.type === "tool-input-available")
+    .map((chunk) => String(chunk.toolName ?? ""));
+  const webCalls = toolInputs.filter((name) => webToolNames.has(name));
+  expect(webCalls).toEqual([]);
+});
+
 test("OV error/disambiguation allows follow-up clarification text without web fallback", async ({
   request,
 }) => {
