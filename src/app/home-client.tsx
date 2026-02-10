@@ -4091,8 +4091,15 @@ export function HomeClient({
                     const hasMemoryPromptCard =
                       role === "assistant" &&
                       parts.some((p) => p.type === "tool-displayMemoryPrompt");
+                    const hasOvNlCard =
+                      role === "assistant" &&
+                      parts.some(
+                        (p) =>
+                          p.type === "tool-ovNlGateway" &&
+                          (p as { state?: unknown }).state === "output-available"
+                      );
                     const suppressAssistantText =
-                      hasMemoryAnswerCard || hasMemoryPromptCard;
+                      hasMemoryAnswerCard || hasMemoryPromptCard || hasOvNlCard;
 
                     const turnUserMessageId =
                       role === "assistant"

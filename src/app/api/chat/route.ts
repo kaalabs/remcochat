@@ -1420,8 +1420,7 @@ export async function POST(req: Request) {
       sendReasoning: config.reasoning.exposeToClient,
     });
 
-    const shouldInspectForContinuation =
-      shouldAutoContinuePerplexity || ovNlTools.enabled;
+    const shouldInspectForContinuation = shouldAutoContinuePerplexity;
     if (!shouldInspectForContinuation) {
       return createUIMessageStreamResponse({
         headers,
@@ -1451,10 +1450,7 @@ export async function POST(req: Request) {
             collected.finishReason === "tool-calls" &&
             !collected.hasUserVisibleOutput &&
             perplexityOutput != null;
-          const needsOvContinuation =
-            collected.finishReason === "tool-calls" &&
-            lastOvOutput != null &&
-            !collected.hasTextDelta;
+          const needsOvContinuation = false;
 
           if (!needsPerplexityContinuation && !needsOvContinuation) {
             if (collected.toolErrors.length === 0) return null;
@@ -2649,8 +2645,7 @@ export async function POST(req: Request) {
     sendReasoning: config.reasoning.exposeToClient,
   });
 
-  const shouldInspectForContinuation =
-    shouldAutoContinuePerplexity || ovNlTools.enabled;
+  const shouldInspectForContinuation = shouldAutoContinuePerplexity;
   if (!shouldInspectForContinuation) {
     return createUIMessageStreamResponse({
       headers,
@@ -2680,10 +2675,7 @@ export async function POST(req: Request) {
           collected.finishReason === "tool-calls" &&
           !collected.hasUserVisibleOutput &&
           perplexityOutput != null;
-        const needsOvContinuation =
-          collected.finishReason === "tool-calls" &&
-          lastOvOutput != null &&
-          !collected.hasTextDelta;
+        const needsOvContinuation = false;
 
         if (!needsPerplexityContinuation && !needsOvContinuation) {
           if (collected.toolErrors.length === 0) return null;
