@@ -297,7 +297,7 @@ export const enMessages = {
   "conversation.empty.title": "No messages yet",
   "conversation.empty.description": "Send a message to get started.",
   "conversation.scroll_to_bottom": "Scroll to bottom",
-  "home.empty.start_chat": "Start a chat.",
+  "home.empty.start_chat": "Drop a topic and I will fake having had coffee.",
 
   "prompt.attachment.image": "Image",
   "prompt.attachment.file": "File",
@@ -822,7 +822,7 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "conversation.empty.title": "Nog geen berichten",
   "conversation.empty.description": "Stuur een bericht om te beginnen.",
   "conversation.scroll_to_bottom": "Naar beneden scrollen",
-  "home.empty.start_chat": "Start een chat.",
+  "home.empty.start_chat": "Gooi een onderwerp erin en ik doe alsof ik al koffie op heb.",
 
   "prompt.attachment.image": "Afbeelding",
   "prompt.attachment.file": "Bestand",

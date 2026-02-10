@@ -79,6 +79,7 @@ import { useChat } from "@ai-sdk/react";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -150,6 +151,10 @@ import {
   DESKTOP_SIDEBAR_STORAGE_KEY,
   parseDesktopSidebarPrefs,
 } from "@/lib/sidebar-shell";
+import {
+  rotateOpeningMessageCache,
+  storeOpeningMessageNext,
+} from "@/lib/opening-message-cache";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -693,6 +698,9 @@ export function HomeClient({
   }, [messages]);
 
   const [input, setInput] = useState("");
+  const [openingMessage, setOpeningMessage] = useState<string>(
+    t("home.empty.start_chat")
+  );
   const [composerAttachmentCount, setComposerAttachmentCount] = useState(0);
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [attachmentUploadError, setAttachmentUploadError] = useState<string | null>(
@@ -2077,6 +2085,51 @@ export function HomeClient({
     syncRef.current = null;
     setVariantsByUserMessageId({});
   }, [activeChatId, setMessages, setVariantsByUserMessageId]);
+
+  const openingMessageFallback = t("home.empty.start_chat");
+
+  useLayoutEffect(() => {
+    if (messages.length !== 0) return;
+
+    const rotation = rotateOpeningMessageCache(uiLanguage, openingMessageFallback);
+    setOpeningMessage(rotation.displayed);
+
+    const params = new URLSearchParams({ lang: uiLanguage });
+    const exclude = [rotation.displayed, rotation.cache.next]
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean);
+    if (exclude.length > 0) {
+      params.set("exclude", exclude.join(","));
+    }
+
+    let canceled = false;
+
+    fetch(`/api/chat/opening-message?${params.toString()}`, {
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json().catch(() => null) as Promise<
+          { message?: unknown } | null
+        >;
+      })
+      .then((data) => {
+        if (canceled) return;
+        const nextMessage = String(data?.message ?? "").trim();
+        if (!nextMessage) return;
+
+        storeOpeningMessageNext(uiLanguage, {
+          displayed: rotation.displayed,
+          next: nextMessage,
+          fallback: openingMessageFallback,
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      canceled = true;
+    };
+  }, [messages.length, openingMessageFallback, uiLanguage]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -4022,7 +4075,7 @@ export function HomeClient({
               <div className="mr-auto ml-1 flex w-[calc(100%-0.25rem)] max-w-5xl flex-col gap-6 sm:ml-2 sm:w-[calc(100%-0.5rem)] md:ml-2.5 md:w-[calc(100%-0.625rem)] lg:ml-3 lg:w-[calc(100%-0.75rem)]">
                 {messages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground">
-                    {t("home.empty.start_chat")}
+                    {openingMessage || openingMessageFallback}
                   </div>
                 ) : null}
 
