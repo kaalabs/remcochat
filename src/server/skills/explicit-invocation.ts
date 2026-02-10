@@ -51,3 +51,25 @@ export function stripExplicitSkillInvocationFromMessages<TMeta>(input: {
   return { messages: nextMessages, explicitSkillName: parsed.skillName };
 }
 
+export function isExplicitSkillActivationOnlyPrompt<TMeta>(input: {
+  messages: UIMessage<TMeta>[];
+  explicitSkillName: string | null;
+}): boolean {
+  if (!input.explicitSkillName) return false;
+
+  const lastUserIndex = input.messages.map((m) => m.role).lastIndexOf("user");
+  if (lastUserIndex < 0) return false;
+  const target = input.messages[lastUserIndex];
+  if (!target) return false;
+
+  const text = target.parts
+    .filter((p) => (p as { type?: unknown }).type === "text")
+    .map((p) => {
+      const maybeText = p as { type: "text"; text?: unknown };
+      return String(maybeText.text ?? "");
+    })
+    .join("\n")
+    .trim();
+
+  return text.length === 0;
+}

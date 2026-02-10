@@ -64,7 +64,10 @@ import {
   isTimezonesUserQuery,
 } from "@/server/timezones-intent";
 import { getSkillsRegistry } from "@/server/skills/runtime";
-import { stripExplicitSkillInvocationFromMessages } from "@/server/skills/explicit-invocation";
+import {
+  isExplicitSkillActivationOnlyPrompt,
+  stripExplicitSkillInvocationFromMessages,
+} from "@/server/skills/explicit-invocation";
 import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
 import { shouldPreferOvNlGatewayTool } from "@/server/ov-nl-intent";
 import {
@@ -443,6 +446,71 @@ function uiBashToolResponse(input: {
         output: input.result,
         toolName: "bash",
       } as any);
+      writer.write({
+        type: "finish",
+        finishReason: "stop",
+        messageMetadata: input.messageMetadata,
+      });
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
+}
+
+function uiSkillsActivateResponse(input: {
+  skillName: string;
+  executeActivate: (args: { name: string }) => Promise<unknown>;
+  messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
+}) {
+  const messageId = nanoid();
+  const toolCallId = nanoid();
+  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+    generateId: nanoid,
+    execute: async ({ writer }) => {
+      writer.write({
+        type: "start",
+        messageId,
+        messageMetadata: input.messageMetadata,
+      });
+      writer.write({
+        type: "tool-input-available",
+        toolCallId,
+        toolName: "skillsActivate",
+        input: { name: input.skillName },
+      });
+
+      try {
+        const output = await input.executeActivate({ name: input.skillName });
+        writer.write({
+          type: "tool-output-available",
+          toolCallId,
+          output,
+        });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `Skill "/${input.skillName}" activated. Ask your travel question to continue.`,
+        });
+        writer.write({ type: "text-end", id: messageId });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to activate skill.";
+        writer.write({
+          type: "tool-output-error",
+          toolCallId,
+          errorText: message,
+        });
+        writer.write({ type: "text-start", id: messageId });
+        writer.write({
+          type: "text-delta",
+          id: messageId,
+          delta: `Skill activation error: ${message}`,
+        });
+        writer.write({ type: "text-end", id: messageId });
+      }
+
       writer.write({
         type: "finish",
         finishReason: "stop",
@@ -1060,6 +1128,34 @@ export async function POST(req: Request) {
       messages: stripWebToolPartsFromMessages(body.messages),
       skillNames,
     });
+    const explicitSkillActivationOnly = isExplicitSkillActivationOnlyPrompt({
+      messages: skillInvocation.messages,
+      explicitSkillName: skillInvocation.explicitSkillName,
+    });
+
+    if (explicitSkillActivationOnly && skillInvocation.explicitSkillName) {
+      const activateTool = (skillsTools.tools as {
+        skillsActivate?: {
+          execute?: (args: { name: string }) => Promise<unknown>;
+        };
+      }).skillsActivate;
+
+      if (typeof activateTool?.execute === "function") {
+        return uiSkillsActivateResponse({
+          skillName: skillInvocation.explicitSkillName,
+          executeActivate: activateTool.execute,
+          messageMetadata: {
+            createdAt: now,
+            turnUserMessageId: lastUserMessageId || undefined,
+          },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "1",
+            "x-remcochat-profile-id": profile.id,
+          },
+        });
+      }
+    }
 
     const hueSkillRelevant = skillInvocation.explicitSkillName === "hue-instant-control";
     const hueGatewayTools = createHueGatewayTools({
@@ -2093,6 +2189,10 @@ export async function POST(req: Request) {
     messages: stripWebToolPartsFromMessages(filteredMessages),
     skillNames,
   });
+  const explicitSkillActivationOnly = isExplicitSkillActivationOnlyPrompt({
+    messages: skillInvocation.messages,
+    explicitSkillName: skillInvocation.explicitSkillName,
+  });
 
   if (skillInvocation.explicitSkillName) {
     try {
@@ -2101,6 +2201,37 @@ export async function POST(req: Request) {
         skillName: skillInvocation.explicitSkillName,
       });
     } catch {}
+  }
+
+  if (explicitSkillActivationOnly && skillInvocation.explicitSkillName) {
+    const activationTools = createSkillsTools({
+      enabled: Boolean(skillsRegistry),
+      chatId: effectiveChat.id,
+    });
+    const activateTool = (activationTools.tools as {
+      skillsActivate?: {
+        execute?: (args: { name: string }) => Promise<unknown>;
+      };
+    }).skillsActivate;
+
+    if (typeof activateTool?.execute === "function") {
+      return uiSkillsActivateResponse({
+        skillName: skillInvocation.explicitSkillName,
+        executeActivate: activateTool.execute,
+        messageMetadata: {
+          createdAt: now,
+          turnUserMessageId: lastUserMessageId || undefined,
+          profileInstructionsRevision: currentProfileRevision,
+          chatInstructionsRevision: currentChatRevision,
+        },
+        headers: {
+          "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+          "x-remcochat-temporary": "0",
+          "x-remcochat-profile-id": profile.id,
+          "x-remcochat-chat-id": effectiveChat.id,
+        },
+      });
+    }
   }
 
   const wantsSkillsToolsSmokeTest =
