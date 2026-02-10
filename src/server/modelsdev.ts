@@ -128,6 +128,10 @@ export function tryModelTypeFromNpm(npm: string): ModelType | null {
       return "openai_responses";
     case "@ai-sdk/openai-compatible":
       return "openai_compatible";
+    case "@ai-sdk/xai":
+      // models.dev reports xAI via its dedicated adapter, but RemcoChat can
+      // safely route it through the OpenAI-compatible adapter.
+      return "openai_compatible";
     case "@ai-sdk/anthropic":
       return "anthropic_messages";
     case "@ai-sdk/google":
