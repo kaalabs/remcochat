@@ -274,9 +274,10 @@ function ComposerAttachmentsCountBridge(props: {
   onCountChange: (count: number) => void;
 }) {
   const attachments = usePromptInputAttachments();
+  const onCountChange = props.onCountChange;
   useEffect(() => {
-    props.onCountChange(attachments.files.length);
-  }, [attachments.files.length, props.onCountChange]);
+    onCountChange(attachments.files.length);
+  }, [attachments.files.length, onCountChange]);
   return null;
 }
 
@@ -297,7 +298,7 @@ export function HomeClient({
   initialProfiles,
   initialChats,
 }: HomeClientProps) {
-  const { locale, setUiLanguage, t, uiLanguage } = useI18n();
+  const { setUiLanguage, t, uiLanguage } = useI18n();
 
   const initialProfileId =
     initialProfiles.some((p) => p.id === initialActiveProfileId)
@@ -658,7 +659,7 @@ export function HomeClient({
     if (!activeProfile) return;
     if (!isAllowedModel(effectiveModelId)) return;
     window.localStorage.setItem(lastUsedModelKey(activeProfile.id), effectiveModelId);
-  }, [activeProfile, effectiveModelId, lastUsedModelKey]);
+  }, [activeProfile, effectiveModelId, isAllowedModel, lastUsedModelKey]);
 
   const chatSessionKey = isTemporaryChat
     ? `temp:${temporarySessionId}`
@@ -1106,9 +1107,9 @@ export function HomeClient({
 	    setFolders(nextFolders);
 	  }, []);
 
-    const ownedFolders = useMemo(() => {
-      return folders.filter((f) => f.scope !== "shared");
-    }, [folders]);
+		  const ownedFolders = useMemo(() => {
+		    return folders.filter((f) => f.scope !== "shared");
+		  }, [folders]);
 
 	    const sharedFoldersByOwner = useMemo(() => {
 	      const map = new Map<string, ChatFolder[]>();
@@ -1124,9 +1125,10 @@ export function HomeClient({
 	      );
 	    }, [folders]);
 
-	  const folderGroupCollapsedStorageKey = useMemo(() => {
-	    return activeProfile ? `remcochat:folderGroupCollapsed:${activeProfile.id}` : "";
-	  }, [activeProfile?.id]);
+		  const activeProfileId = activeProfile?.id ?? "";
+		  const folderGroupCollapsedStorageKey = useMemo(() => {
+		    return activeProfileId ? `remcochat:folderGroupCollapsed:${activeProfileId}` : "";
+		  }, [activeProfileId]);
 
 	  const [folderGroupCollapsed, setFolderGroupCollapsed] = useState<
 	    Record<string, boolean>
@@ -1303,8 +1305,9 @@ export function HomeClient({
     }
   };
 
-  const createChat = async () => {
-    if (!activeProfile) return;
+  const createChat = useCallback(async () => {
+    const profileId = activeProfile?.id ?? "";
+    if (!profileId) return;
 
     if (status !== "ready") stop();
     setIsTemporaryChat(false);
@@ -1313,7 +1316,7 @@ export function HomeClient({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        profileId: activeProfile.id,
+        profileId,
         modelId: providerDefaultModelId,
       }),
     });
@@ -1328,7 +1331,7 @@ export function HomeClient({
       return next;
     });
     setActiveChatId(data.chat.id);
-  };
+  }, [activeProfile?.id, providerDefaultModelId, status, stop]);
 
   const archiveChatById = useCallback(
     async (chatId: string) => {
@@ -2646,6 +2649,7 @@ export function HomeClient({
       setChatSettingsSaving(false);
     }
   }, [
+    activeChat?.id,
     activeProfile,
     chatInstructionsDraft,
     chatSettingsChatId,

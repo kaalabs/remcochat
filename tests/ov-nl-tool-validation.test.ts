@@ -147,6 +147,231 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.ok(seenUrls.some((url) => url.includes("/api/v2/departures")));
 });
 
+test("ovNlGateway departures.list ignores unsupported hard constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/v2/stations")) {
+      return new Response(
+        JSON.stringify({
+          payload: [
+            {
+              code: "UT",
+              UICCode: "8400621",
+              namen: { kort: "Utrecht C.", middel: "Utrecht Centraal", lang: "Utrecht Centraal" },
+              land: "NL",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=60",
+          },
+        }
+      );
+    }
+
+    if (url.includes("/api/v2/departures")) {
+      return new Response(
+        JSON.stringify({
+          payload: {
+            source: "HARP",
+            departures: [
+              {
+                plannedDateTime: "2030-02-07T18:05:00+01:00",
+                direction: "Inside Window",
+                plannedTrack: "2",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "2345", operatorName: "NS" },
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=5",
+          },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+
+  const result = (await ovNlGateway.execute({
+    action: "departures.list",
+    args: {
+      station: "Utrecht",
+      intent: {
+        hard: {
+          maxTransfers: 0,
+          directOnly: true,
+          includeModes: ["PUBLIC_TRANSIT"],
+          activeOnly: true,
+          disruptionTypes: ["DISRUPTION"],
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    departures?: Array<{ destination?: string }>;
+    error?: { code?: string };
+  };
+
+  assert.equal(result.kind, "departures.list");
+  assert.equal(result.error?.code, undefined);
+  assert.equal(result.departures?.[0]?.destination, "Inside Window");
+});
+
+test("ovNlGateway departures.window ignores unsupported hard constraints", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.includes("/api/v2/stations")) {
+      return new Response(
+        JSON.stringify({
+          payload: [
+            {
+              code: "UT",
+              UICCode: "8400621",
+              namen: { kort: "Utrecht C.", middel: "Utrecht Centraal", lang: "Utrecht Centraal" },
+              land: "NL",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=60",
+          },
+        }
+      );
+    }
+
+    if (url.includes("/api/v2/departures")) {
+      return new Response(
+        JSON.stringify({
+          payload: {
+            source: "HARP",
+            departures: [
+              {
+                plannedDateTime: "2030-02-07T18:05:00+01:00",
+                direction: "Inside Window",
+                plannedTrack: "2",
+                departureStatus: "ON_TIME",
+                cancelled: false,
+                product: { number: "2345", operatorName: "NS" },
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "max-age=5",
+          },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+
+  const result = (await ovNlGateway.execute({
+    action: "departures.window",
+    args: {
+      station: "Utrecht",
+      date: "2030-02-07",
+      fromTime: "18:00",
+      toTime: "19:00",
+      intent: {
+        hard: {
+          maxTransfers: 0,
+          directOnly: true,
+          includeModes: ["PUBLIC_TRANSIT"],
+          activeOnly: true,
+        },
+      },
+    },
+  })) as {
+    kind: string;
+    departures?: Array<{ destination?: string }>;
+    error?: { code?: string };
+  };
+
+  assert.equal(result.kind, "departures.window");
+  assert.equal(result.error?.code, undefined);
+  assert.equal(result.departures?.[0]?.destination, "Inside Window");
+});
+
 test("ovNlGateway departures.window filters departures to requested time window", async () => {
   const configPath = writeTempConfigToml(`
 version = 2
@@ -1170,7 +1395,11 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   ).ovNlGateway;
   assert.ok(ovNlGateway);
 
-  const result = (await ovNlGateway.execute({
+  type TripStop = { name?: string; actualTrack?: string | null; plannedTrack?: string | null };
+  type TripLeg = { stopCount?: number; stops?: TripStop[] };
+  type TripDetailOutput = { kind: "trips.detail"; trip?: { ctxRecon?: string; legs?: TripLeg[] } };
+
+  const resultUnknown = await ovNlGateway.execute({
     action: "trips.detail",
     // Models may carry over constraints from a previous trips.search; these should not break details.
     args: {
@@ -1184,23 +1413,25 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
         },
       },
     },
-  })) as any;
+  });
+  assert.ok(resultUnknown && typeof resultUnknown === "object");
+  const result = resultUnknown as TripDetailOutput;
 
   assert.equal(result.kind, "trips.detail");
   assert.equal(result.trip?.ctxRecon, "ctx-detail-1");
   assert.equal(result.trip?.legs?.[0]?.stopCount, 5);
   assert.equal(result.trip?.legs?.[0]?.stops?.length, 5);
   assert.equal(result.trip?.legs?.[0]?.stops?.[0]?.name, "Amsterdam Centraal");
-  assert.equal(result.trip?.legs?.[0]?.stops?.some((stop: any) => stop?.name === "Schiphol"), true);
+  assert.equal(result.trip?.legs?.[0]?.stops?.some((stop) => stop?.name === "Schiphol"), true);
   assert.equal(
     result.trip?.legs?.[0]?.stops?.some(
-      (stop: any) => stop?.name === "Den Haag HS" && stop?.actualTrack === "7" && stop?.plannedTrack === "6"
+      (stop) => stop?.name === "Den Haag HS" && stop?.actualTrack === "7" && stop?.plannedTrack === "6"
     ),
     true
   );
   assert.equal(
     result.trip?.legs?.[0]?.stops?.some(
-      (stop: any) => stop?.name === "Zwolle" && stop?.actualTrack === "6" && stop?.plannedTrack === "5"
+      (stop) => stop?.name === "Zwolle" && stop?.actualTrack === "6" && stop?.plannedTrack === "5"
     ),
     true
   );
@@ -1289,7 +1520,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(result.stations?.[0]?.code, "ALMC");
 });
 
-test("ovNlGateway stations.search rejects unsupported hard constraints", async () => {
+test("ovNlGateway stations.search ignores unsupported hard constraints", async () => {
   const configPath = writeTempConfigToml(`
 version = 2
 
@@ -1339,11 +1570,11 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
     },
   })) as {
     kind: string;
-    error?: { code?: string };
+    stations?: unknown[];
   };
 
-  assert.equal(result.kind, "error");
-  assert.equal(result.error?.code, "invalid_tool_input");
+  assert.equal(result.kind, "stations.search");
+  assert.equal(Array.isArray(result.stations), true);
 });
 
 test("ovNlGateway auto-fixes stations.search route query to trips.search with strict direct intent", async () => {
@@ -2094,10 +2325,10 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
   assert.ok(ovNlGateway);
 
-  const result = (await ovNlGateway.execute({
-    action: "trips.search",
-    args: {
-      from: "Almere Centrum",
+	  const result = (await ovNlGateway.execute({
+	    action: "trips.search",
+	    args: {
+	      from: "Almere Centrum",
       to: "Groningen",
       intent: {
         hard: {
@@ -2499,20 +2730,23 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
       },
     },
   })) as {
-    kind: string;
-    trips?: Array<{ uid?: string; transfers?: number }>;
-    directOnlyAlternatives?: { maxTransfers?: number; trips?: Array<{ uid?: string; transfers?: number }> };
-    intentMeta?: { appliedHard?: string[] };
-  };
+	    kind: string;
+	    trips?: Array<{ uid?: string; transfers?: number }>;
+	    directOnlyAlternatives?: { maxTransfers?: number; trips?: Array<{ uid?: string; transfers?: number }> };
+	    requestMeta?: { requestedHardKeys?: string[]; requestedDirectOnly?: boolean };
+	    intentMeta?: { appliedHard?: string[] };
+	  };
 
   assert.equal(result.kind, "trips.search");
   assert.equal(result.trips?.length, 0);
   assert.equal(result.directOnlyAlternatives?.maxTransfers, 1);
   assert.equal(result.directOnlyAlternatives?.trips?.length, 1);
-  assert.equal(result.directOnlyAlternatives?.trips?.[0]?.uid, "trip-transfer-a");
-  assert.equal(result.directOnlyAlternatives?.trips?.[0]?.transfers, 1);
-  assert.equal(result.intentMeta?.appliedHard?.includes("directOnly"), true);
-});
+	  assert.equal(result.directOnlyAlternatives?.trips?.[0]?.uid, "trip-transfer-a");
+	  assert.equal(result.directOnlyAlternatives?.trips?.[0]?.transfers, 1);
+	  assert.equal(result.intentMeta?.appliedHard?.includes("directOnly"), true);
+	  assert.equal(result.requestMeta?.requestedDirectOnly, true);
+	  assert.equal(Array.isArray(result.requestMeta?.requestedHardKeys), true);
+	});
 
 test("ovNlGateway departures.list filters with hard platform and cancelled constraints", async () => {
   const configPath = writeTempConfigToml(`

@@ -1,0 +1,9 @@
+[
+  {
+    "id": "D-2",
+    "type": "MAINTENANCE",
+    "title": "Test maintenance",
+    "topic": null,
+    "isActive": false
+  }
+]

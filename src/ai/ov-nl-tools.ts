@@ -3,7 +3,20 @@ import { z } from "zod";
 import { getConfig } from "@/server/config";
 import { logEvent } from "@/server/log";
 import { isLocalhostRequest, isRequestAllowedByAdminPolicy } from "@/server/request-auth";
-import { getOvNlJson, type OvNlClientError } from "@/server/integrations/ov-nl/client";
+import type { OvNlClientError } from "@/server/integrations/ov-nl/client";
+import {
+  nsArrivals,
+  nsDepartures,
+  nsDisruptionDetail,
+  nsDisruptions,
+  nsDisruptionsByStation,
+  nsJourneyDetail,
+  nsStationsNearest,
+  nsStationsSearch,
+  nsTripDetail,
+  nsTripsSearch,
+  type NsClientConfig,
+} from "@/server/ov/ns-client";
 import {
   applyTripsTextHeuristicsToArgs,
   extractRouteFromText,
@@ -1277,6 +1290,88 @@ function resolveUnsupportedHardKeys(input: {
   return present.filter((key) => !allowedSet.has(key));
 }
 
+function allowedHardKeysForAction(action: OvNlToolAction): readonly OvNlIntentHardKey[] {
+  switch (action) {
+    case "departures.list":
+    case "departures.window":
+    case "arrivals.list":
+      return [
+        "departureAfter",
+        "departureBefore",
+        "arrivalAfter",
+        "arrivalBefore",
+        "includeOperators",
+        "excludeOperators",
+        "includeTrainCategories",
+        "excludeTrainCategories",
+        "avoidStations",
+        "excludeCancelled",
+        "requireRealtime",
+        "platformEquals",
+      ];
+    case "trips.search":
+      return [
+        "directOnly",
+        "maxTransfers",
+        "maxDurationMinutes",
+        "departureAfter",
+        "departureBefore",
+        "arrivalAfter",
+        "arrivalBefore",
+        "includeModes",
+        "excludeModes",
+        "includeOperators",
+        "excludeOperators",
+        "includeTrainCategories",
+        "excludeTrainCategories",
+        "avoidStations",
+        "excludeCancelled",
+        "requireRealtime",
+        "platformEquals",
+      ];
+    case "disruptions.list":
+    case "disruptions.by_station":
+      return ["disruptionTypes", "activeOnly"];
+    default:
+      return [];
+  }
+}
+
+function sanitizeInputIntentForAction(
+  input: z.infer<typeof OvNlGatewayToolValidatedInputSchema>
+): {
+  sanitized: z.infer<typeof OvNlGatewayToolValidatedInputSchema>;
+  droppedHardConstraints: OvNlIntentHardKey[];
+} {
+  const hard = input.args.intent?.hard;
+  const allowed = allowedHardKeysForAction(input.action);
+  const droppedHardConstraints = resolveUnsupportedHardKeys({
+    hard,
+    allowed,
+  });
+  if (droppedHardConstraints.length === 0) {
+    return { sanitized: input, droppedHardConstraints: [] };
+  }
+
+  const sanitized = structuredClone(input);
+  const intent = sanitized.args.intent as OvNlIntent | undefined;
+  if (intent?.hard) {
+    const allowedSet = new Set(allowed);
+    const hardPayload = intent.hard as Partial<Record<OvNlIntentHardKey, unknown>>;
+    for (const key of OV_NL_INTENT_HARD_KEYS) {
+      if (!allowedSet.has(key)) delete hardPayload[key];
+    }
+    if (presentHardKeys(intent.hard).length === 0) {
+      delete (intent as { hard?: OvNlIntentHard }).hard;
+    }
+    if (!intent.hard && !intent.soft) {
+      delete (sanitized.args as { intent?: OvNlIntent }).intent;
+    }
+  }
+
+  return { sanitized, droppedHardConstraints };
+}
+
 function buildUnsupportedHardError(input: {
   action: OvNlToolAction;
   unsupported: OvNlIntentHardKey[];
@@ -1364,6 +1459,18 @@ function isStrictDirectOnlyRequested(hard: OvNlIntentHard | undefined): boolean 
     return hard.maxTransfers <= 0;
   }
   return false;
+}
+
+function requestedHardKeysFromIntent(intent: OvNlIntent | undefined): string[] {
+  const hard = intent?.hard;
+  if (!hard || typeof hard !== "object") return [];
+  return presentHardKeys(hard as OvNlIntentHard);
+}
+
+function requestedDirectOnlyFromIntent(intent: OvNlIntent | undefined): boolean {
+  const hard = intent?.hard;
+  if (!hard || typeof hard !== "object") return false;
+  return isStrictDirectOnlyRequested(hard as OvNlIntentHard);
 }
 
 function removeStrictDirectOnlyConstraints(hard: OvNlIntentHard | undefined): OvNlIntentHard | undefined {
@@ -2217,35 +2324,6 @@ function normalizeDisruption(raw: unknown): OvNlDisruption {
   };
 }
 
-function extractTripsAdviceList(raw: unknown): Array<Record<string, unknown>> {
-  const hasTripsArray = (value: unknown): value is Record<string, unknown> =>
-    Boolean(
-      value &&
-        typeof value === "object" &&
-        Array.isArray((value as Record<string, unknown>).trips)
-    );
-
-  if (Array.isArray(raw)) {
-    return raw.filter(hasTripsArray);
-  }
-
-  if (raw && typeof raw === "object") {
-    const root = raw as Record<string, unknown>;
-    const candidates: unknown[] = [root];
-
-    const payload = root.payload;
-    if (Array.isArray(payload)) {
-      candidates.push(...payload);
-    } else if (payload && typeof payload === "object") {
-      candidates.push(payload);
-    }
-
-    return candidates.filter(hasTripsArray);
-  }
-
-  return [];
-}
-
 function makeErrorOutput(input: {
   action: OvNlToolAction;
   code: OvNlErrorCode;
@@ -2298,36 +2376,12 @@ function resolveSubscriptionKey(
   return key;
 }
 
-async function callOvNlJson(
-  ctx: OvNlActionExecutionContext,
-  input: {
-    path: string;
-    query?: Record<string, string | number | boolean | string[] | null | undefined>;
-    headers?: Record<string, string>;
-  }
-): Promise<
-  | { ok: true; json: unknown; ttlSeconds: number }
-  | { ok: false; error: OvNlToolError }
-> {
-  const result = await getOvNlJson({
+function nsCfgFromCtx(ctx: OvNlActionExecutionContext): NsClientConfig {
+  return {
     baseUrls: ctx.cfg.baseUrls,
     timeoutMs: ctx.cfg.timeoutMs,
     subscriptionKey: ctx.subscriptionKey,
-    path: input.path,
-    query: input.query,
-    headers: input.headers,
-  });
-
-  if (!result.ok) {
-    return { ok: false, error: mapClientErrorToToolError(result.error) };
-  }
-
-  const ttlSeconds = clampTtlSeconds(result.cacheMaxAgeSeconds, ctx.cfg.cacheMaxTtlSeconds);
-  ctx.ttlHints.push(ttlSeconds);
-  return {
-    ok: true,
-    json: result.json,
-    ttlSeconds,
+    cacheMaxTtlSeconds: ctx.cfg.cacheMaxTtlSeconds,
   };
 }
 
@@ -2340,28 +2394,16 @@ async function searchStations(
     ? input.countryCodes.map((code) => asText(code)).filter(Boolean)
     : [];
 
-  const response = await callOvNlJson(ctx, {
-    path: "/api/v2/stations",
-    query: {
-      q: input.query,
-      limit,
-      ...(countryCodes.length > 0 ? { countryCodes: countryCodes.join(",") } : {}),
-    },
+  const response = await nsStationsSearch({
+    cfg: nsCfgFromCtx(ctx),
+    query: input.query,
+    limit,
+    countryCodes,
   });
-  if (!response.ok) return response;
+  if (!response.ok) return { ok: false, error: mapClientErrorToToolError(response.error) };
+  ctx.ttlHints.push(response.ttlSeconds);
 
-  const payload = (response.json as { payload?: unknown[] } | null)?.payload;
-  if (!Array.isArray(payload)) {
-    return {
-      ok: false,
-      error: {
-        code: "upstream_invalid_response",
-        message: "NS stations response did not include a payload array.",
-      },
-    };
-  }
-
-  const stations = payload.map((station) => normalizeStation(station)).filter((station) => {
+  const stations = response.payload.map((station) => normalizeStation(station)).filter((station) => {
     return Boolean(station.code || station.uicCode);
   });
 
@@ -2651,43 +2693,35 @@ async function executeAction(
     }
     const ignoredSoft = softRanksAll;
 
-    const lat = validatedInput.args.latitude ?? validatedInput.args.lat ?? 0;
-    const lng = validatedInput.args.longitude ?? validatedInput.args.lng ?? 0;
-    const limit = Math.max(1, Math.min(20, Math.floor(validatedInput.args.limit ?? 6)));
+	    const lat = validatedInput.args.latitude ?? validatedInput.args.lat ?? 0;
+	    const lng = validatedInput.args.longitude ?? validatedInput.args.lng ?? 0;
+	    const limit = Math.max(1, Math.min(20, Math.floor(validatedInput.args.limit ?? 6)));
 
-    const response = await callOvNlJson(ctx, {
-      path: "/api/v2/stations/nearest",
-      query: { lat, lng, limit },
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const response = await nsStationsNearest({
+	      cfg: nsCfgFromCtx(ctx),
+	      lat,
+	      lng,
+	      limit,
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    const payload = (response.json as { payload?: unknown[] } | null)?.payload;
-    if (!Array.isArray(payload)) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS nearest stations response did not include a payload array.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
-
-    const stations = payload.map((station) => normalizeStation(station));
-    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-    return {
-      output: {
-        kind: "stations.nearest",
+	    const stations = response.payload.map((station) => normalizeStation(station));
+	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	    return {
+	      output: {
+	        kind: "stations.nearest",
         latitude: lat,
         longitude: lng,
         stations,
@@ -2813,43 +2847,33 @@ async function executeAction(
     let firstBatchMaxMs: number | null = null;
     let cursorMs = window.fromMs;
 
-    for (let fetchIndex = 0; fetchIndex < maxFetches; fetchIndex += 1) {
-      const response = await callOvNlJson(ctx, {
-        path: "/api/v2/departures",
-        query: {
-          lang,
-          station: station.code || undefined,
-          uicCode: station.uicCode || undefined,
-          dateTime: new Date(cursorMs).toISOString(),
-          maxJourneys,
-        },
-      });
-      if (!response.ok) {
-        return {
-          output: makeErrorOutput({
-            action,
-            code: response.error.code,
-            message: response.error.message,
-            details: response.error.details,
-          }),
-          cacheTtlSeconds: null,
-        };
-      }
+	    for (let fetchIndex = 0; fetchIndex < maxFetches; fetchIndex += 1) {
+	      const response = await nsDepartures({
+	        cfg: nsCfgFromCtx(ctx),
+	        lang,
+	        station: station.code || undefined,
+	        uicCode: station.uicCode || undefined,
+	        dateTime: new Date(cursorMs).toISOString(),
+	        maxJourneys,
+	      });
+	      if (!response.ok) {
+	        const error = mapClientErrorToToolError(response.error);
+	        return {
+	          output: makeErrorOutput({
+	            action,
+	            code: error.code,
+	            message: error.message,
+	            details: error.details,
+	          }),
+	          cacheTtlSeconds: null,
+	        };
+	      }
+	      ctx.ttlHints.push(response.ttlSeconds);
 
-      const payload = (response.json as { payload?: Record<string, unknown> } | null)?.payload;
-      if (!payload || typeof payload !== "object") {
-        return {
-          output: makeErrorOutput({
-            action,
-            code: "upstream_invalid_response",
-            message: "NS departures response did not include payload.",
-          }),
-          cacheTtlSeconds: null,
-        };
-      }
+	      const payload = response.payload;
 
-      const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
-      if (departuresRaw.length === 0) break;
+	      const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
+	      if (departuresRaw.length === 0) break;
 
       let maxSeenMs: number | null = null;
       const normalized = departuresRaw.map((departure, index) => normalizeDeparture(departure, index));
@@ -3162,47 +3186,47 @@ async function executeAction(
       return disambiguation;
     }
 
-    const station = stationResult.station;
-    const lang = normalizeLanguage(validatedInput.args.lang);
-    const response = await callOvNlJson(ctx, {
-      path: action === "departures.list" ? "/api/v2/departures" : "/api/v2/arrivals",
-      query: {
-        lang,
-        station: station.code || undefined,
-        uicCode: station.uicCode || undefined,
-        dateTime: normalizeDateTimeInput(validatedInput.args.dateTime),
-        maxJourneys: validatedInput.args.maxJourneys ?? 40,
-      },
-    });
+	    const station = stationResult.station;
+	    const lang = normalizeLanguage(validatedInput.args.lang);
+	    const response =
+	      action === "departures.list"
+	        ? await nsDepartures({
+	            cfg: nsCfgFromCtx(ctx),
+	            lang,
+	            station: station.code || undefined,
+	            uicCode: station.uicCode || undefined,
+	            dateTime: normalizeDateTimeInput(validatedInput.args.dateTime),
+	            maxJourneys: validatedInput.args.maxJourneys ?? 40,
+	          })
+	        : await nsArrivals({
+	            cfg: nsCfgFromCtx(ctx),
+	            lang,
+	            station: station.code || undefined,
+	            uicCode: station.uicCode || undefined,
+	            dateTime: normalizeDateTimeInput(validatedInput.args.dateTime),
+	            maxJourneys: validatedInput.args.maxJourneys ?? 40,
+	          });
 
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    const payload = (response.json as { payload?: Record<string, unknown> } | null)?.payload;
-    if (!payload || typeof payload !== "object") {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS departures/arrivals response did not include payload.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const payload = response.payload;
 
-    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-    if (action === "departures.list") {
-      const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
-      const baseDepartures = departuresRaw.map((departure, index) => normalizeDeparture(departure, index));
+	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	    if (action === "departures.list") {
+	      const departuresRaw = Array.isArray(payload.departures) ? payload.departures : [];
+	      const baseDepartures = departuresRaw.map((departure, index) => normalizeDeparture(departure, index));
       const nowMs = Date.now();
       const appliedHard: string[] = [];
       let filteredRows: BoardRow[] = baseDepartures.slice();
@@ -3675,50 +3699,40 @@ async function executeAction(
 
     const lang = normalizeLanguage(validatedInput.args.lang);
     const nowMs = Date.now();
-    const requestedDateTime = normalizeDateTimeInput(validatedInput.args.dateTime, nowMs);
-    const effectiveDateTime = coerceTripsSearchDateTimeToNowIfPast({
-      requested: requestedDateTime,
-      nowMs,
-    });
-    const response = await callOvNlJson(ctx, {
-      path: "/api/v3/trips",
-      query: {
-        lang,
-        fromStation: fromResolved.station.code,
-        toStation: toResolved.station.code,
-        viaStation: via?.code || undefined,
-        dateTime: effectiveDateTime,
-        searchForArrival: validatedInput.args.searchForArrival,
-      },
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const requestedDateTime = normalizeDateTimeInput(validatedInput.args.dateTime, nowMs);
+	    const effectiveDateTime = coerceTripsSearchDateTimeToNowIfPast({
+	      requested: requestedDateTime,
+	      nowMs,
+	    });
+	    const response = await nsTripsSearch({
+	      cfg: nsCfgFromCtx(ctx),
+	      lang,
+	      fromStation: fromResolved.station.code,
+	      toStation: toResolved.station.code,
+	      viaStation: via?.code || undefined,
+	      dateTime: effectiveDateTime,
+	      searchForArrival: validatedInput.args.searchForArrival,
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    const advices = extractTripsAdviceList(response.json);
-    if (advices.length === 0) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS trips response is not in a supported format.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const advices = response.payload;
 
-    const limit = Math.max(1, Math.min(20, Math.floor(validatedInput.args.limit ?? 8)));
-    const allTrips = advices
-      .flatMap((advice) => {
-        const adviceObj = advice;
+	    const limit = Math.max(1, Math.min(20, Math.floor(validatedInput.args.limit ?? 8)));
+	    const allTrips = advices
+	      .flatMap((advice) => {
+	        const adviceObj = advice;
         const source = asText(adviceObj.source);
         const tripsRaw = Array.isArray(adviceObj.trips) ? adviceObj.trips : [];
         return tripsRaw.map((trip) => normalizeTripSummary(trip, source));
@@ -3772,22 +3786,28 @@ async function executeAction(
           );
           const alternativeTrips = rankedTransferCandidates.slice(0, limit);
 
-          if (alternativeTrips.length > 0) {
-            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-            return {
-              output: {
-                kind: "trips.search",
-                from: fromResolved.station,
+	          if (alternativeTrips.length > 0) {
+	            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	            const requestedHardKeys = requestedHardKeysFromIntent(intent);
+	            const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
+	            return {
+	              output: {
+	                kind: "trips.search",
+	                from: fromResolved.station,
                 to: toResolved.station,
                 via,
                 trips: [],
-                directOnlyAlternatives: {
-                  maxTransfers: minTransfers,
-                  trips: alternativeTrips,
-                },
-                intentMeta: buildIntentMeta({
-                  intent,
-                  appliedHard,
+	                directOnlyAlternatives: {
+	                  maxTransfers: minTransfers,
+	                  trips: alternativeTrips,
+	                },
+	                requestMeta: {
+	                  requestedHardKeys,
+	                  requestedDirectOnly,
+	                },
+	                intentMeta: buildIntentMeta({
+	                  intent,
+	                  appliedHard,
                   appliedSoft,
                   ignoredSoft,
                   beforeCount: normalizedTrips.length,
@@ -3814,17 +3834,23 @@ async function executeAction(
     const rankedTrips = sortTripsBySoftRanks(hardConstraintResult.trips, appliedSoft);
     const trips = rankedTrips.slice(0, limit);
 
-    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-    return {
-      output: {
-        kind: "trips.search",
+	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	    const requestedHardKeys = requestedHardKeysFromIntent(intent);
+	    const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
+	    return {
+	      output: {
+	        kind: "trips.search",
         from: fromResolved.station,
         to: toResolved.station,
         via,
-        trips,
-        intentMeta: buildIntentMeta({
-          intent,
-          appliedHard,
+	        trips,
+	        requestMeta: {
+	          requestedHardKeys,
+	          requestedDirectOnly,
+	        },
+	        intentMeta: buildIntentMeta({
+	          intent,
+	          appliedHard,
           appliedSoft,
           ignoredSoft,
           beforeCount: normalizedTrips.length,
@@ -3850,47 +3876,34 @@ async function executeAction(
         allowed: [],
       });
     }
-    const ignoredSoft = softRanksAll;
+	    const ignoredSoft = softRanksAll;
 
-    const lang = normalizeLanguage(validatedInput.args.lang);
-    const response = await callOvNlJson(ctx, {
-      path: "/api/v3/trips/trip",
-      query: {
-        ctxRecon: validatedInput.args.ctxRecon,
-        date: normalizeDateTimeInput(validatedInput.args.date),
-      },
-      headers: {
-        lang,
-      },
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const lang = normalizeLanguage(validatedInput.args.lang);
+	    const response = await nsTripDetail({
+	      cfg: nsCfgFromCtx(ctx),
+	      ctxRecon: validatedInput.args.ctxRecon,
+	      date: normalizeDateTimeInput(validatedInput.args.date),
+	      lang,
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    if (!response.json || typeof response.json !== "object" || Array.isArray(response.json)) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS trip detail response is not an object.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
-
-    const trip = normalizeTripSummary(response.json, "trip.detail", { includeStops: true });
-    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-    return {
-      output: {
-        kind: "trips.detail",
+	    const trip = normalizeTripSummary(response.payload, "trip.detail", { includeStops: true });
+	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	    return {
+	      output: {
+	        kind: "trips.detail",
         trip,
         intentMeta: buildIntentMeta({
           intent,
@@ -3920,47 +3933,36 @@ async function executeAction(
         allowed: [],
       });
     }
-    const ignoredSoft = softRanksAll;
+	    const ignoredSoft = softRanksAll;
 
-    const response = await callOvNlJson(ctx, {
-      path: "/api/v2/journey",
-      query: {
-        id: validatedInput.args.id,
-        train: validatedInput.args.train,
-        dateTime: normalizeDateTimeInput(validatedInput.args.dateTime),
-        departureUicCode: validatedInput.args.departureUicCode,
-        transferUicCode: validatedInput.args.transferUicCode,
-        arrivalUicCode: validatedInput.args.arrivalUicCode,
-        omitCrowdForecast: validatedInput.args.omitCrowdForecast,
-      },
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const response = await nsJourneyDetail({
+	      cfg: nsCfgFromCtx(ctx),
+	      id: validatedInput.args.id,
+	      train: validatedInput.args.train,
+	      dateTime: normalizeDateTimeInput(validatedInput.args.dateTime),
+	      departureUicCode: validatedInput.args.departureUicCode,
+	      transferUicCode: validatedInput.args.transferUicCode,
+	      arrivalUicCode: validatedInput.args.arrivalUicCode,
+	      omitCrowdForecast: validatedInput.args.omitCrowdForecast,
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
+	    const payload = response.payload;
 
-    const payload = (response.json as { payload?: unknown } | null)?.payload;
-    if (!payload || typeof payload !== "object") {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS journey detail response did not include payload.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
-
-    const journeyId = validatedInput.args.id ?? "";
-    const legs = normalizeJourneyLegs(payload, journeyId);
-    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	    const journeyId = validatedInput.args.id ?? "";
+	    const legs = normalizeJourneyLegs(payload, journeyId);
+	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
     return {
       output: {
         kind: "journey.detail",
@@ -4011,49 +4013,36 @@ async function executeAction(
         : hard?.disruptionTypes && hard.disruptionTypes.length > 0
           ? hard.disruptionTypes
           : undefined;
-    const queryIsActive =
-      typeof validatedInput.args.isActive === "boolean"
-        ? validatedInput.args.isActive
-        : hard?.activeOnly
-          ? true
-          : undefined;
-    const response = await callOvNlJson(ctx, {
-      path: "/api/v3/disruptions",
-      query: {
-        type: queryType,
-        isActive: queryIsActive,
-      },
-      headers: {
-        "Accept-Language":
-          lang === "nl" ? "nl-NL, nl;q=0.9, en;q=0.8, *;q=0.5" : "en-US, en;q=0.9, *;q=0.5",
-      },
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const queryIsActive =
+	      typeof validatedInput.args.isActive === "boolean"
+	        ? validatedInput.args.isActive
+	        : hard?.activeOnly
+	          ? true
+	          : undefined;
+	    const response = await nsDisruptions({
+	      cfg: nsCfgFromCtx(ctx),
+	      type: queryType,
+	      isActive: queryIsActive,
+	      acceptLanguage:
+	        lang === "nl" ? "nl-NL, nl;q=0.9, en;q=0.8, *;q=0.5" : "en-US, en;q=0.9, *;q=0.5",
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    if (!Array.isArray(response.json)) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS disruptions response is not an array.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
-
-    const baseDisruptions = response.json.map((item) => normalizeDisruption(item));
-    const appliedHard: string[] = [];
-    let disruptions = baseDisruptions.slice();
+	    const baseDisruptions = response.payload.map((item) => normalizeDisruption(item));
+	    const appliedHard: string[] = [];
+	    let disruptions = baseDisruptions.slice();
     if (Array.isArray(hard?.disruptionTypes) && hard.disruptionTypes.length > 0) {
       const allowedTypes = new Set(hard.disruptionTypes);
       appliedHard.push("disruptionTypes");
@@ -4135,38 +4124,30 @@ async function executeAction(
         stationResult.query,
         stationResult.candidates.map((candidate) => candidate.station)
       );
-    }
+	    }
 
-    const station = stationResult.station;
-    const response = await callOvNlJson(ctx, {
-      path: `/api/v3/disruptions/station/${encodeURIComponent(station.code)}`,
-    });
-    if (!response.ok) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: response.error.code,
-          message: response.error.message,
-          details: response.error.details,
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
+	    const station = stationResult.station;
+	    const response = await nsDisruptionsByStation({
+	      cfg: nsCfgFromCtx(ctx),
+	      stationCode: station.code,
+	    });
+	    if (!response.ok) {
+	      const error = mapClientErrorToToolError(response.error);
+	      return {
+	        output: makeErrorOutput({
+	          action,
+	          code: error.code,
+	          message: error.message,
+	          details: error.details,
+	        }),
+	        cacheTtlSeconds: null,
+	      };
+	    }
+	    ctx.ttlHints.push(response.ttlSeconds);
 
-    if (!Array.isArray(response.json)) {
-      return {
-        output: makeErrorOutput({
-          action,
-          code: "upstream_invalid_response",
-          message: "NS station disruptions response is not an array.",
-        }),
-        cacheTtlSeconds: null,
-      };
-    }
-
-    const baseDisruptions = response.json.map((item) => normalizeDisruption(item));
-    const appliedHard: string[] = [];
-    let disruptions = baseDisruptions.slice();
+	    const baseDisruptions = response.payload.map((item) => normalizeDisruption(item));
+	    const appliedHard: string[] = [];
+	    let disruptions = baseDisruptions.slice();
     if (Array.isArray(hard?.disruptionTypes) && hard.disruptionTypes.length > 0) {
       const allowedTypes = new Set(hard.disruptionTypes);
       appliedHard.push("disruptionTypes");
@@ -4219,41 +4200,32 @@ async function executeAction(
       allowed: [],
     });
   }
-  const ignoredSoft = softRanksAll;
+	const ignoredSoft = softRanksAll;
 
-  const response = await callOvNlJson(ctx, {
-    path: `/api/v3/disruptions/${encodeURIComponent(validatedInput.args.type)}/${encodeURIComponent(
-      validatedInput.args.id
-    )}`,
-  });
-  if (!response.ok) {
-    return {
-      output: makeErrorOutput({
-        action,
-        code: response.error.code,
-        message: response.error.message,
-        details: response.error.details,
-      }),
-      cacheTtlSeconds: null,
-    };
-  }
+	const response = await nsDisruptionDetail({
+	  cfg: nsCfgFromCtx(ctx),
+	  type: validatedInput.args.type,
+	  id: validatedInput.args.id,
+	});
+	if (!response.ok) {
+	  const error = mapClientErrorToToolError(response.error);
+	  return {
+	    output: makeErrorOutput({
+	      action,
+	      code: error.code,
+	      message: error.message,
+	      details: error.details,
+	    }),
+	    cacheTtlSeconds: null,
+	  };
+	}
+	ctx.ttlHints.push(response.ttlSeconds);
 
-  if (!response.json || typeof response.json !== "object" || Array.isArray(response.json)) {
-    return {
-      output: makeErrorOutput({
-        action,
-        code: "upstream_invalid_response",
-        message: "NS disruption detail response is not an object.",
-      }),
-      cacheTtlSeconds: null,
-    };
-  }
-
-  const disruption = normalizeDisruption(response.json);
-  const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-  return {
-    output: {
-      kind: "disruptions.detail",
+	const disruption = normalizeDisruption(response.payload);
+	const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+	return {
+	  output: {
+	    kind: "disruptions.detail",
       disruption,
       intentMeta: buildIntentMeta({
         intent,
@@ -4323,7 +4295,8 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
         });
       }
 
-      const cacheKey = makeCacheKey(parsed.data.action, parsed.data.args);
+      const { sanitized, droppedHardConstraints } = sanitizeInputIntentForAction(parsed.data);
+      const cacheKey = makeCacheKey(sanitized.action, sanitized.args);
       const cachedOutput = getCachedOutput(cacheKey);
       if (cachedOutput) {
         const cachedIntentMeta =
@@ -4333,7 +4306,7 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
             ? cachedOutput.intentMeta
             : undefined;
         logEvent("info", "ov_nl.gateway_result", {
-          action: parsed.data.action,
+          action: sanitized.action,
           kind: cachedOutput.kind,
           cached: true,
           cacheTtlSeconds: "cacheTtlSeconds" in cachedOutput ? cachedOutput.cacheTtlSeconds : null,
@@ -4346,6 +4319,8 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
               : null,
           after_count:
             typeof cachedIntentMeta?.afterCount === "number" ? cachedIntentMeta.afterCount : null,
+          ignored_hard_constraints: droppedHardConstraints,
+          ignored_hard_count: droppedHardConstraints.length,
           no_match: false,
         });
         return cachedOutput;
@@ -4368,7 +4343,7 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
         ttlHints: [],
       };
 
-      const result = await executeAction(ctx, parsed.data);
+      const result = await executeAction(ctx, sanitized);
       if (result.output.kind !== "error" && result.cacheTtlSeconds != null) {
         setCachedOutput(cacheKey, result.output, result.cacheTtlSeconds);
       }
@@ -4381,7 +4356,7 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
       const noMatch =
         result.output.kind === "error" && result.output.error.code === "constraint_no_match";
       logEvent("info", "ov_nl.gateway_result", {
-        action: parsed.data.action,
+        action: sanitized.action,
         kind: result.output.kind,
         cached: result.output.cached,
         cacheTtlSeconds: "cacheTtlSeconds" in result.output ? result.output.cacheTtlSeconds : null,
@@ -4391,6 +4366,8 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
         soft_count: intentMeta?.appliedSoft?.length ?? 0,
         before_count: typeof intentMeta?.beforeCount === "number" ? intentMeta.beforeCount : null,
         after_count: typeof intentMeta?.afterCount === "number" ? intentMeta.afterCount : null,
+        ignored_hard_constraints: droppedHardConstraints,
+        ignored_hard_count: droppedHardConstraints.length,
         no_match: noMatch,
       });
       return result.output;

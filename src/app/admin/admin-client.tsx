@@ -35,7 +35,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
 const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
@@ -277,16 +277,16 @@ export function AdminClient() {
 
   const { locale, t } = useI18n();
 
-  const readLanAdminToken = (): string => {
+  const readLanAdminToken = useCallback((): string => {
     if (typeof window === "undefined") return "";
     const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
     if (session && session.trim()) return session.trim();
     const local = window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
     if (local && local.trim()) return local.trim();
     return "";
-  };
+  }, []);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -295,9 +295,9 @@ export function AdminClient() {
     const data = (await res.json()) as ProvidersResponse;
     setProviders(data);
     setActiveDraft(data.activeProviderId);
-  };
+  }, [t]);
 
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     const res = await fetch("/api/admin/models-inventory", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -306,9 +306,9 @@ export function AdminClient() {
     const data = (await res.json()) as ModelsInventoryResponse;
     setInventory(data);
     setRouterDraftModelId(data.router?.modelId ?? "");
-  };
+  }, [t]);
 
-  const loadSkills = async () => {
+  const loadSkills = useCallback(async () => {
     const token = readLanAdminToken();
     const headers: Record<string, string> = {};
     if (token) headers["x-remcochat-admin-token"] = token;
@@ -320,9 +320,9 @@ export function AdminClient() {
     }
     const data = (await res.json()) as SkillsAdminResponse;
     setSkills(data);
-  };
+  }, [readLanAdminToken, t]);
 
-  const loadWebSearchProvider = async () => {
+  const loadWebSearchProvider = useCallback(async () => {
     const res = await fetch("/api/admin/web-tools/search-provider", {
       cache: "no-store",
     });
@@ -333,7 +333,7 @@ export function AdminClient() {
     const data = (await res.json()) as WebSearchProviderResponse;
     setWebSearchConfig(data);
     setWebSearchDraft(data.searchProvider);
-  };
+  }, [t]);
 
   useEffect(() => {
     let canceled = false;
@@ -354,7 +354,7 @@ export function AdminClient() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [load, t]);
 
   useEffect(() => {
     let canceled = false;
@@ -376,7 +376,7 @@ export function AdminClient() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [loadWebSearchProvider, t]);
 
   useEffect(() => {
     let canceled = false;
@@ -398,7 +398,7 @@ export function AdminClient() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [loadInventory, t]);
 
   useEffect(() => {
     if (!inventory) return;
@@ -431,7 +431,7 @@ export function AdminClient() {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [loadSkills, t]);
 
   const providerOptions = useMemo(() => {
     return providers?.providers ?? [];

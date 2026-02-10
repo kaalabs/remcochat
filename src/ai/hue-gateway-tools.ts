@@ -267,63 +267,81 @@ function applyVerifyDefaultForLowLevel(verify: unknown | undefined): unknown {
   return { mode: "none" };
 }
 
-function applyDefaults(action: string, args: any): any {
+function applyDefaults(action: string, args: unknown): unknown {
   if (!args || typeof args !== "object") return args;
+  const obj = args as Record<string, unknown>;
 
   if (action === "resolve.by_name") {
-    if (!args.match) args.match = applySafeMatchDefaults(args.match);
-    return args;
+    if (!obj.match) obj.match = applySafeMatchDefaults(obj.match);
+    return obj;
   }
 
   if (action === "room.set") {
-    if (args.roomName && !args.match) args.match = applySafeMatchDefaults(args.match);
-    if (!args.verify) args.verify = { ...VERIFY_DEFAULTS_POLL };
-    return args;
+    if (obj.roomName && !obj.match) obj.match = applySafeMatchDefaults(obj.match);
+    if (!obj.verify) obj.verify = { ...VERIFY_DEFAULTS_POLL };
+    return obj;
   }
 
   if (action === "zone.set") {
-    if (args.zoneName && !args.match) args.match = applySafeMatchDefaults(args.match);
-    if (args.dryRun !== true && !args.verify) args.verify = { ...VERIFY_DEFAULTS_POLL };
-    return args;
+    if (obj.zoneName && !obj.match) obj.match = applySafeMatchDefaults(obj.match);
+    if (obj.dryRun !== true && !obj.verify) obj.verify = { ...VERIFY_DEFAULTS_POLL };
+    return obj;
   }
 
   if (action === "light.set" || action === "grouped_light.set") {
-    if (args.name && !args.match) args.match = applySafeMatchDefaults(args.match);
-    if (!args.verify) args.verify = applyVerifyDefaultForLowLevel(args.verify);
-    return args;
+    if (obj.name && !obj.match) obj.match = applySafeMatchDefaults(obj.match);
+    if (!obj.verify) obj.verify = applyVerifyDefaultForLowLevel(obj.verify);
+    return obj;
   }
 
   if (action === "scene.activate") {
-    if (args.name && !args.match) args.match = applySafeMatchDefaults(args.match);
-    return args;
+    if (obj.name && !obj.match) obj.match = applySafeMatchDefaults(obj.match);
+    return obj;
   }
 
   if (action === "actions.batch") {
-    const actions = Array.isArray(args.actions) ? args.actions : [];
-    args.actions = actions.map((step: any) => {
-      const cloned = { ...step, args: step?.args ? structuredClone(step.args) : step.args };
+    const steps = Array.isArray(obj.actions) ? obj.actions : [];
+    obj.actions = steps.map((step) => {
+      if (!step || typeof step !== "object") return step;
+      const stepObj = step as Record<string, unknown>;
+      const cloned: Record<string, unknown> = {
+        ...stepObj,
+        args: stepObj.args ? structuredClone(stepObj.args) : stepObj.args,
+      };
       cloned.args = applyDefaults(String(cloned.action ?? ""), cloned.args);
       return cloned;
     });
-    return args;
+    return obj;
   }
 
-  return args;
+  return obj;
 }
 
-function isStateChanging(action: string, args: any): boolean {
+function isStateChanging(action: string, args: unknown): boolean {
   if (action === "inventory.snapshot") return false;
   if (action === "resolve.by_name") return false;
   if (action === "clipv2.request") return false;
-  if (action === "zone.set") return args?.dryRun !== true;
+  if (action === "zone.set") {
+    const dryRun =
+      args && typeof args === "object" ? (args as Record<string, unknown>).dryRun : undefined;
+    return dryRun !== true;
+  }
   return true;
 }
 
 function extractRetryAfterMs(input: {
   headers: Headers;
-  json: any;
+  json: unknown;
 }): number | null {
-  const raw = input?.json?.error?.details?.retryAfterMs;
+  const root =
+    input.json && typeof input.json === "object" ? (input.json as Record<string, unknown>) : null;
+  const error =
+    root?.error && typeof root.error === "object" ? (root.error as Record<string, unknown>) : null;
+  const details =
+    error?.details && typeof error.details === "object"
+      ? (error.details as Record<string, unknown>)
+      : null;
+  const raw = details?.retryAfterMs;
   if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
   if (typeof raw === "string") {
     const parsed = Number(raw);
@@ -391,8 +409,23 @@ export function createHueGatewayTools(input: {
         ? `${String(input.temporarySessionId ?? "").trim() || "tmp"}:${turnUserMessageId}`
         : `${String(input.chatId ?? "").trim() || "chat"}:${turnUserMessageId}`;
 
-      const action = String((toolInput as any).action ?? "").trim();
-      const argsRaw = (toolInput as any).args ?? {};
+      const wire = HueGatewayToolWireInputSchema.safeParse(toolInput);
+      if (!wire.success) {
+        return {
+          status: 0,
+          ok: false,
+          action: "unknown",
+          requestId: "unknown",
+          error: {
+            code: "invalid_tool_input",
+            message: "Invalid hueGateway tool input.",
+            details: { issues: wire.error.issues },
+          },
+        };
+      }
+
+      const action = wire.data.action;
+      const argsRaw = wire.data.args ?? {};
       const args = applyDefaults(action, structuredClone(argsRaw));
 
       const ids = createHueGatewayDeterministicIds({ turnKey, action, args });
@@ -440,7 +473,7 @@ export function createHueGatewayTools(input: {
           };
         }
 
-        let json: any;
+        let json: unknown;
         try {
           json = JSON.parse(res.text);
         } catch {
@@ -448,12 +481,12 @@ export function createHueGatewayTools(input: {
         }
 
         const retryAfterMs = extractRetryAfterMs({ headers: res.headers, json });
-        const ok = json?.ok === true;
+        const ok = json && typeof json === "object" && (json as Record<string, unknown>).ok === true;
         if (
           !ok &&
           res.status === 404 &&
-          typeof json?.detail === "string" &&
-          json.detail.trim().toLowerCase() === "not found"
+          typeof (json as Record<string, unknown> | null)?.detail === "string" &&
+          String((json as Record<string, unknown>).detail).trim().toLowerCase() === "not found"
         ) {
           return {
             status: res.status,
@@ -474,18 +507,24 @@ export function createHueGatewayTools(input: {
               ok: true,
               action,
               requestId,
-              result: json?.result ?? null,
+              result:
+                json && typeof json === "object"
+                  ? ((json as Record<string, unknown>).result ?? null)
+                  : null,
             }
           : {
               status: res.status,
               ok: false,
               action,
               requestId,
-              error: json?.error ?? {
-                code: "internal_error",
-                message: "Unknown error from Hue Gateway.",
-                details: {},
-              },
+              error:
+                json && typeof json === "object" && (json as Record<string, unknown>).error
+                  ? (json as Record<string, unknown>).error
+                  : {
+                      code: "internal_error",
+                      message: "Unknown error from Hue Gateway.",
+                      details: {},
+                    },
               ...(retryAfterMs != null ? { retryAfterMs } : {}),
             };
       };
@@ -493,14 +532,19 @@ export function createHueGatewayTools(input: {
       const first = await sendOnce();
       if (first.ok) return first;
 
-      const errorCode = String((first as any).error?.code ?? "").trim();
+      const errorRecord =
+        first.error && typeof first.error === "object" ? (first.error as Record<string, unknown>) : null;
+      const errorCode = String(errorRecord?.code ?? "").trim();
       const shouldRetry =
         (first.status === 409 && errorCode === "idempotency_in_progress") ||
         (first.status === 429 && (errorCode === "rate_limited" || errorCode === "bridge_rate_limited"));
 
       if (!shouldRetry) return first;
 
-      const retryAfterMs = typeof (first as any).retryAfterMs === "number" ? (first as any).retryAfterMs : null;
+      const retryAfterMs =
+        typeof (first as { retryAfterMs?: unknown }).retryAfterMs === "number"
+          ? (first as { retryAfterMs: number }).retryAfterMs
+          : null;
       const waitMs = Math.min(1_000, Math.max(0, retryAfterMs ?? 250));
       if (waitMs > 0) await delay(waitMs);
 

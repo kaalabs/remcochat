@@ -14,12 +14,25 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/static-components": "off",
       "@typescript-eslint/no-explicit-any": "off",
+      "@next/next/no-img-element": "off",
     },
   },
   {
     files: ["src/components/theme-toggle.tsx"],
     rules: {
       "react-hooks/set-state-in-effect": "off",
+    },
+  },
+  {
+    files: ["src/app/home-client.tsx", "src/components/static-map-preview.tsx"],
+    rules: {
+      "@next/next/no-img-element": "off",
+    },
+  },
+  {
+    files: ["tests/**/*.{ts,tsx}", "e2e/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
   // Override default ignores of eslint-config-next.

@@ -1,0 +1,24 @@
+{
+  "uid": "trip-1",
+  "ctxRecon": "CTX-1",
+  "status": "NORMAL",
+  "transfers": 0,
+  "plannedDurationInMinutes": 35,
+  "optimal": true,
+  "realtime": true,
+  "legs": [
+    {
+      "origin": { "name": "Utrecht Centraal" },
+      "destination": { "name": "Amsterdam Centraal" },
+      "plannedDepartureDateTime": "2026-02-10T12:00:00+01:00",
+      "plannedArrivalDateTime": "2026-02-10T12:35:00+01:00",
+      "product": { "displayName": "IC 1234", "longCategoryName": "Intercity" },
+      "direction": "Amsterdam Centraal",
+      "cancelled": false,
+      "stops": [
+        { "name": "Utrecht Centraal", "plannedArrivalDateTime": null, "plannedDepartureDateTime": "2026-02-10T12:00:00+01:00" },
+        { "name": "Amsterdam Centraal", "plannedArrivalDateTime": "2026-02-10T12:35:00+01:00", "plannedDepartureDateTime": null }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "payload": {
+    "stops": [
+      {
+        "stop": { "code": "UT", "UICCode": "8400621" },
+        "destination": "Amsterdam Centraal",
+        "departures": [
+          {
+            "plannedTime": "2026-02-10T12:00:00+01:00",
+            "actualTime": "2026-02-10T12:01:00+01:00",
+            "plannedTrack": "5",
+            "actualTrack": "5",
+            "cancelled": false,
+            "product": { "displayName": "IC 1234", "longCategoryName": "Intercity" }
+          }
+        ]
+      },
+      {
+        "stop": { "code": "ASD", "UICCode": "8400058" },
+        "arrivals": [
+          {
+            "plannedTime": "2026-02-10T12:35:00+01:00",
+            "actualTime": "2026-02-10T12:34:00+01:00",
+            "plannedTrack": "7",
+            "actualTrack": "7",
+            "cancelled": false
+          }
+        ]
+      }
+    ]
+  }
+}

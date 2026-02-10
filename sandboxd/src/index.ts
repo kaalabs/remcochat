@@ -49,16 +49,6 @@ function isLocalhostHost(hostname: string): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
 }
 
-function hostnameFromHostHeader(host: string): string {
-  const trimmed = String(host ?? "").trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("[")) {
-    const end = trimmed.indexOf("]");
-    if (end > 0) return trimmed.slice(0, end + 1);
-  }
-  return trimmed.split(":")[0] ?? "";
-}
-
 function adminTokenFromRequest(req: http.IncomingMessage): string | null {
   const direct = req.headers["x-remcochat-admin-token"];
   if (typeof direct === "string" && direct.trim()) return direct.trim();

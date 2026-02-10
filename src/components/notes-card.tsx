@@ -49,11 +49,20 @@ export function NotesCard(props: NotesCardProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const notesProp = props.notes;
+  const totalCountProp = props.totalCount;
+  const limitProp = props.limit;
   useEffect(() => {
-    setState(normalizeOutput(props));
-  }, [props.notes, props.totalCount, props.limit]);
+    setState(
+      normalizeOutput({
+        notes: notesProp,
+        totalCount: totalCountProp,
+        limit: limitProp,
+      })
+    );
+  }, [limitProp, notesProp, totalCountProp]);
 
-  const notes = state.notes ?? [];
+  const notes = state.notes;
   const noteCount = state.totalCount || notes.length;
   const headerLabel =
     noteCount === 1

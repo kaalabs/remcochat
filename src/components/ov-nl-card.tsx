@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useI18n, type I18nContextValue } from "@/components/i18n-provider";
 import type {
   OvNlDisruption,
@@ -526,22 +526,33 @@ function TripsView({
   i18n: OvNlI18n;
   canRequestTripDetails?: boolean;
   onRequestTripDetails?: (ctxRecon: string) => void;
-}) {
+  }) {
   const { locale, t, uiLanguage } = i18n;
-  const primaryTripOptions: OvNlTripSummary[] =
-    output.kind === "trips.search"
-      ? output.trips
-      : output.kind === "trips.detail" && output.trip
-        ? [output.trip]
-        : [];
-  const directOnlyAlternatives =
-    output.kind === "trips.search" ? output.directOnlyAlternatives : undefined;
-  const alternativeTripOptions: OvNlTripSummary[] =
-    output.kind === "trips.search" ? (directOnlyAlternatives?.trips ?? []) : [];
-  const tripOptions: OvNlTripSummary[] =
-    output.kind === "trips.search"
-      ? [...primaryTripOptions, ...alternativeTripOptions]
-      : primaryTripOptions;
+  const { directOnlyAlternatives, primaryTripOptions, alternativeTripOptions, tripOptions } =
+    useMemo(() => {
+      if (output.kind === "trips.search") {
+        const directOnlyAlternatives = output.directOnlyAlternatives;
+        const primaryTripOptions = output.trips;
+        const alternativeTripOptions = directOnlyAlternatives?.trips ?? [];
+        const tripOptions = [...primaryTripOptions, ...alternativeTripOptions];
+        return { directOnlyAlternatives, primaryTripOptions, alternativeTripOptions, tripOptions };
+      }
+      if (output.kind === "trips.detail" && output.trip) {
+        const primaryTripOptions: OvNlTripSummary[] = [output.trip];
+        return {
+          directOnlyAlternatives: undefined,
+          primaryTripOptions,
+          alternativeTripOptions: [],
+          tripOptions: primaryTripOptions,
+        };
+      }
+      return {
+        directOnlyAlternatives: undefined,
+        primaryTripOptions: [] as OvNlTripSummary[],
+        alternativeTripOptions: [] as OvNlTripSummary[],
+        tripOptions: [] as OvNlTripSummary[],
+      };
+    }, [output]);
   const journeyLegs = output.kind === "journey.detail" ? output.legs : [];
 
   const isTripDetail = output.kind === "trips.detail";
@@ -589,14 +600,13 @@ function TripsView({
     };
   }, [tripOptions]);
 
-  useEffect(() => {
-    if (tripOptions.length === 0) return;
-    if (selectedTripUid && tripOptions.some((trip) => trip.uid === selectedTripUid)) return;
-    setSelectedTripUid(recommendedTripUid || tripOptions[0]?.uid || "");
-  }, [recommendedTripUid, selectedTripUid, tripOptions]);
+  const effectiveSelectedTripUid =
+    selectedTripUid && tripOptions.some((trip) => trip.uid === selectedTripUid)
+      ? selectedTripUid
+      : recommendedTripUid || tripOptions[0]?.uid || "";
 
   const selectedTrip = hasTrips
-    ? tripOptions.find((trip) => trip.uid === selectedTripUid) || tripOptions[0]
+    ? tripOptions.find((trip) => trip.uid === effectiveSelectedTripUid) || tripOptions[0]
     : null;
 
   const renderTripOptionRows = (trips: OvNlTripSummary[], startIndex: number) =>
@@ -668,7 +678,9 @@ function TripsView({
                   : output.journeyId}
               </div>
             </div>
-          ) : output.kind === "trips.search" && directOnlyAlternatives ? (
+          ) : output.kind === "trips.search" &&
+            directOnlyAlternatives &&
+            output.requestMeta?.requestedDirectOnly === true ? (
             <>
               <div className={styles.optionSectionHeader}>{t("ov_nl.trips.section.direct")}</div>
               {primaryTripOptions.length === 0 ? (

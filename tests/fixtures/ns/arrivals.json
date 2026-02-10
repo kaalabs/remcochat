@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "arrivals": [
+      {
+        "plannedDateTime": "2026-02-10T12:10:00+01:00",
+        "actualDateTime": "2026-02-10T12:09:00+01:00",
+        "plannedTrack": "7",
+        "actualTrack": "7",
+        "origin": "Amsterdam Centraal",
+        "trainCategory": "IC",
+        "trainNumber": 5678,
+        "journeyDetailRef": "JDR-2",
+        "cancelled": false
+      }
+    ]
+  }
+}

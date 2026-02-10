@@ -224,6 +224,7 @@ export const MessageBranchSelector = ({
   ...props
 }: MessageBranchSelectorProps) => {
   const { totalBranches } = useMessageBranch();
+  const alignment = from === "assistant" ? "justify-end" : "justify-start";
 
   // Don't render if there's only one branch
   if (totalBranches <= 1) {
@@ -232,7 +233,11 @@ export const MessageBranchSelector = ({
 
   return (
     <ButtonGroup
-      className="[&>*:not(:first-child)]:rounded-l-md [&>*:not(:last-child)]:rounded-r-md"
+      className={cn(
+        "[&>*:not(:first-child)]:rounded-l-md [&>*:not(:last-child)]:rounded-r-md",
+        alignment,
+        className
+      )}
       orientation="horizontal"
       {...props}
     />
@@ -276,6 +281,7 @@ export const MessageBranchNext = ({
   return (
     <Button
       aria-label={t("message.branch.next_aria")}
+      className={className}
       disabled={totalBranches <= 1}
       onClick={goToNext}
       size="icon-sm"

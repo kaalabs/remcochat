@@ -1,0 +1,7 @@
+{
+  "id": "D-1",
+  "type": "DISRUPTION",
+  "title": "Test disruption detail",
+  "topic": "Details",
+  "isActive": true
+}

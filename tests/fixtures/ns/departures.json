@@ -1,0 +1,18 @@
+{
+  "payload": {
+    "departures": [
+      {
+        "plannedDateTime": "2026-02-10T12:00:00+01:00",
+        "actualDateTime": "2026-02-10T12:01:00+01:00",
+        "plannedTrack": "5",
+        "actualTrack": "5",
+        "direction": "Amsterdam Centraal",
+        "destination": "Amsterdam Centraal",
+        "trainCategory": "IC",
+        "trainNumber": 1234,
+        "journeyDetailRef": "JDR-1",
+        "cancelled": false
+      }
+    ]
+  }
+}

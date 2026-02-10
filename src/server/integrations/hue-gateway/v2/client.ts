@@ -82,7 +82,7 @@ async function selectReadyBaseUrl(input: {
 
     try {
       const json = JSON.parse(ready.text) as { ready?: unknown };
-      if (json && (json as any).ready === true) {
+      if (json && json.ready === true) {
         return { ok: true, baseUrl };
       }
     } catch {

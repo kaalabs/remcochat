@@ -70,7 +70,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
 
   useEffect(() => {
     setState(normalizeList(list));
-  }, [list.id, list.updatedAt]);
+  }, [list]);
 
   const meta = listKindMeta[state.kind] ?? listKindMeta.todo;
   const Icon = meta.icon;
@@ -85,7 +85,7 @@ export function ListCard({ list, profileId }: ListCardProps) {
 
   const disabled = saving || !profileId || isDeleted;
 
-  const items = state.items ?? [];
+  const items = state.items;
   const counts = useMemo(() => {
     const total = items.length;
     const completed = items.filter((item) => item.completed).length;

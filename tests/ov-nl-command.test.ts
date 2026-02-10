@@ -195,3 +195,42 @@ test("routeOvNlCommand parses 'zo min mogelijk overstappen' as transfer-minimizi
   assert.equal(intent?.hard?.maxTransfers, undefined);
   assert.deepEqual(intent?.soft?.rankBy, ["fewest_transfers"]);
 });
+
+test("routeOvNlCommand routes board prompt to departures.list with station", async () => {
+  const result = await routeOvNlCommand({
+    text: "laat het vertrekbord van station almere muziekwijk zien",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(result.command.action, "departures.list");
+  assert.equal(String(result.command.args.station ?? ""), "almere muziekwijk");
+});
+
+test("routeOvNlCommand routes board prompt with explicit window to departures.window", async () => {
+  const result = await routeOvNlCommand({
+    text: "laat het vertrekbord van station almere muziekwijk zien tussen 18:00 en 19:00",
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(result.command.action, "departures.window");
+  assert.equal(String(result.command.args.station ?? ""), "almere muziekwijk");
+  assert.equal(String(result.command.args.fromTime ?? ""), "18:00");
+  assert.equal(String(result.command.args.toTime ?? ""), "19:00");
+});
+
+test("routeOvNlCommand asks clarification when board prompt is missing station", async () => {
+  const result = await routeOvNlCommand({
+    text: "laat het vertrekbord zien",
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+
+  assert.equal(result.reason, "missing_required");
+  assert.equal(result.missing.includes("station"), true);
+  assert.match(result.clarification, /station/i);
+});

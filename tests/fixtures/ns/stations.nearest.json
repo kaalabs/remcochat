@@ -1,0 +1,12 @@
+{
+  "payload": [
+    {
+      "code": "UT",
+      "UICCode": "8400621",
+      "namen": { "kort": "Utrecht C.", "middel": "Utrecht Centraal", "lang": "Utrecht Centraal" },
+      "land": "NL",
+      "lat": 52.089,
+      "lng": 5.11
+    }
+  ]
+}

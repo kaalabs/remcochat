@@ -537,15 +537,11 @@ function findAgendaCandidates(input: {
     params.push(`%${description.toLowerCase()}%`);
   }
 
-  let timeFilterStart: Date | null = null;
-  let timeFilterEnd: Date | null = null;
   if (input.match.date) {
     const date = parseDateParts(input.match.date);
     const tz = resolveTimeZone(input.timeZone);
     const start = zonedDateTimeToUtc(date, { hour: 0, minute: 0 }, tz);
     const end = zonedDateTimeToUtc(addDays(date, 1), { hour: 0, minute: 0 }, tz);
-    timeFilterStart = start;
-    timeFilterEnd = end;
     filters.push("CAST(strftime('%s', agenda_items.start_at) AS INTEGER) >= ?");
     filters.push("CAST(strftime('%s', agenda_items.start_at) AS INTEGER) < ?");
     params.push(
@@ -561,8 +557,6 @@ function findAgendaCandidates(input: {
     const target = zonedDateTimeToUtc(date, time, tz);
     const windowStart = new Date(target.getTime() - 5 * 60_000);
     const windowEnd = new Date(target.getTime() + 5 * 60_000);
-    timeFilterStart = windowStart;
-    timeFilterEnd = windowEnd;
     filters.push("CAST(strftime('%s', agenda_items.start_at) AS INTEGER) >= ?");
     filters.push("CAST(strftime('%s', agenda_items.start_at) AS INTEGER) <= ?");
     params.push(

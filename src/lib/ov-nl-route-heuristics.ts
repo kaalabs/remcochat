@@ -7,7 +7,7 @@ const ROUTE_BETWEEN_AND_RE = /\bbetween\s+(.+?)\s+and\s+(.+?)(?:$|[.?!,;])/i;
 const ROUTE_VAN_NAAR_RE = /\bvan\s+(.+?)\s+naar\s+(.+?)(?:$|[.?!,;])/i;
 const ROUTE_TUSSEN_EN_RE = /\btussen\s+(.+?)\s+en\s+(.+?)(?:$|[.?!,;])/i;
 const STATION_SEGMENT_STOP_RE =
-  /\b(geef|give|toon|show|please|alstublieft|met|with|zonder|without|liefst|prefer|bij\s+voorkeur|direct|directe|rechtstreeks|treinopties|train\s+options?)\b/i;
+  /\b(geef|give|toon|show|please|alstublieft|met|with|zonder|without|liefst|prefer|bij\s+voorkeur|direct|directe|rechtstreeks|treinopties|train\s+options?|om|at|vandaag|today|morgen|tomorrow|gisteren|yesterday|vanmorgen|this\s+morning|vanmiddag|this\s+afternoon|vanavond|this\s+evening|vannacht|tonight|nu|now|straks|soon)\b/i;
 
 const STRICT_DIRECT_RE =
   /\b(zonder\s+overstap(?:pen)?|geen\s+overstap(?:pen)?|no\s+transfers?|without\s+transfers?|alleen\s+direct(?:e)?|only\s+direct|must\s+be\s+direct|moet\s+direct)\b/i;
@@ -78,6 +78,25 @@ function pruneIntent(intent: Record<string, unknown>): Record<string, unknown> |
   if (Object.keys(prunedHard).length > 0) out.hard = prunedHard;
   if (prunedSoft) out.soft = prunedSoft;
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function removeStrictDirectOnlyFromIntent(intent: unknown): Record<string, unknown> | undefined {
+  const base = asRecord(intent);
+  const hard = asRecord(base.hard);
+  let changed = false;
+
+  if (hard.directOnly === true) {
+    delete hard.directOnly;
+    changed = true;
+  }
+
+  if (typeof hard.maxTransfers === "number" && Number.isFinite(hard.maxTransfers) && hard.maxTransfers <= 0) {
+    delete hard.maxTransfers;
+    changed = true;
+  }
+
+  if (!changed) return pruneIntent(base);
+  return pruneIntent({ ...base, hard });
 }
 
 export function extractRouteFromText(text: string): { from: string; to: string } | null {
@@ -182,6 +201,12 @@ export function applyTripsTextHeuristicsToArgs(input: {
   args: Record<string, unknown>;
 }): Record<string, unknown> {
   const nextArgs: Record<string, unknown> = { ...input.args };
+
+  // If station strings already exist (LLM/tool carryover), strip common trailing noise like
+  // date/time hints ("vandaag", "om 10:00") so station search doesn't fail.
+  if (hasText(nextArgs.from)) nextArgs.from = trimStationSegment(nextArgs.from);
+  if (hasText(nextArgs.to)) nextArgs.to = trimStationSegment(nextArgs.to);
+
   const route = extractRouteFromText(input.text);
   if (route) {
     if (!hasText(nextArgs.from)) nextArgs.from = route.from;
@@ -196,6 +221,12 @@ export function applyTripsTextHeuristicsToArgs(input: {
   const directness = inferDirectnessFromText(input.text);
   if (directness !== "none") {
     const normalizedIntent = applyDirectnessToIntent(nextArgs.intent, directness);
+    if (normalizedIntent) nextArgs.intent = normalizedIntent;
+    else delete nextArgs.intent;
+  } else {
+    // If the user didn't ask for direct travel in this message, don't let an LLM/tool payload
+    // accidentally force strict direct-only constraints (which leads to "no direct trips" banners).
+    const normalizedIntent = removeStrictDirectOnlyFromIntent(nextArgs.intent);
     if (normalizedIntent) nextArgs.intent = normalizedIntent;
     else delete nextArgs.intent;
   }

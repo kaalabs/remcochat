@@ -18,6 +18,24 @@ test("extractRouteFromText parses Dutch route and trims trailing request words",
   });
 });
 
+test("extractRouteFromText trims trailing date/time hints from station segments", () => {
+  const route = extractRouteFromText(
+    "ik wil van almere muziekwijk naar amsterdam centraal vandaag. geef me treinopties"
+  );
+  assert.deepEqual(route, {
+    from: "almere muziekwijk",
+    to: "amsterdam centraal",
+  });
+
+  const routeWithTime = extractRouteFromText(
+    "ik wil van almere muziekwijk naar amsterdam centraal om 10:05"
+  );
+  assert.deepEqual(routeWithTime, {
+    from: "almere muziekwijk",
+    to: "amsterdam centraal",
+  });
+});
+
 test("inferDirectnessFromText distinguishes strict vs preferred direct wording", () => {
   assert.equal(inferDirectnessFromText("ik wil directe treinopties"), "strict");
   assert.equal(inferDirectnessFromText("ik wil liefst direct reizen"), "preferred");
@@ -82,6 +100,41 @@ test("applyTripsTextHeuristicsToArgs maps direct options phrasing to strict dire
       maxTransfers: 0,
     },
   });
+});
+
+test("applyTripsTextHeuristicsToArgs strips trailing hints from existing from/to args", () => {
+  const args = applyTripsTextHeuristicsToArgs({
+    text: "ik wil van almere muziekwijk naar amsterdam centraal vandaag. geef me treinopties",
+    args: {
+      from: "Almere Muziekwijk",
+      to: "Amsterdam Centraal vandaag",
+    },
+  });
+
+  assert.equal(args.from, "Almere Muziekwijk");
+  assert.equal(args.to, "Amsterdam Centraal");
+  assert.equal(args.dateTime, "today");
+});
+
+test("applyTripsTextHeuristicsToArgs does not enforce strict direct-only without user wording", () => {
+  const args = applyTripsTextHeuristicsToArgs({
+    text: "ik wil vandaag van almere muziekwijk naar amsterdam centraal. geef me treinopties",
+    args: {
+      from: "Almere Muziekwijk",
+      to: "Amsterdam Centraal",
+      intent: {
+        hard: {
+          directOnly: true,
+          maxTransfers: 0,
+        },
+      },
+    },
+  });
+
+  const intent = args.intent as { hard?: Record<string, unknown> } | undefined;
+  const hard = intent?.hard ?? {};
+  assert.equal(hard.directOnly, undefined);
+  assert.equal(hard.maxTransfers, undefined);
 });
 
 test("applyTripsTextHeuristicsToArgs keeps strict hard directness for no-transfer wording", () => {

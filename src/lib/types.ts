@@ -433,6 +433,10 @@ export type OvNlToolOutput =
         maxTransfers: number;
         trips: OvNlTripSummary[];
       };
+      requestMeta?: {
+        requestedHardKeys: string[];
+        requestedDirectOnly: boolean;
+      };
       intentMeta?: OvNlIntentMeta;
       cacheTtlSeconds: number;
       fetchedAt: string;

@@ -167,7 +167,13 @@ const ROUTER_PROMPT = [
   "You are RemcoChat's OV NL intent compiler.",
   "Extract exactly one ovNlGateway command from the latest user message.",
   "Return JSON only and match the schema exactly.",
+  "Return exactly one JSON object with these top-level keys: action, args, confidence, missing, clarification, isFollowUp.",
+  `action must be one of: ${OV_NL_ACTIONS.join(", ")}.`,
+  "args must be an object with only fields relevant to the selected action.",
   "Prefer preserving existing route context when the user sends a follow-up refinement.",
+  "For a departure board request without an explicit time window, use action='departures.list' with args { station }.",
+  "For a departure board request with an explicit time window (for example 'tussen 18:00 en 19:00' or 'van 18:00 tot 19:00'), use action='departures.window' with args { station, fromTime, toTime, date? }.",
+  "If a board request is missing the station, set missing=['station'] and ask one concise clarification question.",
   "Follow-up refinements include phrases like: make it direct, fewer transfers, earlier, later, quicker, only NS, zonder overstap, liever direct, eerder, later.",
   "When the user asks for direct options (for example 'directe treinopties'), treat that as strict and map to intent.hard directOnly/maxTransfers=0 unless they explicitly express a preference (for example liefst/bij voorkeur).",
   "If the user uses hard language (only/must/no/without/geen/alleen/zonder/niet), map to intent.hard.",
@@ -176,9 +182,104 @@ const ROUTER_PROMPT = [
   "If required fields are missing and cannot be recovered from context, set missing[] and add one short clarification question.",
   "Do not invent station names, ids, ctxRecon, or train ids.",
   "Supported rankBy values: fastest, fewest_transfers, earliest_departure, earliest_arrival, realtime_first, least_walking.",
+  "Example board request output: {\"action\":\"departures.list\",\"args\":{\"station\":\"Almere Muziekwijk\"},\"confidence\":0.95,\"missing\":[],\"clarification\":\"\",\"isFollowUp\":false}",
+  "Example board window output: {\"action\":\"departures.window\",\"args\":{\"station\":\"Almere Muziekwijk\",\"fromTime\":\"18:00\",\"toTime\":\"19:00\"},\"confidence\":0.95,\"missing\":[],\"clarification\":\"\",\"isFollowUp\":false}",
 ].join("\n");
 
+const BOARD_INTENT_RE =
+  /\b(vertrekbord|vertrekken|vertrektijden?|departures?|aankomstbord|aankomsten?|arrivals?)\b/i;
+const DEPARTURE_BOARD_RE = /\b(vertrekbord|vertrekken|vertrektijden?|departures?)\b/i;
+const ARRIVAL_BOARD_RE = /\b(aankomstbord|aankomsten?|arrivals?)\b/i;
+const BOARD_WINDOW_PATTERNS = [
+  /\btussen\s+(\d{1,2}(?::|\.)\d{2})\s+en\s+(\d{1,2}(?::|\.)\d{2})\b/i,
+  /\bvan\s+(\d{1,2}(?::|\.)\d{2})\s+tot\s+(\d{1,2}(?::|\.)\d{2})\b/i,
+  /\bfrom\s+(\d{1,2}(?::|\.)\d{2})\s+to\s+(\d{1,2}(?::|\.)\d{2})\b/i,
+] as const;
+const BOARD_STATION_PATTERNS = [
+  /\bvan\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bop\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bstation\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+] as const;
+const BOARD_STATION_TRAILING_RE =
+  /\b(?:show|toon|geef|laat(?:\s+het)?|zien|please|alstublieft)\b.*$/i;
+
+function normalizeClockTime(value: string): string | null {
+  const normalized = String(value ?? "").trim().replace(".", ":");
+  const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function extractBoardWindow(text: string): { fromTime: string; toTime: string } | null {
+  for (const pattern of BOARD_WINDOW_PATTERNS) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const fromTime = normalizeClockTime(match[1] ?? "");
+    const toTime = normalizeClockTime(match[2] ?? "");
+    if (!fromTime || !toTime) continue;
+    return { fromTime, toTime };
+  }
+  return null;
+}
+
+function cleanBoardStationCandidate(value: string): string {
+  let out = String(value ?? "").trim();
+  if (!out) return "";
+  out = out.replace(/^[("'`]+/, "").replace(/[)"'`]+$/, "").trim();
+  out = out.replace(BOARD_STATION_TRAILING_RE, "").trim();
+  out = out.replace(/[.,;:!?]+$/, "").trim();
+  out = out.replace(/\s+/g, " ").trim();
+  if (!out || out.length > 120) return "";
+  return out;
+}
+
+function extractBoardStation(text: string): string {
+  for (const pattern of BOARD_STATION_PATTERNS) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const cleaned = cleanBoardStationCandidate(match[1] ?? "");
+    if (cleaned) return cleaned;
+  }
+  return "";
+}
+
+function deterministicBoardCommandFromText(text: string): OvNlCommand | null {
+  if (!BOARD_INTENT_RE.test(text)) return null;
+
+  const station = extractBoardStation(text);
+  const window = extractBoardWindow(text);
+  const wantsArrivals = ARRIVAL_BOARD_RE.test(text) && !DEPARTURE_BOARD_RE.test(text);
+  const action: OvNlToolAction = window
+    ? "departures.window"
+    : wantsArrivals
+      ? "arrivals.list"
+      : "departures.list";
+  const args: Record<string, unknown> = {};
+
+  if (station) args.station = station;
+  if (window) {
+    args.fromTime = window.fromTime;
+    args.toTime = window.toTime;
+  }
+
+  return {
+    action,
+    args,
+    confidence: 0.95,
+    missing: [],
+    clarification: "",
+    isFollowUp: false,
+  };
+}
+
 function deterministicCommandFromText(text: string): OvNlCommand | null {
+  const boardCommand = deterministicBoardCommandFromText(text);
+  if (boardCommand) return boardCommand;
+
   const route = extractRouteFromText(text);
   if (!route) return null;
 
@@ -415,22 +516,35 @@ export async function routeOvNlCommand(input: {
   }
 
   const deterministic = deterministicCommandFromText(text);
-  const router = getConfig().intentRouter;
-  if (!router || !router.enabled) {
-    if (deterministic) {
-      const missing = requiredMissingForAction(deterministic);
-      if (missing.length > 0) {
-        return {
+  const deterministicMissing = deterministic ? requiredMissingForAction(deterministic) : [];
+  const deterministicWithMissing = deterministic
+    ? ({
+        ...deterministic,
+        missing: deterministicMissing,
+      } as OvNlCommand)
+    : null;
+  const deterministicSuccessResult: OvNlCommandRouteResult | null =
+    deterministicWithMissing && deterministicMissing.length === 0
+      ? {
+          ok: true,
+          command: deterministicWithMissing,
+        }
+      : null;
+  const deterministicMissingResult: OvNlCommandRouteResult | null =
+    deterministicWithMissing && deterministicMissing.length > 0
+      ? {
           ok: false,
           reason: "missing_required",
-          confidence: deterministic.confidence,
-          clarification: clarificationForMissing(deterministic, missing),
-          missing,
-          command: { ...deterministic, missing },
-        };
-      }
-      return { ok: true, command: deterministic };
-    }
+          confidence: deterministicWithMissing.confidence,
+          clarification: clarificationForMissing(deterministicWithMissing, deterministicMissing),
+          missing: deterministicMissing,
+          command: deterministicWithMissing,
+        }
+      : null;
+  const router = getConfig().intentRouter;
+  if (!router || !router.enabled) {
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
     return {
       ok: false,
       reason: "disabled",
@@ -445,7 +559,8 @@ export async function routeOvNlCommand(input: {
   try {
     resolved = await getLanguageModelForProvider(router.providerId, router.modelId);
   } catch {
-    if (deterministic) return { ok: true, command: deterministic };
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
     return {
       ok: false,
       reason: "parse_failed",
@@ -488,7 +603,8 @@ export async function routeOvNlCommand(input: {
             : undefined,
       });
     } catch {
-      if (deterministic) return { ok: true, command: deterministic };
+      if (deterministicSuccessResult) return deterministicSuccessResult;
+      if (deterministicMissingResult) return deterministicMissingResult;
       return {
         ok: false,
         reason: "parse_failed",
@@ -535,7 +651,8 @@ export async function routeOvNlCommand(input: {
   merged.missing = requiredMissingForAction(merged);
 
   if (merged.confidence < router.minConfidence) {
-    if (deterministic) return { ok: true, command: deterministic };
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
     return {
       ok: false,
       reason: "low_confidence",
@@ -547,7 +664,8 @@ export async function routeOvNlCommand(input: {
   }
 
   if (merged.missing.length > 0) {
-    if (deterministic) return { ok: true, command: deterministic };
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
     return {
       ok: false,
       reason: "missing_required",

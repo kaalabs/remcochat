@@ -1,0 +1,24 @@
+{
+  "payload": [
+    {
+      "code": "AMF",
+      "UICCode": "8400051",
+      "namen": { "kort": "Amersfoort", "middel": "Amersfoort", "lang": "Amersfoort" },
+      "land": "NL",
+      "lat": 52.153,
+      "lng": 5.369
+    },
+    {
+      "code": "ASD",
+      "UICCode": "8400058",
+      "namen": {
+        "kort": "A'dam C.",
+        "middel": "Amsterdam Centraal",
+        "lang": "Amsterdam Centraal"
+      },
+      "land": "NL",
+      "lat": 52.379,
+      "lng": 4.9
+    }
+  ]
+}
