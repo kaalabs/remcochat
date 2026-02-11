@@ -1,7 +1,7 @@
 import type { ModelType } from "@/server/config";
 import type { SharedV3ProviderOptions } from "@ai-sdk/provider";
 import type { ModelCapabilities } from "@/lib/models";
-import { getConfig } from "@/server/config";
+import { xaiReasoningEffortSupport } from "@/lib/xai-capabilities";
 
 export type ReasoningConfig = {
   enabled: boolean;
@@ -31,9 +31,9 @@ function reasoningEffortForOpenAICompatible(effort: ReasoningConfig["effort"]) {
 
 function reasoningEffortForXaiChat(
   effort: ReasoningConfig["effort"]
-): "low" | "high" {
+) {
   if (effort === "minimal" || effort === "low") return "low";
-  return "high";
+  return effort;
 }
 
 function thinkingLevelForGoogle(effort: ReasoningConfig["effort"]) {
@@ -90,6 +90,9 @@ export function createProviderOptions(input: {
       break;
     }
     case "xai": {
+      if (xaiReasoningEffortSupport(input.providerModelId) !== "supported") {
+        break;
+      }
       appendOptions(out, "xai", {
         reasoningEffort: reasoningEffortForXaiChat(effort),
       });
@@ -161,27 +164,6 @@ export function createProviderOptions(input: {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function firstNTrimmed(values: string[], maxItems: number): string[] {
-  const out: string[] = [];
-  for (const raw of values) {
-    const value = String(raw ?? "").trim();
-    if (!value) continue;
-    out.push(value);
-    if (out.length >= maxItems) break;
-  }
-  return out;
-}
-
-function mergeProviderOptions(
-  base: SharedV3ProviderOptions | undefined,
-  provider: string,
-  patch: Record<string, unknown>
-): SharedV3ProviderOptions {
-  const out: SharedV3ProviderOptions = base ? { ...base } : {};
-  appendOptions(out, provider, patch);
-  return out;
-}
-
 export function createProviderOptionsForWebTools(input: {
   modelType: ModelType;
   providerModelId: string;
@@ -189,34 +171,11 @@ export function createProviderOptionsForWebTools(input: {
   capabilities: ModelCapabilities;
   reasoning: ReasoningConfig;
 }): SharedV3ProviderOptions | undefined {
-  const base = createProviderOptions({
+  return createProviderOptions({
     modelType: input.modelType,
     providerModelId: input.providerModelId,
     webToolsEnabled: input.webToolsEnabled,
     capabilities: input.capabilities,
     reasoning: input.reasoning,
-  });
-
-  if (!input.webToolsEnabled || input.modelType !== "xai") {
-    return base;
-  }
-
-  const webConfig = getConfig().webTools;
-  const allowedDomains = firstNTrimmed(webConfig?.allowedDomains ?? [], 5);
-  const blockedDomains = firstNTrimmed(webConfig?.blockedDomains ?? [], 5);
-
-  const webSource: Record<string, unknown> = { type: "web" };
-  if (allowedDomains.length > 0) {
-    webSource.allowedWebsites = allowedDomains;
-  } else if (blockedDomains.length > 0) {
-    webSource.excludedWebsites = blockedDomains;
-  }
-
-  return mergeProviderOptions(base, "xai", {
-    searchParameters: {
-      mode: "on",
-      returnCitations: true,
-      sources: [webSource],
-    },
   });
 }

@@ -1,9 +1,10 @@
+import { xaiReasoningEffortSupport } from "@/lib/xai-capabilities";
+
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
 export type ReasoningEffortChoice = "auto" | ReasoningEffort;
 
 const OPENAI_LEVELS: ReasoningEffort[] = ["minimal", "low", "medium", "high"];
 const STANDARD_LEVELS: ReasoningEffort[] = ["low", "medium", "high"];
-const XAI_CHAT_LEVELS: ReasoningEffort[] = ["low", "high"];
 
 function vendorFromModelId(modelId: string | undefined) {
   const id = String(modelId ?? "").trim();
@@ -32,7 +33,11 @@ export function allowedReasoningEfforts(input: {
 
   if (modelType === "openai_responses") return OPENAI_LEVELS;
   if (modelType === "openai_compatible") return STANDARD_LEVELS;
-  if (modelType === "xai") return XAI_CHAT_LEVELS;
+  if (modelType === "xai") {
+    const support = xaiReasoningEffortSupport(input.providerModelId);
+    if (support !== "supported") return [];
+    return STANDARD_LEVELS;
+  }
   if (modelType === "anthropic_messages") return STANDARD_LEVELS;
   if (modelType === "google_generative_ai") return STANDARD_LEVELS;
   if (modelType === "vercel_ai_gateway") {

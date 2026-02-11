@@ -152,7 +152,7 @@ allowed_model_ids = ["gpt-5.2"]
   assert.ok(!("exa_search" in tools));
 });
 
-test("xai enables native live search path without local search function tools", () => {
+test("xai uses configured local search provider (exa)", () => {
   const configPath = writeTempConfigToml(`
 version = 2
 
@@ -180,5 +180,6 @@ allowed_model_ids = ["grok-4"]
     providerModelId: "grok-4",
   });
   assert.equal(enabled, true);
-  assert.deepEqual(tools, {});
+  assert.ok("exa_search" in tools);
+  assert.ok(!("brave_search" in tools));
 });

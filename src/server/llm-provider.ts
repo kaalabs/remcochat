@@ -229,7 +229,9 @@ async function resolveModelForProvider(
         modelId: resolvedModelId,
         providerModelId,
         capabilities,
-        model: xai(providerModelId),
+        // Use xAI Responses API for chat flows to stay aligned with current
+        // xAI tooling direction and avoid deprecated live-search chat behavior.
+        model: xai.responses(providerModelId),
       };
     }
     case "anthropic_messages": {

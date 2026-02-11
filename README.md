@@ -78,7 +78,7 @@ CA download endpoints (served by the proxy):
   - `"exa"` (requires `EXA_API_KEY`)
   - `"brave"` (requires `BRAVE_SEARCH_API`)
 - This setting controls which web search tool is exposed for `openai_compatible` models.
-- For xAI models, web tools enable xAI Live Search (`providerOptions.xai.searchParameters`) and domain filters are applied there.
+- This setting also controls which web search tool is exposed for `xai` models.
 
 ## Hue (optional)
 

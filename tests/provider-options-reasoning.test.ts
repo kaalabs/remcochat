@@ -89,9 +89,31 @@ test("xai maps reasoning effort to xai.reasoningEffort", () => {
   });
   assert.deepEqual(providerOptions, {
     xai: {
-      reasoningEffort: "high",
+      reasoningEffort: "medium",
     },
   });
+});
+
+test("xai omits reasoningEffort for unsupported models", () => {
+  const providerOptions = createProviderOptions({
+    modelType: "xai",
+    providerModelId: "grok-4",
+    capabilities: reasoningCaps,
+    webToolsEnabled: false,
+    reasoning: reasoningConfig,
+  });
+  assert.equal(providerOptions, undefined);
+});
+
+test("xai omits reasoningEffort for unknown models", () => {
+  const providerOptions = createProviderOptions({
+    modelType: "xai",
+    providerModelId: "grok-future-ultra-1",
+    capabilities: reasoningCaps,
+    webToolsEnabled: false,
+    reasoning: reasoningConfig,
+  });
+  assert.equal(providerOptions, undefined);
 });
 
 test("anthropic_messages enables thinking without streaming thoughts", () => {

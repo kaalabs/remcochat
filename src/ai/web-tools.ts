@@ -105,10 +105,19 @@ export function createWebTools(input: {
       };
     }
     case "xai": {
-      // xAI live search is configured via providerOptions.xai.searchParameters.
+      // Use local web-search tools for xAI to avoid deprecated Chat live-search
+      // parameters while preserving RemcoChat's existing tool flow.
+      const searchProvider = web.searchProvider;
       return {
         enabled: true,
-        tools: {},
+        tools:
+          searchProvider === "brave"
+            ? {
+                brave_search: createBraveSearchTool(),
+              }
+            : {
+                exa_search: createExaSearchTool(),
+              },
       };
     }
     case "anthropic_messages": {

@@ -24,8 +24,27 @@ test("allowedReasoningEfforts returns standard set for anthropic", () => {
 });
 
 test("allowedReasoningEfforts returns xai chat set for xai", () => {
-  const options = allowedReasoningEfforts({ modelType: "xai" });
-  assert.deepEqual(options, ["low", "high"]);
+  const options = allowedReasoningEfforts({
+    modelType: "xai",
+    providerModelId: "grok-4-fast-reasoning",
+  });
+  assert.deepEqual(options, ["low", "medium", "high"]);
+});
+
+test("allowedReasoningEfforts returns empty for xai non-reasoning model", () => {
+  const options = allowedReasoningEfforts({
+    modelType: "xai",
+    providerModelId: "grok-4",
+  });
+  assert.deepEqual(options, []);
+});
+
+test("allowedReasoningEfforts returns empty for unknown xai model", () => {
+  const options = allowedReasoningEfforts({
+    modelType: "xai",
+    providerModelId: "grok-future-ultra-1",
+  });
+  assert.deepEqual(options, []);
 });
 
 test("normalizeReasoningEffort keeps valid values", () => {
