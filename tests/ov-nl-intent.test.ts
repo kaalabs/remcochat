@@ -26,6 +26,12 @@ test("isOvNlRailIntent ignores unrelated prompts", () => {
   assert.equal(isOvNlRailIntent("/hue-instant-control set woonkamer cozy"), false);
 });
 
+test("isOvNlRailIntent does not route policy/facilities questions by default", () => {
+  assert.equal(isOvNlRailIntent("Mag ik een fiets meenemen in de NS trein?"), false);
+  assert.equal(isOvNlRailIntent("Wat kost een NS kaartje naar Amsterdam?"), false);
+  assert.equal(isOvNlRailIntent("Heeft Utrecht Centraal bagagekluizen?"), false);
+});
+
 test("isExplicitWebSearchRequest detects explicit internet/source requests", () => {
   assert.equal(
     isExplicitWebSearchRequest("Zoek op het internet naar vertragingen tussen Amsterdam en Utrecht"),
@@ -65,11 +71,22 @@ test("shouldPreferOvNlGatewayTool follows OV skill activation", () => {
       ovNlEnabled: true,
       explicitSkillName: OV_NL_SKILL_NAME,
     }),
-    true
+    false
   );
   assert.equal(
     shouldPreferOvNlGatewayTool({
       text: "help",
+      ovNlEnabled: true,
+      activatedSkillNames: [OV_NL_SKILL_NAME],
+    }),
+    false
+  );
+});
+
+test("shouldPreferOvNlGatewayTool still prefers OV tool for travel queries with OV skill active", () => {
+  assert.equal(
+    shouldPreferOvNlGatewayTool({
+      text: "Wat zijn de vertrektijden op Utrecht Centraal?",
       ovNlEnabled: true,
       activatedSkillNames: [OV_NL_SKILL_NAME],
     }),

@@ -16,6 +16,12 @@ const ROUTE_PATTERN_RE =
   /\b(van|from)\b[\s\S]{0,120}\b(naar|to)\b|\btussen\b[\s\S]{0,120}\ben\b/i;
 const NS_QUERY_RE = /\b(met|by|via)\s+ns\b|\bns\s+app\b/i;
 
+const POLICY_OR_FACILITIES_RE =
+  /\b(ticket(?:s)?|kaartje(?:s)?|prijs|prijzen|kost(?:en|t)?|tarief|fare|refund(?:s)?|restitutie|terugbeta(?:al|ling)|compensatie|vergoeding|claims?|klacht(?:en)?|customer\s*service|klantenservice|contact|abonnement(?:en)?|subscription|ov-?chipkaart|chipkaart|incheck(?:en)?|uitcheck(?:en)?|check[-\s]?in|check[-\s]?out|fiets(?:en)?|bike|bicycle|bagage|luggage|locker(?:s)?|kluiz(?:en)?|bagagekluiz(?:en)?|toilet(?:ten)?|wc\b|lift(?:en)?|elevator(?:s)?|rolstoel|wheelchair|accessib|toegankelijk|assistentie|assistance|voorzieningen|facilit(?:y|ies)|openingstijden|opening\s*hours|parkeren|parking|fietsenstalling|wifi|internet)\b/i;
+
+const LIVE_TRAVEL_SIGNAL_RE =
+  /\b(vertrekbord|vertrekken|vertrektijden?|aankomstbord|aankomsten?|aankomsttijden?|spoor|perron|platform|track|dienstregeling|timetable|journey|trip|rit(?:ten)?|reisoptie(?:s)?|reisinformatie)\b/i;
+
 export function isExplicitWebSearchRequest(text: string): boolean {
   const value = String(text ?? "").trim();
   if (!value) return false;
@@ -27,9 +33,19 @@ export function isOvNlRailIntent(text: string): boolean {
   if (!value) return false;
   if (value.startsWith("/")) return false;
 
-  if (STRONG_RAIL_SIGNAL_RE.test(value)) return true;
+  const looksLikeLiveTravelQuery =
+    ROUTE_PATTERN_RE.test(value) ||
+    LIVE_TRAVEL_SIGNAL_RE.test(value) ||
+    DISRUPTION_SIGNAL_RE.test(value);
+  const looksLikePolicyOrFacilities = POLICY_OR_FACILITIES_RE.test(value);
+
+  // Avoid routing policy/facilities questions to the OV tool unless the user also asks
+  // about a concrete route/board/disruption (live travel data).
+  if (looksLikePolicyOrFacilities && !looksLikeLiveTravelQuery) return false;
+
+  if (looksLikeLiveTravelQuery) return true;
   if (NS_QUERY_RE.test(value)) return true;
-  if (DISRUPTION_SIGNAL_RE.test(value) && ROUTE_PATTERN_RE.test(value)) return true;
+  if (STRONG_RAIL_SIGNAL_RE.test(value)) return true;
 
   return false;
 }
@@ -49,13 +65,17 @@ export function shouldPreferOvNlGatewayTool(input: {
   const activated = Array.isArray(input.activatedSkillNames)
     ? input.activatedSkillNames.map((name) => String(name ?? "").trim())
     : [];
-  if (
-    explicitSkillName === OV_NL_SKILL_NAME ||
-    activated.includes(OV_NL_SKILL_NAME)
-  ) {
-    return true;
-  }
-  if (!text) return false;
+  const skillForced =
+    explicitSkillName === OV_NL_SKILL_NAME || activated.includes(OV_NL_SKILL_NAME);
 
-  return isOvNlRailIntent(text);
+  const stripSkillPrefix = (value: string) => {
+    const v = String(value ?? "");
+    const prefix = `/${OV_NL_SKILL_NAME}`;
+    if (!v.toLowerCase().startsWith(prefix)) return v.trim();
+    return v.slice(prefix.length).trim();
+  };
+
+  const effectiveText = skillForced ? stripSkillPrefix(text) : text;
+  if (!effectiveText) return false;
+  return isOvNlRailIntent(effectiveText);
 }

@@ -118,6 +118,13 @@ function messageText(message: UIMessage<RemcoChatMessageMetadata>) {
     .trim();
 }
 
+function lastUserTextFromMessages(messages: UIMessage<RemcoChatMessageMetadata>[]): string {
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+  if (lastUserIndex < 0) return "";
+  const msg = messages[lastUserIndex];
+  return msg ? messageText(msg) : "";
+}
+
 function ovConstraintNoMatchQuestion(output: unknown): string {
   if (!isOvNlErrorLikeOutput(output) || output.kind !== "error") return "";
   if (output.error?.code !== "constraint_no_match") return "";
@@ -878,6 +885,7 @@ async function tryOvIntentFastPath(input: {
   enabled: boolean;
   shouldTry: boolean;
   explicitWebSearchRequested: boolean;
+  explicitSkillActivationOnly: boolean;
   executeOvGateway: ((input: unknown) => Promise<unknown>) | null;
   text: string;
   previousUserText: string;
@@ -887,6 +895,7 @@ async function tryOvIntentFastPath(input: {
 }): Promise<Response | null> {
   if (!input.enabled) return null;
   if (!input.shouldTry) return null;
+  if (input.explicitSkillActivationOnly) return null;
   if (input.explicitWebSearchRequested) return null;
   if (typeof input.executeOvGateway !== "function") return null;
 
@@ -899,11 +908,21 @@ async function tryOvIntentFastPath(input: {
   });
 
   if (!routed.ok) {
-    if (routed.clarification.trim()) {
+    const confidence = typeof routed.confidence === "number" ? routed.confidence : 0;
+    const missing = Array.isArray(routed.missing)
+      ? routed.missing.map((m) => String(m ?? "").trim()).filter(Boolean)
+      : [];
+    const canClarifyFastPath =
+      confidence >= 0.7 &&
+      missing.some((slot) =>
+        ["station", "from", "to", "from/to window", "ctxRecon"].includes(slot)
+      );
+
+    if (canClarifyFastPath && routed.clarification.trim()) {
       logEvent("info", "ov_intent_clarification", {
         reason: "missing_required",
-        confidence: routed.confidence,
-        missing: routed.missing,
+        confidence,
+        missing,
       });
       return uiTextResponse({
         text: routed.clarification.trim(),
@@ -912,17 +931,11 @@ async function tryOvIntentFastPath(input: {
       });
     }
     logEvent("info", "ov_intent_parse_failed", {
-      reason: "parse_failed",
-      confidence: routed.confidence,
-      missing: routed.missing,
+      reason: canClarifyFastPath ? "missing_required" : "parse_failed",
+      confidence,
+      missing,
     });
-    return uiTextResponse({
-      text:
-        routed.clarification?.trim() ||
-        "Which route or station should I use? For example: 'van Utrecht Centraal naar Amsterdam Centraal' or 'laat het vertrekbord van station Utrecht Centraal zien'.",
-      messageMetadata: input.messageMetadata,
-      headers: input.headers,
-    });
+    return null;
   }
 
   logEvent("info", "ov_intent_parse_success", {
@@ -1358,7 +1371,7 @@ export async function POST(req: Request) {
       turnUserMessageId: lastUserMessageId || "",
     });
     const forceOvNlGatewayTool = shouldPreferOvNlGatewayTool({
-      text: lastUserText,
+      text: lastUserTextFromMessages(skillInvocation.messages),
       ovNlEnabled: ovNlTools.enabled,
       explicitSkillName: skillInvocation.explicitSkillName,
     });
@@ -1370,9 +1383,12 @@ export async function POST(req: Request) {
     const ovFastPath = await tryOvIntentFastPath({
       enabled: ovNlTools.enabled,
       shouldTry: !explicitBashCommand && forceOvNlGatewayTool,
-      explicitWebSearchRequested: isExplicitWebSearchRequest(lastUserText),
+      explicitWebSearchRequested: isExplicitWebSearchRequest(
+        lastUserTextFromMessages(skillInvocation.messages)
+      ),
+      explicitSkillActivationOnly,
       executeOvGateway: typeof ovGatewayExecute === "function" ? ovGatewayExecute : null,
-      text: lastUserText,
+      text: lastUserTextFromMessages(skillInvocation.messages),
       previousUserText,
       messages: skillInvocation.messages,
       messageMetadata: {
@@ -2567,7 +2583,7 @@ export async function POST(req: Request) {
     ? extractExplicitBashCommand(lastUserText)
     : null;
   const forceOvNlGatewayTool = shouldPreferOvNlGatewayTool({
-    text: lastUserText,
+    text: lastUserTextFromMessages(skillInvocation.messages),
     ovNlEnabled: ovNlTools.enabled,
     explicitSkillName: skillInvocation.explicitSkillName,
     activatedSkillNames: effectiveChat.activatedSkillNames,
@@ -2580,9 +2596,15 @@ export async function POST(req: Request) {
   const ovFastPath = await tryOvIntentFastPath({
     enabled: ovNlTools.enabled,
     shouldTry: !forceMemoryAnswerTool && !explicitBashCommand && forceOvNlGatewayTool,
-    explicitWebSearchRequested: isExplicitWebSearchRequest(lastUserText),
+    explicitWebSearchRequested: isExplicitWebSearchRequest(
+      lastUserTextFromMessages(skillInvocation.messages)
+    ),
+    explicitSkillActivationOnly: isExplicitSkillActivationOnlyPrompt({
+      messages: skillInvocation.messages,
+      explicitSkillName: skillInvocation.explicitSkillName,
+    }),
     executeOvGateway: typeof ovGatewayExecute === "function" ? ovGatewayExecute : null,
-    text: lastUserText,
+    text: lastUserTextFromMessages(skillInvocation.messages),
     previousUserText,
     messages: skillInvocation.messages,
     messageMetadata: {

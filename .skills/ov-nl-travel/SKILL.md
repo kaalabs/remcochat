@@ -9,7 +9,7 @@ compatibility: |
 allowed-tools: Read
 metadata:
   author: remcochat
-  version: "0.2.0"
+  version: "0.2.1"
   purpose: ov-nl-travel-assistant
 ---
 
@@ -53,6 +53,10 @@ Use the `ovNlGateway` tool first for Dutch railway (NS) questions.
 - Use hard constraints for wording like `must/only/without/no/geen/alleen/zonder/niet`.
 - Use soft ranking for wording like `prefer/liefst/best/bij voorkeur`.
 - If hard constraints produce no matches, ask one concise clarification to relax a single hard constraint.
+
+### Detail endpoints (important)
+
+For `trips.detail`, `journey.detail`, and `disruptions.detail`, omit `args.intent` (it is ignored/stripped).
 
 ### Date/time guidance
 
