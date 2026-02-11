@@ -15,6 +15,7 @@ test("isOvNlRailIntent detects Dutch rail travel queries", () => {
     true
   );
   assert.equal(isOvNlRailIntent("Wat zijn de vertrektijden op Utrecht Centraal?"), true);
+  assert.equal(isOvNlRailIntent("Geef het vertrektijdenbord van Almere Centrum."), true);
   assert.equal(
     isOvNlRailIntent("Zijn er storingen of vertragingen tussen Rotterdam en Den Haag?"),
     true

@@ -1581,16 +1581,17 @@ export async function POST(req: Request) {
             hasToolCall("summarizeURL"),
             stepCountIs(maxSteps),
           ],
-          tools: {
-            ...chatTools,
-            ...webTools.tools,
-            ...bashTools.tools,
-            ...skillsTools.tools,
-            ...hueGatewayTools.tools,
-          } as StreamTextToolSet,
-        }
-      : { stopWhen: [stepCountIs(5)] }),
-    });
+	          tools: {
+	            ...chatTools,
+	            ...webTools.tools,
+	            ...bashTools.tools,
+	            ...skillsTools.tools,
+	            ...hueGatewayTools.tools,
+              ...ovNlTools.tools,
+	          } as StreamTextToolSet,
+	        }
+	      : { stopWhen: [stepCountIs(5)] }),
+	    });
 
     const shouldAutoContinuePerplexity =
       webTools.enabled &&
@@ -1650,13 +1651,14 @@ export async function POST(req: Request) {
               system,
               messages: continuationMessages,
               toolChoice: "none",
-              tools: {
-                ...chatTools,
-                ...webTools.tools,
-                ...bashTools.tools,
-                ...skillsTools.tools,
-                ...hueGatewayTools.tools,
-              } as StreamTextToolSet,
+	              tools: {
+	                ...chatTools,
+	                ...webTools.tools,
+	                ...bashTools.tools,
+	                ...skillsTools.tools,
+	                ...hueGatewayTools.tools,
+                  ...ovNlTools.tools,
+	              } as StreamTextToolSet,
               ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                 ? { temperature: 0 }
                 : {}),
@@ -2659,6 +2661,7 @@ export async function POST(req: Request) {
 	            ...bashTools.tools,
 	            ...skillsTools.tools,
 	            ...hueGatewayTools.tools,
+              ...ovNlTools.tools,
 	          } as StreamTextToolSet,
 	        }
 	      : { stopWhen: [stepCountIs(5)] }),
@@ -2789,13 +2792,14 @@ export async function POST(req: Request) {
             system,
             messages: continuationMessages,
             toolChoice: "none",
-	            tools: {
-	              ...chatTools,
-	              ...webTools.tools,
-	              ...bashTools.tools,
-	              ...skillsTools.tools,
-	              ...hueGatewayTools.tools,
-	            } as StreamTextToolSet,
+		            tools: {
+		              ...chatTools,
+		              ...webTools.tools,
+		              ...bashTools.tools,
+		              ...skillsTools.tools,
+		              ...hueGatewayTools.tools,
+                  ...ovNlTools.tools,
+		            } as StreamTextToolSet,
             ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
               ? { temperature: isRegenerate ? 0.9 : 0 }
               : {}),
@@ -2843,12 +2847,15 @@ export async function POST(req: Request) {
           },
         ]);
 
-        const tools = {
-          ...chatTools,
-          ...webTools.tools,
-          ...bashTools.tools,
-        } as StreamTextToolSet;
-        delete tools.perplexity_search;
+	        const tools = {
+	          ...chatTools,
+	          ...webTools.tools,
+	          ...bashTools.tools,
+            ...skillsTools.tools,
+            ...hueGatewayTools.tools,
+            ...ovNlTools.tools,
+	        } as StreamTextToolSet;
+	        delete tools.perplexity_search;
 
         const continued = streamText({
           model: resolved!.model,

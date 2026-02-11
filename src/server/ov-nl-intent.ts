@@ -20,7 +20,7 @@ const POLICY_OR_FACILITIES_RE =
   /\b(ticket(?:s)?|kaartje(?:s)?|prijs|prijzen|kost(?:en|t)?|tarief|fare|refund(?:s)?|restitutie|terugbeta(?:al|ling)|compensatie|vergoeding|claims?|klacht(?:en)?|customer\s*service|klantenservice|contact|abonnement(?:en)?|subscription|ov-?chipkaart|chipkaart|incheck(?:en)?|uitcheck(?:en)?|check[-\s]?in|check[-\s]?out|fiets(?:en)?|bike|bicycle|bagage|luggage|locker(?:s)?|kluiz(?:en)?|bagagekluiz(?:en)?|toilet(?:ten)?|wc\b|lift(?:en)?|elevator(?:s)?|rolstoel|wheelchair|accessib|toegankelijk|assistentie|assistance|voorzieningen|facilit(?:y|ies)|openingstijden|opening\s*hours|parkeren|parking|fietsenstalling|wifi|internet)\b/i;
 
 const LIVE_TRAVEL_SIGNAL_RE =
-  /\b(vertrekbord|vertrekken|vertrektijden?|aankomstbord|aankomsten?|aankomsttijden?|spoor|perron|platform|track|dienstregeling|timetable|journey|trip|rit(?:ten)?|reisoptie(?:s)?|reisinformatie)\b/i;
+  /\b(vertrekbord|vertrekken|vertrektijd(?:en)?(?:bord)?|aankomstbord|aankomsten?|aankomsttijd(?:en)?(?:bord)?|spoor|perron|platform|track|dienstregeling|timetable|journey|trip|rit(?:ten)?|reisoptie(?:s)?|reisinformatie)\b/i;
 
 export function isExplicitWebSearchRequest(text: string): boolean {
   const value = String(text ?? "").trim();

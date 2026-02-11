@@ -11,9 +11,9 @@ export type OvNluResult =
   | { ok: false; missing: string[]; clarification: string; confidence: number };
 
 const BOARD_INTENT_RE =
-  /\b(vertrekbord|vertrekken|vertrektijden?|departures?|aankomstbord|aankomsten?|arrivals?)\b/i;
-const DEPARTURE_BOARD_RE = /\b(vertrekbord|vertrekken|vertrektijden?|departures?)\b/i;
-const ARRIVAL_BOARD_RE = /\b(aankomstbord|aankomsten?|arrivals?)\b/i;
+  /\b(vertrekbord|vertrekken|vertrektijd(?:en)?(?:bord)?|departures?|aankomstbord|aankomsten?|aankomsttijd(?:en)?(?:bord)?|arrivals?)\b/i;
+const DEPARTURE_BOARD_RE = /\b(vertrekbord|vertrekken|vertrektijd(?:en)?(?:bord)?|departures?)\b/i;
+const ARRIVAL_BOARD_RE = /\b(aankomstbord|aankomsten?|aankomsttijd(?:en)?(?:bord)?|arrivals?)\b/i;
 
 const BOARD_WINDOW_PATTERNS = [
   /\btussen\s+(\d{1,2}(?::|\.)\d{2})\s+en\s+(\d{1,2}(?::|\.)\d{2})\b/i,
@@ -22,9 +22,11 @@ const BOARD_WINDOW_PATTERNS = [
 ] as const;
 
 const BOARD_STATION_PATTERNS = [
-  /\bvan\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
-  /\bop\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
-  /\bstation\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bvan\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bop\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bstation\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bvan\s+(?!\d{1,2}(?::|\.)\d{2}\b)(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bop\s+(?!\d{1,2}(?::|\.)\d{2}\b)(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
 ] as const;
 
 const BOARD_STATION_TRAILING_RE =

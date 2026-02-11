@@ -20,6 +20,23 @@ test("OV NLU: departure board routes deterministically (Almere Muziekwijk)", asy
   assert.ok(String(planned.args.station ?? "").toLowerCase().includes("almere muziekwijk"));
 });
 
+test("OV NLU: departure board routes deterministically (Almere Centrum) without 'station' keyword", async () => {
+  const prompt = "geef het vertrektijdenbord van Almere Centrum";
+  const result = await extractOvQueryFromUserText({ text: prompt });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  assert.equal(result.query.intentKind, "departures.list");
+  assert.equal(result.query.confidence, 0.95);
+  assert.ok((result.query.slots.stationText ?? "").toLowerCase().includes("almere centrum"));
+
+  const planned = await runOvFromUserText({ text: prompt });
+  assert.equal(planned.ok, true);
+  if (!planned.ok) return;
+  assert.equal(planned.action, "departures.list");
+  assert.ok(String(planned.args.station ?? "").toLowerCase().includes("almere centrum"));
+});
+
 test('OV NLU: trips.search strips date hints from "to" station and sets dateTimeHint', async () => {
   const prompt =
     "ik wil van almere muziekwijk naar amsterdam centraal vandaag. geef me treinopties";
@@ -48,4 +65,3 @@ test('OV NLU: trips.search strips date hints from "to" station and sets dateTime
   assert.equal(String(planned.args.to ?? "").toLowerCase(), "amsterdam centraal");
   assert.equal(String(planned.args.dateTime ?? ""), "today");
 });
-
