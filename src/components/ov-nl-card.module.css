@@ -24,7 +24,7 @@
 
 /* Trips (search/detail) should be visually tighter than boards/alerts. */
 .cardRoot:global(.ov-nl-card--trips) {
-  max-width: 690px;
+  max-width: 880px;
 }
 
 .headerBand {
@@ -142,7 +142,7 @@
 
 .tripsLayout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 0.82fr 1.18fr;
   min-height: 330px;
 }
 
@@ -453,8 +453,8 @@
   padding: 8px 10px;
   display: grid;
   gap: 6px;
-  max-height: 220px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .legStopsRow {

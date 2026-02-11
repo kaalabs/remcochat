@@ -18,7 +18,7 @@ const TRANSFER_WORD_RE = /\b(overstap(?:pen)?|transfers?)\b/i;
 const FEWEST_TRANSFER_RE =
   /\b(fewest\s+transfers?|least\s+transfers?|minste?\s+overstap(?:pen)?|minder\s+overstap(?:pen)?|zo\s+min\s+mogelijk\s+overstap(?:pen)?|as\s+few\s+transfers?\s+as\s+possible)\b/i;
 
-const EXPLICIT_TIME_RE = /\b(?:om|at)\s*(\d{1,2})(?:[:.](\d{2}))\b/i;
+const EXPLICIT_TIME_RE = /\b(?:om|at)\s*(\d{1,2})(?:[:.](\d{2}))?\b/i;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};

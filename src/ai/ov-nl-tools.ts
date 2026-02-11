@@ -3790,6 +3790,7 @@ async function executeAction(
 	            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
 	            const requestedHardKeys = requestedHardKeysFromIntent(intent);
 	            const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
+	            const recommendedTripUid = alternativeTrips[0]?.uid ?? "";
 	            return {
 	              output: {
 	                kind: "trips.search",
@@ -3797,6 +3798,7 @@ async function executeAction(
                 to: toResolved.station,
                 via,
                 trips: [],
+	                recommendedTripUid,
 	                directOnlyAlternatives: {
 	                  maxTransfers: minTransfers,
 	                  trips: alternativeTrips,
@@ -3837,6 +3839,7 @@ async function executeAction(
 	    const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
 	    const requestedHardKeys = requestedHardKeysFromIntent(intent);
 	    const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
+	    const recommendedTripUid = trips[0]?.uid ?? "";
 	    return {
 	      output: {
 	        kind: "trips.search",
@@ -3844,6 +3847,7 @@ async function executeAction(
         to: toResolved.station,
         via,
 	        trips,
+	        recommendedTripUid,
 	        requestMeta: {
 	          requestedHardKeys,
 	          requestedDirectOnly,

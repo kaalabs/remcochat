@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useI18n, type I18nContextValue } from "@/components/i18n-provider";
 import type {
   OvNlDisruption,
@@ -9,17 +9,27 @@ import type {
   OvNlTripLeg,
   OvNlTripSummary,
 } from "@/lib/types";
+import { pickRecommendedTrip, pickRecommendedTripUidForSearch } from "@/lib/ov-nl-recommendation";
 import styles from "./ov-nl-card.module.css";
 
 type OvNlCardProps = {
   output: OvNlToolOutput;
-  canRequestTripDetails?: boolean;
-  onRequestTripDetails?: (ctxRecon: string) => void;
 };
 
 const OV_NL_TIME_ZONE = "Europe/Amsterdam";
+const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
+const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
 
 type OvNlI18n = Pick<I18nContextValue, "locale" | "t" | "uiLanguage">;
+
+function readLanAdminToken(): string {
+  if (typeof window === "undefined") return "";
+  const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+  if (session && session.trim()) return session.trim();
+  const local = window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+  if (local && local.trim()) return local.trim();
+  return "";
+}
 
 function formatTime(value: string | null, locale: string): string {
   if (!value) return "--:--";
@@ -77,31 +87,7 @@ function tripDateLabel(trip: OvNlTripSummary, locale: string): string {
   return arrLabel ? `${depLabel} → ${arrLabel}` : depLabel;
 }
 
-function pickRecommendedTrip(trips: OvNlTripSummary[]): OvNlTripSummary | null {
-  if (trips.length === 0) return null;
-
-  const optimal = trips.find((trip) => trip.optimal);
-  if (optimal) return optimal;
-
-  const withIndex = trips.map((trip, index) => ({ trip, index }));
-  withIndex.sort((a, b) => {
-    if (a.trip.transfers !== b.trip.transfers) return a.trip.transfers - b.trip.transfers;
-
-    const aDuration = a.trip.actualDurationMinutes ?? a.trip.plannedDurationMinutes ?? Number.POSITIVE_INFINITY;
-    const bDuration = b.trip.actualDurationMinutes ?? b.trip.plannedDurationMinutes ?? Number.POSITIVE_INFINITY;
-    if (aDuration !== bDuration) return aDuration - bDuration;
-
-    const aDeparture = Date.parse(a.trip.departureActualDateTime || a.trip.departurePlannedDateTime || "");
-    const bDeparture = Date.parse(b.trip.departureActualDateTime || b.trip.departurePlannedDateTime || "");
-    if (Number.isFinite(aDeparture) && Number.isFinite(bDeparture) && aDeparture !== bDeparture) {
-      return aDeparture - bDeparture;
-    }
-
-    return a.index - b.index;
-  });
-
-  return withIndex[0]?.trip ?? trips[0] ?? null;
-}
+// Recommendation selection is owned by the OV tool/NS ordering; avoid UI re-ranking.
 
 function tripDurationMinutes(trip: OvNlTripSummary): number | null {
   const raw = trip.actualDurationMinutes ?? trip.plannedDurationMinutes;
@@ -197,7 +183,13 @@ function HeaderContent({ output, i18n }: { output: OvNlToolOutput; i18n: OvNlI18
     );
   }
   if (output.kind === "trips.search") {
-    const recommended = pickRecommendedTrip(output.trips);
+    const recommendedTrip =
+      (output.recommendedTripUid
+        ? [...output.trips, ...(output.directOnlyAlternatives?.trips ?? [])].find(
+            (trip) => trip.uid === output.recommendedTripUid
+          )
+        : null) ?? pickRecommendedTrip(output.trips);
+    const recommended = recommendedTrip;
     const dateLabel = recommended ? tripDateLabel(recommended, locale) : "";
     const routeLabel = recommended
       ? `${recommended.departureName} → ${recommended.arrivalName}`
@@ -374,6 +366,9 @@ function renderTripTimeline(
     showStopCountLabel?: boolean;
     emphasizeLegRoute?: boolean;
     showLegRouteTimes?: boolean;
+    canLoadStops?: boolean;
+    stopsLoadState?: "idle" | "loading" | "loaded" | "error";
+    onLoadStops?: () => void;
   }
 ) {
   const { locale, t } = i18n;
@@ -440,75 +435,103 @@ function renderTripTimeline(
               ) : null}
               {leg.cancelled ? <span>{t("ov_nl.timeline.cancelled")}</span> : null}
             </div>
-            {Array.isArray(leg.stops) && leg.stops.length > 0 ? (
-              <details className={styles.legStops} open={Boolean(opts?.openStopsByDefault)}>
-                {(() => {
-                  const displayStops = leg.stops.filter((stop) => {
-                    const planned = stop.plannedDateTime;
-                    const actual = stop.actualDateTime;
-                    if (actual && !Number.isNaN(new Date(actual).getTime())) return true;
-                    if (planned && !Number.isNaN(new Date(planned).getTime())) return true;
-                    return false;
-                  });
-                  if (displayStops.length === 0) return null;
+            {(() => {
+              const rawStops = Array.isArray(leg.stops) ? leg.stops : [];
+              const displayStops = rawStops.filter((stop) => {
+                const planned = stop.plannedDateTime;
+                const actual = stop.actualDateTime;
+                if (actual && !Number.isNaN(new Date(actual).getTime())) return true;
+                if (planned && !Number.isNaN(new Date(planned).getTime())) return true;
+                return false;
+              });
 
-                  return (
-                    <>
-                      <summary className={styles.legStopsSummary}>
-                        {t("ov_nl.timeline.show_stops", { count: displayStops.length })}
-                      </summary>
-                      <div className={styles.legStopsList} data-testid="ov-nl-card:leg-stops">
-                        {displayStops.map((stop, idx) => {
-                          const planned = stop.plannedDateTime;
-                          const actual = stop.actualDateTime;
-                          const actualLabel = formatTime(actual, locale);
-                          const plannedLabel = formatTime(planned, locale);
-                          const showPlanned =
-                            Boolean(actual && planned) &&
-                            actualLabel !== "--:--" &&
-                            plannedLabel !== "--:--" &&
-                            actualLabel !== plannedLabel;
-                          const stopNameKey = stationKey(stop.name);
-                          const originKey = stationKey(leg.originName);
-                          const destinationKey = stationKey(leg.destinationName);
-                          const inferredTrack =
-                            stationMatches(stopNameKey, originKey)
-                              ? leg.originActualTrack || leg.originPlannedTrack || ""
-                              : stationMatches(stopNameKey, destinationKey)
-                                ? leg.destinationActualTrack || leg.destinationPlannedTrack || ""
-                                : "";
+              const hasStops = displayStops.length > 0;
+              const canLoadStops = Boolean(opts?.canLoadStops && opts?.onLoadStops);
+              const shouldOfferStops =
+                hasStops ||
+                (!Array.isArray(leg.stops) &&
+                  leg.stopCount > 0 &&
+                  canLoadStops &&
+                  opts?.stopsLoadState !== "loaded");
+              if (!shouldOfferStops) return null;
 
-                          const track = stop.actualTrack || stop.plannedTrack || inferredTrack || "";
-                          return (
-                            <div className={styles.legStopsRow} key={`${stop.name}-${idx}`}>
-                              <div className={styles.legStopsTime}>
-                                <span>{formatTime(actual || planned, locale)}</span>
-                                {showPlanned ? (
-                                  <span className={styles.legStopsPlanned}>
-                                    {plannedLabel}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className={styles.legStopsName}>
-                                <span>{stop.name}</span>
-                                {stop.cancelled ? (
-                                  <span className={styles.legStopsStatusInline}>
-                                    {t("ov_nl.timeline.cancelled")}
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className={styles.legStopsTrackCell}>
-                                {track ? t("ov_nl.timeline.platform", { platform: track }) : ""}
-                              </div>
+              const countForLabel = hasStops
+                ? displayStops.length
+                : Math.max(0, Math.floor(leg.stopCount ?? 0));
+              const detailsProps = opts?.openStopsByDefault ? { open: true } : {};
+
+              return (
+                <details
+                  className={styles.legStops}
+                  onToggle={(event) => {
+                    if (!canLoadStops) return;
+                    if (hasStops) return;
+                    if (opts?.stopsLoadState === "loading" || opts?.stopsLoadState === "loaded") return;
+                    if (event.currentTarget.open) opts?.onLoadStops?.();
+                  }}
+                  {...detailsProps}
+                >
+                  <summary className={styles.legStopsSummary}>
+                    {t("ov_nl.timeline.show_stops", { count: countForLabel })}
+                  </summary>
+                  {hasStops ? (
+                    <div className={styles.legStopsList} data-testid="ov-nl-card:leg-stops">
+                      {displayStops.map((stop, idx) => {
+                        const planned = stop.plannedDateTime;
+                        const actual = stop.actualDateTime;
+                        const actualLabel = formatTime(actual, locale);
+                        const plannedLabel = formatTime(planned, locale);
+                        const showPlanned =
+                          Boolean(actual && planned) &&
+                          actualLabel !== "--:--" &&
+                          plannedLabel !== "--:--" &&
+                          actualLabel !== plannedLabel;
+                        const stopNameKey = stationKey(stop.name);
+                        const originKey = stationKey(leg.originName);
+                        const destinationKey = stationKey(leg.destinationName);
+                        const inferredTrack =
+                          stationMatches(stopNameKey, originKey)
+                            ? leg.originActualTrack || leg.originPlannedTrack || ""
+                            : stationMatches(stopNameKey, destinationKey)
+                              ? leg.destinationActualTrack || leg.destinationPlannedTrack || ""
+                              : "";
+
+                        const track = stop.actualTrack || stop.plannedTrack || inferredTrack || "";
+                        return (
+                          <div className={styles.legStopsRow} key={`${stop.name}-${idx}`}>
+                            <div className={styles.legStopsTime}>
+                              <span>{formatTime(actual || planned, locale)}</span>
+                              {showPlanned ? (
+                                <span className={styles.legStopsPlanned}>{plannedLabel}</span>
+                              ) : null}
                             </div>
-                          );
-                        })}
+                            <div className={styles.legStopsName}>
+                              <span>{stop.name}</span>
+                              {stop.cancelled ? (
+                                <span className={styles.legStopsStatusInline}>
+                                  {t("ov_nl.timeline.cancelled")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className={styles.legStopsTrackCell}>
+                              {track ? t("ov_nl.timeline.platform", { platform: track }) : ""}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className={styles.legStopsList}>
+                      <div className={styles.secondaryText}>
+                        {opts?.stopsLoadState === "error"
+                          ? t("ov_nl.timeline.failed_stops")
+                          : t("ov_nl.timeline.loading_stops")}
                       </div>
-                    </>
-                  );
-                })()}
-              </details>
-            ) : null}
+                    </div>
+                  )}
+                </details>
+              );
+            })()}
           </div>
         </div>
       ))}
@@ -519,14 +542,10 @@ function renderTripTimeline(
 function TripsView({
   output,
   i18n,
-  canRequestTripDetails,
-  onRequestTripDetails,
 }: {
   output: OvNlToolOutput;
   i18n: OvNlI18n;
-  canRequestTripDetails?: boolean;
-  onRequestTripDetails?: (ctxRecon: string) => void;
-  }) {
+}) {
   const { locale, t, uiLanguage } = i18n;
   const { directOnlyAlternatives, primaryTripOptions, alternativeTripOptions, tripOptions } =
     useMemo(() => {
@@ -558,8 +577,28 @@ function TripsView({
   const isTripDetail = output.kind === "trips.detail";
   const hasTrips = tripOptions.length > 0;
   const [selectedTripUid, setSelectedTripUid] = useState("");
-  const recommendedTrip = useMemo(() => pickRecommendedTrip(tripOptions), [tripOptions]);
-  const recommendedTripUid = recommendedTrip?.uid ?? "";
+  const [tripDetailByCtxRecon, setTripDetailByCtxRecon] = useState<
+    Record<
+      string,
+      {
+        state: "idle" | "loading" | "loaded" | "error";
+        trip?: OvNlTripSummary;
+      }
+    >
+  >({});
+  const recommendedTripUid = useMemo(() => {
+    if (output.kind === "trips.search") {
+      return (
+        output.recommendedTripUid ||
+        pickRecommendedTripUidForSearch({
+          primaryTrips: primaryTripOptions,
+          alternativeTrips: alternativeTripOptions,
+        })
+      );
+    }
+    if (output.kind === "trips.detail") return output.trip?.uid ?? "";
+    return "";
+  }, [output, primaryTripOptions, alternativeTripOptions]);
   const tripBadges = useMemo(() => {
     const directTripUids = new Set<string>();
     for (const trip of tripOptions) {
@@ -608,6 +647,70 @@ function TripsView({
   const selectedTrip = hasTrips
     ? tripOptions.find((trip) => trip.uid === effectiveSelectedTripUid) || tripOptions[0]
     : null;
+
+  const selectedTripDetailsEntry = selectedTrip?.ctxRecon
+    ? tripDetailByCtxRecon[selectedTrip.ctxRecon]
+    : undefined;
+  const selectedTripWithDetails =
+    selectedTripDetailsEntry?.state === "loaded" && selectedTripDetailsEntry.trip
+      ? selectedTripDetailsEntry.trip
+      : selectedTrip;
+
+  const loadSelectedTripDetails = useCallback(async () => {
+    const ctxRecon = String(selectedTrip?.ctxRecon ?? "").trim();
+    if (!ctxRecon) return;
+
+    const existing = tripDetailByCtxRecon[ctxRecon];
+    if (existing?.state === "loading" || existing?.state === "loaded") return;
+
+    setTripDetailByCtxRecon((prev) => ({
+      ...prev,
+      [ctxRecon]: { state: "loading" },
+    }));
+
+    const date =
+      selectedTrip?.departureActualDateTime ||
+      selectedTrip?.departurePlannedDateTime ||
+      undefined;
+
+    try {
+      const headers: Record<string, string> = { "content-type": "application/json" };
+      const adminToken = readLanAdminToken();
+      if (adminToken) headers["x-remcochat-admin-token"] = adminToken;
+      const res = await fetch("/api/ov-nl/trips/detail", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          ctxRecon,
+          ...(date ? { date } : {}),
+          lang: uiLanguage,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || typeof json !== "object") {
+        throw new Error("Failed to load trip details.");
+      }
+
+      const detailOutput = json as OvNlToolOutput;
+      if (detailOutput.kind === "trips.detail" && detailOutput.trip) {
+        setTripDetailByCtxRecon((prev) => ({
+          ...prev,
+          [ctxRecon]: { state: "loaded", trip: detailOutput.trip },
+        }));
+        return;
+      }
+
+      setTripDetailByCtxRecon((prev) => ({
+        ...prev,
+        [ctxRecon]: { state: "error" },
+      }));
+    } catch {
+      setTripDetailByCtxRecon((prev) => ({
+        ...prev,
+        [ctxRecon]: { state: "error" },
+      }));
+    }
+  }, [selectedTrip, tripDetailByCtxRecon, uiLanguage]);
 
   const renderTripOptionRows = (trips: OvNlTripSummary[], startIndex: number) =>
     trips.map((trip, index) => {
@@ -772,28 +875,14 @@ function TripsView({
 	                {transfersLabel(selectedTrip.transfers, t)}
 	              </div>
 	            ) : null}
-	            {output.kind === "trips.search" ? (
-	              <div className={styles.detailActions}>
-                <button
-                  className={styles.detailButton}
-                  data-testid="ov-nl-card:load-details"
-                  disabled={
-                    !canRequestTripDetails ||
-                    !onRequestTripDetails ||
-                    !selectedTrip.ctxRecon
-                  }
-	                  onClick={() => onRequestTripDetails?.(selectedTrip.ctxRecon)}
-	                  type="button"
-	                >
-	                  {t("ov_nl.trips.load_detailed_legs")}
-	                </button>
-	              </div>
-	            ) : null}
-	            {renderTripTimeline(selectedTrip.legs, i18n, {
+	            {renderTripTimeline(selectedTripWithDetails?.legs ?? [], i18n, {
 	              openStopsByDefault: output.kind === "trips.detail",
 	              showStopCountLabel: output.kind !== "trips.detail",
 	              emphasizeLegRoute: output.kind === "trips.detail",
 	              showLegRouteTimes: output.kind !== "trips.detail",
+                canLoadStops: output.kind === "trips.search" && Boolean(selectedTrip.ctxRecon),
+                stopsLoadState: selectedTripDetailsEntry?.state ?? "idle",
+                onLoadStops: loadSelectedTripDetails,
 	            })}
 	          </>
 	        )}
@@ -908,7 +997,7 @@ function renderSimple(output: OvNlToolOutput, i18n: OvNlI18n) {
   );
 }
 
-export function OvNlCard({ output, canRequestTripDetails, onRequestTripDetails }: OvNlCardProps) {
+export function OvNlCard({ output }: OvNlCardProps) {
   const i18n = useI18n();
   const view = viewFromKind(output.kind);
 
@@ -928,9 +1017,7 @@ export function OvNlCard({ output, canRequestTripDetails, onRequestTripDetails }
         {view === "board" ? renderBoardRows(output, i18n) : null}
         {view === "trips" ? (
           <TripsView
-            canRequestTripDetails={canRequestTripDetails}
             i18n={i18n}
-            onRequestTripDetails={onRequestTripDetails}
             output={output}
           />
         ) : null}

@@ -2786,24 +2786,6 @@ export function HomeClient({
     [chatRequestBody, sendMessage, status]
   );
 
-  const sendOvTripDetails = useCallback(
-    (ctxRecon: string) => {
-      if (!chatRequestBody) return;
-      if (status !== "ready") return;
-      const cleaned = String(ctxRecon ?? "").trim();
-      if (!cleaned) return;
-
-      sendMessage(
-        {
-          text: `Show detailed trip legs for ctxRecon "${cleaned}" using ovNlGateway trips.detail.`,
-          metadata: { createdAt: new Date().toISOString() },
-        },
-        { body: chatRequestBody }
-      );
-    },
-    [chatRequestBody, sendMessage, status]
-  );
-
   const closeSidebarDrawer = useCallback(() => {
     setSidebarOpen(false);
     window.setTimeout(() => focusComposer({ toEnd: true }), 0);
@@ -4647,8 +4629,6 @@ export function HomeClient({
                                     <div className="space-y-2" key={`${id}-${index}`}>
                                       <ToolCallLine state={part.state} type={part.type} />
                                       <OvNlCard
-                                        canRequestTripDetails={Boolean(chatRequestBody) && status === "ready"}
-                                        onRequestTripDetails={sendOvTripDetails}
                                         output={output}
                                       />
                                     </div>

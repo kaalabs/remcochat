@@ -52,6 +52,8 @@ test("inferDateTimeHintFromText recognizes Dutch relative dayparts and explicit 
   assert.equal(inferDateTimeHintFromText("ik wil vanmiddag vertrekken"), "today@15:00");
   assert.equal(inferDateTimeHintFromText("ik reis vanavond"), "today@19:00");
   assert.equal(inferDateTimeHintFromText("ik wil morgen om 14:35 vertrekken"), "tomorrow@14:35");
+  assert.equal(inferDateTimeHintFromText("ik wil morgen om 07 vertrekken"), "tomorrow@07:00");
+  assert.equal(inferDateTimeHintFromText("ik wil morgen om 7 uur vertrekken"), "tomorrow@07:00");
   assert.equal(inferDateTimeHintFromText("ik wil vandaag vertrekken"), "today");
 });
 
