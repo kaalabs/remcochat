@@ -23,6 +23,16 @@ test("Mobile shell uses a sidebar drawer", async ({ page }) => {
   await page.getByLabel("Open menu").click();
   const drawer = page.getByTestId("sidebar:drawer");
   await expect(drawer).toBeVisible();
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="sidebar:drawer"]');
+        if (!el) return 0;
+        const rect = el.getBoundingClientRect();
+        return rect.right - window.innerWidth;
+      });
+    })
+    .toBeLessThanOrEqual(2);
 
   await drawer.getByTestId("sidebar:new-chat").click();
   await expect(drawer).toHaveCount(0);

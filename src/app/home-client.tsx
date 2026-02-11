@@ -899,6 +899,41 @@ export function HomeClient({
     startWidth: number;
   } | null>(null);
 
+  // iOS Safari can report a larger layout viewport than the visible viewport (e.g. desktop-site mode).
+  // Clamp the drawer width using VisualViewport so the close button can't end up off-screen.
+  const [drawerMaxWidthPx, setDrawerMaxWidthPx] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf = 0;
+    const visualViewport = window.visualViewport ?? null;
+
+    const compute = () => {
+      const viewportWidth = visualViewport?.width ?? window.innerWidth;
+      if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return;
+      setDrawerMaxWidthPx(Math.max(0, Math.floor(viewportWidth * 0.85)));
+    };
+
+    const schedule = () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(compute);
+    };
+
+    compute();
+
+    visualViewport?.addEventListener("resize", schedule);
+    visualViewport?.addEventListener("scroll", schedule);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      visualViewport?.removeEventListener("resize", schedule);
+      visualViewport?.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+    };
+  }, []);
+
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminResetConfirm, setAdminResetConfirm] = useState("");
@@ -5516,6 +5551,11 @@ export function HomeClient({
 	            className="left-0 top-0 grid h-dvh w-[18rem] max-w-[85vw] translate-x-0 translate-y-0 gap-0 rounded-none border-0 border-r p-0 data-[state=closed]:slide-out-to-left-2 data-[state=open]:slide-in-from-left-2 md:hidden"
 	            data-testid="sidebar:drawer"
 	            showCloseButton={false}
+              style={
+                drawerMaxWidthPx != null
+                  ? ({ maxWidth: `${drawerMaxWidthPx}px` } as CSSProperties)
+                  : undefined
+              }
 	          >
 		            <DialogTitle className="sr-only">{t("sidebar.menu.sr_title")}</DialogTitle>
 		            {renderSidebar("drawer")}
