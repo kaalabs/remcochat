@@ -2805,7 +2805,7 @@ export function HomeClient({
 	      (ownedFolders.length > 0 || sharedFoldersByOwner.length > 0);
 
 	    return (
-	      <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
+	      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
 	        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
 	          <div className="flex min-w-0 items-center gap-2">
 	            <img
@@ -2846,7 +2846,7 @@ export function HomeClient({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-2">
           <div className="flex items-center justify-between gap-2 px-2 py-2">
             <div className="text-sm font-medium text-muted-foreground">
               {t("sidebar.chats")}
@@ -5513,7 +5513,7 @@ export function HomeClient({
 	          open={sidebarOpen}
 	        >
 	          <DialogContent
-	            className="rc-mobile-drawer left-0 top-0 grid h-dvh w-[85vw] max-w-[18rem] translate-x-0 translate-y-0 gap-0 overflow-x-hidden rounded-none border-0 border-r p-0 data-[state=closed]:slide-out-to-left-2 data-[state=open]:slide-in-from-left-2 md:hidden"
+	            className="rc-mobile-drawer left-0 top-0 flex h-dvh min-w-0 w-[85vw] max-w-[18rem] flex-col translate-x-0 translate-y-0 gap-0 overflow-x-hidden rounded-none border-0 border-r p-0 data-[state=closed]:slide-out-to-left-2 data-[state=open]:slide-in-from-left-2 md:hidden"
 	            data-testid="sidebar:drawer"
 	            showCloseButton={false}
 	          >

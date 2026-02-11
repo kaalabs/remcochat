@@ -1,0 +1,1107 @@
+openapi: 3.0.1
+info:
+  title: Disruptions API
+  description: Disruptions API
+  version: '1.0'
+servers:
+  - url: https://gateway.apiportal.ns.nl/disruptions
+paths:
+  /v3:
+    get:
+      summary: Disruptions
+      description: List of calamities/disruptions/maintenance.
+      operationId: getDisruptions_v3
+      parameters:
+        - name: isActive
+          in: query
+          description: 'Flag to filter maintenance to only return active items, i.e. maintenance that is happening right now.'
+          schema:
+            type: boolean
+        - name: type
+          in: query
+          description: Type of the disruptions to be returned. If not present all types will be returned.
+          schema:
+            enum:
+              - disruption
+              - maintenance
+              - calamity
+            type: string
+        - name: Accept-Language
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully returned a list of disruptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  anyOf:
+                    - $ref: '#/components/schemas/BaseDisruption'
+              example:
+                - id: string
+                  type: CALAMITY
+                  isActive: true
+                  title: string
+                  topic: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+  '/v3/{type}/{id}':
+    get:
+      summary: Single disruption
+      description: Returns information on a single disruption/maintenance/calamity.
+      operationId: getDisruption_v3
+      parameters:
+        - name: type
+          in: path
+          description: Disruption type for the disruption to return.
+          required: true
+          schema:
+            enum:
+              - disruption
+              - maintenance
+              - calamity
+            type: string
+        - name: id
+          in: path
+          description: The requested disruption
+          required: true
+          schema:
+            type: string
+        - name: Accept-Language
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested disruption
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseDisruption'
+              example:
+                id: string
+                type: CALAMITY
+                isActive: true
+                title: string
+                topic: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+  '/v3/station/{stationCode}':
+    get:
+      summary: Disruptions
+      description: List of disruptions/maintenance.
+      operationId: getStationDisruptions_v3
+      parameters:
+        - name: stationCode
+          in: path
+          description: The station code
+          required: true
+          schema:
+            type: string
+        - name: Accept-Language
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully returned a list of disruptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  anyOf:
+                    - $ref: '#/components/schemas/BaseDisruption'
+              example:
+                - id: string
+                  type: CALAMITY
+                  isActive: true
+                  title: string
+                  topic: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+  /v1/personal-disruptions:
+    get:
+      summary: Retrieve personal disruptions
+      description: Returns personal disruptions for the user of the NS-app based on the pushId
+      operationId: v1GetPersonalDisruptions
+      parameters:
+        - name: x-ns-push-id
+          in: header
+          description: The push id of the user
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully returned a list of disruptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  anyOf:
+                    - $ref: '#/components/schemas/PersonalDisruption'
+              example:
+                - registrationId: string
+                  trips:
+                    - type: TRIP
+                      ctxRecon: string
+                      fromDateTime: string
+                      arrivalDateTime: string
+                      affectingDisruptions:
+                        - id: string
+                          type: DISRUPTION
+                  type: SAVED_TRIP
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+  /v1/personal-disruptions/sync/saved-trips:
+    post:
+      summary: Sync saved trips
+      description: Sync saved trips from reiswijzer with the disruptions API
+      operationId: v1PostPersonalDisruptionsSyncSavedTrips
+      parameters:
+        - name: x-api-key
+          in: header
+          description: API key required to sync saved trips
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncSavedTripsRequest'
+            example:
+              id: 0
+              ctxRecon: string
+              currentCtxRecon: string
+              repeatOn:
+                monday: true
+                tuesday: true
+                wednesday: true
+                thursday: true
+                friday: true
+                saturday: true
+                sunday: true
+      responses:
+        '204':
+          description: Successfully synced saved trips
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+        '401':
+          description: Unauthorized request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: string
+components:
+  schemas:
+    Disruption:
+      title: Disruption
+      required:
+        - id
+        - isActive
+        - title
+        - type
+        - local
+        - titleSections
+        - publicationSections
+        - timespans
+        - alternativeTransportTimespans
+      type: object
+      properties:
+        id:
+          title: id
+          type: string
+          description: Unique identifier of the disruption
+        isActive:
+          title: isActive
+          type: boolean
+          description: 'Whether this item is active, i.e. it is currently happening. For example maintenance that starts in the future has this property set to false'
+        topic:
+          title: topic
+          type: string
+          description: Topic to subscribe to in order to receive updates for this disruption.
+        title:
+          title: title
+          type: string
+          description: 'Title of the disruption, containing the location(s) of the disruption'
+        type:
+          title: type
+          enum:
+            - DISRUPTION
+            - MAINTENANCE
+          type: string
+          description: Type of disruption
+        registrationTime:
+          title: registrationTime
+          type: string
+          description: Registration time of this disruption
+        releaseTime:
+          title: releaseTime
+          type: string
+          description: Release time of this disruption
+        local:
+          title: local
+          type: boolean
+          description: A local disruption has messages tailored towards a specific station.
+        titleSections:
+          title: titleSections
+          type: array
+          items:
+            title: 'titleSections.[].[]'
+            type: array
+            items:
+              $ref: '#/components/schemas/TitleSection'
+          description: 'Title of the disruption which includes where the disruption takes place. For example: Utrecht - Gouda -Icon- Den Haag'
+        start:
+          title: start
+          type: string
+          description: Start time of the disruption
+        end:
+          title: end
+          type: string
+          description: End time of the disruption. May be left empty if unknown
+        period:
+          title: period
+          type: string
+          description: Human-readable description of the period for this disruption
+        phase:
+          $ref: '#/components/schemas/Phase'
+        impact:
+          $ref: '#/components/schemas/Impact'
+        expectedDuration:
+          $ref: '#/components/schemas/ExpectedDuration'
+        publicationSections:
+          title: publicationSections
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicationSection'
+          description: "Publication sections for these disruptions. Please note that these may be larger than the actual\ntrack sections where the disruption is. This has to do with stations being recognizable for the customer.\nFor example, there could be a disruption between Utrecht Vaartse Rijn and Bunnik. In that case, the\ntrajectory could be Utrecht Centraal to Driebergen-Zeist, as most customers do not know where Utrecht Vaartse\nRijn and Bunnik are. In this case, the trajectory will contain Utrecht Centraal to Driebergen-Zeist, whereas\nthe disruptedTrackSection will contain Utrecht Vaartse Rijn to Bunnik"
+        timespans:
+          title: timespans
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSpan'
+          description: Distinguishable timespans within this disruption. Multiple timespans may occur for maintenance.
+        alternativeTransportTimespans:
+          title: alternativeTransportTimespans
+          type: array
+          items:
+            $ref: '#/components/schemas/AlternativeTransportTimeSpan'
+          description: Distinguishable timespans for alternative transport within this disruption.
+        summaryAdditionalTravelTime:
+          $ref: '#/components/schemas/AdditionalTravelTime'
+      additionalProperties: false
+      description: Web V3 Disruption model
+    Impact:
+      title: Impact
+      required:
+        - value
+      type: object
+      properties:
+        value:
+          title: Impact.value
+      additionalProperties: false
+      description: 'Impact of the disruption, from 0 to 5'
+    Phase:
+      title: Phase
+      required:
+        - id
+        - label
+      type: object
+      properties:
+        id:
+          title: Phase.id
+          type: string
+        label:
+          title: Phase.label
+          type: string
+      additionalProperties: false
+    TitleSection:
+      title: TitleSection
+      required:
+        - type
+        - value
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/TitleSectionType'
+        value:
+          title: TitleSection.value
+          type: string
+      additionalProperties: false
+    TitleSectionType:
+      title: TitleSectionType
+      enum:
+        - STATION
+        - ICON
+      type: string
+    ExpectedDuration:
+      title: ExpectedDuration
+      required:
+        - description
+      type: object
+      properties:
+        description:
+          title: ExpectedDuration.description
+          type: string
+          description: Human-readable description of the expected duration of the disruption.
+        endTime:
+          title: ExpectedDuration.endTime
+          type: string
+          description: Expected end time for this disruption
+      additionalProperties: false
+    TimeSpan:
+      title: TimeSpan
+      required:
+        - start
+        - situation
+        - advices
+      type: object
+      properties:
+        start:
+          title: TimeSpan.start
+          type: string
+          description: Start time of this timespan
+        end:
+          title: TimeSpan.end
+          type: string
+          description: End time of this timespan. May be left empty if unknown
+        period:
+          title: TimeSpan.period
+          type: string
+          description: Human-readable description of the period for this disruption
+        situation:
+          title: TimeSpan.situation
+          required:
+            - label
+          type: object
+          properties:
+            label:
+              title: TimeSpan.situation.label
+              type: string
+              description: '"Human readable description of the situation caused by the disruption'
+          additionalProperties: false
+          description: Information about the situation caused by the disruption
+        cause:
+          $ref: '#/components/schemas/Cause'
+        additionalTravelTime:
+          $ref: '#/components/schemas/AdditionalTravelTime'
+        alternativeTransport:
+          $ref: '#/components/schemas/AlternativeTransportSummary'
+        advices:
+          title: TimeSpan.advices
+          type: array
+          items:
+            title: 'TimeSpan.advices.[]'
+            type: string
+          description: List of advices
+      additionalProperties: false
+    Cause:
+      title: Cause
+      required:
+        - label
+        - type
+      type: object
+      properties:
+        label:
+          title: Cause.label
+          type: string
+          description: Human-readable description of the disruption cause
+        type:
+          $ref: '#/components/schemas/CauseType'
+      additionalProperties: false
+    CauseType:
+      title: CauseType
+      enum:
+        - DISRUPTED_LATER_TODAY
+        - OTHER
+      type: string
+    AdditionalTravelTime:
+      title: AdditionalTravelTime
+      required:
+        - label
+      type: object
+      properties:
+        label:
+          title: AdditionalTravelTime.label
+          type: string
+          description: Human-readable description of the additional travel time that is expected"
+        shortLabel:
+          title: AdditionalTravelTime.shortLabel
+          type: string
+          description: Short human-readable description of the additional travel time that is expected
+        minimumDurationInMinutes:
+          title: AdditionalTravelTime.minimumDurationInMinutes
+          type: number
+          description: Minimum expected additional travel time in minutes
+        maximumDurationInMinutes:
+          title: AdditionalTravelTime.maximumDurationInMinutes
+          type: number
+          description: Maximum expected additional travel time in minutes
+      additionalProperties: false
+    AlternativeTransportSummary:
+      title: AlternativeTransportSummary
+      required:
+        - label
+      type: object
+      properties:
+        label:
+          title: AlternativeTransportSummary.label
+          type: string
+          description: Human-readable description of the alternative transport that is available to the user
+        shortLabel:
+          title: AlternativeTransportSummary.shortLabel
+          type: string
+          description: Short label indicating the alternative transport that is available to the user
+      additionalProperties: false
+    PublicationSection:
+      title: PublicationSection
+      required:
+        - section
+        - sectionType
+      type: object
+      properties:
+        section:
+          $ref: '#/components/schemas/Section'
+        consequence:
+          $ref: '#/components/schemas/DisruptionConsequence'
+        sectionType:
+          $ref: '#/components/schemas/SectionType'
+      additionalProperties: false
+    Section:
+      title: Section
+      required:
+        - stations
+        - operators
+      type: object
+      properties:
+        stations:
+          title: Section.stations
+          type: array
+          items:
+            $ref: '#/components/schemas/StationReference'
+        direction:
+          $ref: '#/components/schemas/SectionDirection'
+        operators:
+          title: Section.operators
+          type: array
+          items:
+            title: 'Section.operators.[]'
+            type: string
+      additionalProperties: false
+    StationReference:
+      title: StationReference
+      required:
+        - uicCode
+        - name
+        - countryCode
+      type: object
+      properties:
+        uicCode:
+          title: StationReference.uicCode
+          type: string
+          description: Short UIC code for this station
+        stationCode:
+          title: StationReference.stationCode
+          type: string
+          description: Short station code (e.g. UT for Utrecht Centraal)
+        name:
+          title: StationReference.name
+          type: string
+          description: Long name of this station
+        coordinate:
+          $ref: '#/components/schemas/Coordinate'
+        countryCode:
+          title: StationReference.countryCode
+          type: string
+          description: "Country code of the country that this station is in.\n\ne.g. NL, D, B, F"
+      additionalProperties: false
+    SectionDirection:
+      title: SectionDirection
+      enum:
+        - ONE_WAY
+        - BOTH
+      type: string
+    Coordinate:
+      title: Coordinate
+      required:
+        - lat
+        - lng
+      type: object
+      properties:
+        lat:
+          title: Coordinate.lat
+          type: number
+        lng:
+          title: Coordinate.lng
+          type: number
+      additionalProperties: false
+    DisruptionConsequence:
+      title: DisruptionConsequence
+      required:
+        - section
+        - level
+      type: object
+      properties:
+        section:
+          $ref: '#/components/schemas/Section'
+        description:
+          title: DisruptionConsequence.description
+          type: string
+        level:
+          $ref: '#/components/schemas/DisruptionLevel'
+      additionalProperties: false
+    AlternativeTransportTimeSpan:
+      title: AlternativeTransportTimeSpan
+      required:
+        - start
+        - alternativeTransport
+      type: object
+      properties:
+        start:
+          title: AlternativeTransportTimeSpan.start
+          type: string
+          description: Start time of this timespan
+        end:
+          title: AlternativeTransportTimeSpan.end
+          type: string
+          description: End time of this timespan
+        alternativeTransport:
+          $ref: '#/components/schemas/AlternativeTransport'
+      additionalProperties: false
+    AlternativeTransport:
+      title: AlternativeTransport
+      required:
+        - location
+        - label
+      type: object
+      properties:
+        location:
+          title: AlternativeTransport.location
+          type: array
+          items:
+            $ref: '#/components/schemas/Location'
+          description: Gives more information about the location of the alternative transport
+        label:
+          title: AlternativeTransport.label
+          type: string
+          description: Human-readable description of the alternative transport that is available to the user
+        shortLabel:
+          title: AlternativeTransport.shortLabel
+          type: string
+          description: Short label indicating the alternative transport that is available to the user
+      additionalProperties: false
+    Location:
+      title: Location
+      required:
+        - station
+        - description
+      type: object
+      properties:
+        station:
+          $ref: '#/components/schemas/StationReference'
+        description:
+          title: Location.description
+          type: string
+          description: Human-readable description of the location of the alternative transport
+      additionalProperties: false
+    DisruptionLevel:
+      title: DisruptionLevel
+      enum:
+        - NO_OR_MUCH_LESS_TRAINS
+        - LESS_TRAINS
+        - NORMAL_OR_MORE_TRAINS
+      type: string
+    SectionType:
+      title: SectionType
+      enum:
+        - NL
+        - NEIGHBORING_COUNTRY
+        - HSL
+        - INTERNATIONAL
+      type: string
+    Calamity:
+      title: Calamity
+      required:
+        - id
+        - isActive
+        - title
+        - topic
+        - type
+        - priority
+        - bodyItems
+        - buttons
+      type: object
+      properties:
+        id:
+          title: id
+          type: string
+          description: Unique identifier of the calamity
+        isActive:
+          title: isActive
+          type: boolean
+          description: 'Whether calamity item is active, i.e. it is currently happening. For example maintenance that starts in the future has this property set to false'
+        title:
+          title: title
+          type: string
+          description: Title of the calamity
+        topic:
+          title: topic
+          type: string
+          description: Topic to subscribe to in order to receive updates for this calamity.
+        type:
+          title: type
+          enum:
+            - CALAMITY
+          type: string
+          description: Type of disruption
+        description:
+          title: description
+          type: string
+          description: Human-readable description for this calamity
+        priority:
+          $ref: '#/components/schemas/CalamityPriority'
+        lastUpdated:
+          title: lastUpdated
+          type: string
+          description: Moment that this calamity was last updated
+        expectedNextUpdate:
+          title: expectedNextUpdate
+          type: string
+          description: Expected moment that this calamity will be updated
+        bodyItems:
+          title: bodyItems
+          type: array
+          items:
+            $ref: '#/components/schemas/BodyItem'
+          description: Body items to render when showing this calamity
+        buttons:
+          $ref: '#/components/schemas/Buttons'
+        url:
+          title: url
+          type: string
+          description: URL for more information about this calamity
+      additionalProperties: false
+    Buttons:
+      title: Buttons
+      required:
+        - position
+        - items
+      type: object
+      properties:
+        position:
+          title: Buttons.position
+          type: array
+          items:
+            $ref: '#/components/schemas/ButtonPosition'
+        items:
+          title: Buttons.items
+          type: array
+          items:
+            $ref: '#/components/schemas/Button'
+      additionalProperties: false
+    Button:
+      title: Button
+      type: object
+      properties:
+        label:
+          title: Button.label
+          type: string
+        type:
+          $ref: '#/components/schemas/ButtonType'
+        accessibilityLabel:
+          title: Button.accessibilityLabel
+          type: string
+        url:
+          title: Button.url
+          type: string
+      additionalProperties: false
+    BodyItem:
+      title: BodyItem
+      anyOf:
+        - $ref: '#/components/schemas/DownloadsBodyItem'
+        - $ref: '#/components/schemas/LinksBodyItem'
+        - $ref: '#/components/schemas/TextAndMediaBodyItem'
+    DownloadsBodyItem:
+      title: DownloadsBodyItem
+      required:
+        - type
+        - content
+      type: object
+      properties:
+        title:
+          title: DownloadsBodyItem.title
+          type: string
+        type:
+          title: DownloadsBodyItem.type
+          enum:
+            - DOWNLOAD
+          type: string
+        content:
+          $ref: '#/components/schemas/DownloadsBodyItemContent'
+      additionalProperties: false
+    LinksBodyItem:
+      title: LinksBodyItem
+      required:
+        - type
+        - content
+      type: object
+      properties:
+        title:
+          title: LinksBodyItem.title
+          type: string
+        type:
+          title: LinksBodyItem.type
+          enum:
+            - LINKS
+          type: string
+        content:
+          $ref: '#/components/schemas/LinksBodyItemContent'
+      additionalProperties: false
+    TextAndMediaBodyItem:
+      title: TextAndMediaBodyItem
+      required:
+        - type
+        - content
+      type: object
+      properties:
+        title:
+          title: TextAndMediaBodyItem.title
+          type: string
+        type:
+          title: TextAndMediaBodyItem.type
+          enum:
+            - TEXT
+          type: string
+        content:
+          $ref: '#/components/schemas/TextBodyItemContent'
+      additionalProperties: false
+    TextBodyItemContent:
+      title: TextBodyItemContent
+      type: object
+      properties:
+        text:
+          title: TextBodyItemContent.text
+          type: string
+      additionalProperties: false
+    LinksBodyItemContent:
+      title: LinksBodyItemContent
+      required:
+        - links
+      type: object
+      properties:
+        links:
+          title: LinksBodyItemContent.links
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+      additionalProperties: false
+    DownloadsBodyItemContent:
+      title: DownloadsBodyItemContent
+      required:
+        - downloads
+      type: object
+      properties:
+        downloads:
+          title: DownloadsBodyItemContent.downloads
+          type: array
+          items:
+            $ref: '#/components/schemas/Download'
+      additionalProperties: false
+    Link:
+      title: Link
+      type: object
+      properties:
+        title:
+          title: Link.title
+          type: string
+        url:
+          title: Link.url
+          type: string
+      additionalProperties: false
+    Download:
+      title: Download
+      required:
+        - contentLength
+      type: object
+      properties:
+        title:
+          title: Download.title
+          type: string
+        url:
+          title: Download.url
+          type: string
+        contentLength:
+          title: Download.contentLength
+          type: number
+        mimeType:
+          title: Download.mimeType
+          type: string
+        lastModified:
+          title: Download.lastModified
+          type: string
+      additionalProperties: false
+    ButtonPosition:
+      title: ButtonPosition
+      enum:
+        - TOP
+        - BOTTOM
+      type: string
+    ButtonType:
+      title: ButtonType
+      enum:
+        - PLANNER
+        - DISRUPTIONS
+        - MAINTENANCE
+        - EXTERNAL
+      type: string
+    CalamityPriority:
+      title: CalamityPriority
+      enum:
+        - PRIO_1
+        - PRIO_2
+        - PRIO_3
+      type: string
+    BaseDisruption:
+      title: BaseDisruption
+      required:
+        - id
+        - type
+        - isActive
+        - title
+      type: object
+      properties:
+        id:
+          title: BaseDisruption.id
+          type: string
+        type:
+          $ref: '#/components/schemas/DisruptionType'
+        isActive:
+          title: BaseDisruption.isActive
+          type: boolean
+        title:
+          title: BaseDisruption.title
+          type: string
+        topic:
+          title: BaseDisruption.topic
+          type: string
+      additionalProperties: false
+    DisruptionType:
+      title: DisruptionType
+      enum:
+        - CALAMITY
+        - DISRUPTION
+        - MAINTENANCE
+      type: string
+    Priority:
+      title: Priority
+      enum:
+        - PRIO_1
+        - PRIO_2
+        - PRIO_3
+      type: string
+    SyncSavedTripsRequest:
+      title: SyncSavedTripsRequest
+      required:
+        - id
+        - ctxRecon
+        - currentCtxRecon
+        - repeatOn
+      type: object
+      properties:
+        id:
+          title: SyncSavedTripsRequest.id
+          type: number
+        ctxRecon:
+          title: SyncSavedTripsRequest.ctxRecon
+          type: string
+        currentCtxRecon:
+          title: SyncSavedTripsRequest.currentCtxRecon
+          type: string
+        repeatOn:
+          title: SyncSavedTripsRequest.repeatOn
+          required:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+          type: object
+          properties:
+            monday:
+              title: SyncSavedTripsRequest.repeatOn.monday
+              type: boolean
+            tuesday:
+              title: SyncSavedTripsRequest.repeatOn.tuesday
+              type: boolean
+            wednesday:
+              title: SyncSavedTripsRequest.repeatOn.wednesday
+              type: boolean
+            thursday:
+              title: SyncSavedTripsRequest.repeatOn.thursday
+              type: boolean
+            friday:
+              title: SyncSavedTripsRequest.repeatOn.friday
+              type: boolean
+            saturday:
+              title: SyncSavedTripsRequest.repeatOn.saturday
+              type: boolean
+            sunday:
+              title: SyncSavedTripsRequest.repeatOn.sunday
+              type: boolean
+          additionalProperties: false
+      additionalProperties: false
+    SyncSavedTrips:
+      title: SyncSavedTrips
+    PersonalDisruption:
+      title: PersonalDisruption
+      required:
+        - registrationId
+        - trips
+        - type
+      type: object
+      properties:
+        registrationId:
+          title: PersonalDisruption.registrationId
+          type: string
+        trips:
+          title: PersonalDisruption.trips
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalDisruptionSavedTripItem'
+        type:
+          title: PersonalDisruption.type
+          enum:
+            - SAVED_TRIP
+          type: string
+      additionalProperties: false
+    PersonalDisruptionSavedTripItem:
+      title: PersonalDisruptionSavedTripItem
+      required:
+        - type
+        - ctxRecon
+        - fromDateTime
+        - arrivalDateTime
+        - affectingDisruptions
+      type: object
+      properties:
+        type:
+          title: PersonalDisruptionSavedTripItem.type
+          enum:
+            - TRIP
+          type: string
+        ctxRecon:
+          title: PersonalDisruptionSavedTripItem.ctxRecon
+          type: string
+        fromDateTime:
+          title: PersonalDisruptionSavedTripItem.fromDateTime
+          type: string
+        arrivalDateTime:
+          title: PersonalDisruptionSavedTripItem.arrivalDateTime
+          type: string
+        affectingDisruptions:
+          title: PersonalDisruptionSavedTripItem.affectingDisruptions
+          type: array
+          items:
+            $ref: '#/components/schemas/AffectingDisruption'
+      additionalProperties: false
+    AffectingDisruption:
+      title: AffectingDisruption
+      required:
+        - id
+        - type
+      type: object
+      properties:
+        id:
+          title: AffectingDisruption.id
+          type: string
+        type:
+          $ref: '#/components/schemas/AffectingDisruptionType'
+      additionalProperties: false
+    AffectingDisruptionType:
+      title: AffectingDisruptionType
+      enum:
+        - DISRUPTION
+        - MAINTENANCE
+      type: string
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      name: Ocp-Apim-Subscription-Key
+      in: header
+    apiKeyQuery:
+      type: apiKey
+      name: subscription-key
+      in: query
+security:
+  - apiKeyHeader: [ ]
+  - apiKeyQuery: [ ]

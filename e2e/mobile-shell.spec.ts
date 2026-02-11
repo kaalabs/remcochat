@@ -28,6 +28,11 @@ test("Mobile shell uses a sidebar drawer", async ({ page }) => {
   await expect(drawer).toBeVisible();
   await expect
     .poll(async () => {
+      return await drawer.evaluate((el) => el.scrollWidth - el.clientWidth);
+    })
+    .toBeLessThanOrEqual(2);
+  await expect
+    .poll(async () => {
       return await page.evaluate(() => {
         const el = document.querySelector('[data-testid="sidebar:drawer"]');
         if (!el) return 0;
@@ -76,6 +81,11 @@ test.describe("Wide touch viewport", () => {
     await page.getByLabel("Open menu").click();
     const drawer = page.getByTestId("sidebar:drawer");
     await expect(drawer).toBeVisible();
+    await expect
+      .poll(async () => {
+        return await drawer.evaluate((el) => el.scrollWidth - el.clientWidth);
+      })
+      .toBeLessThanOrEqual(2);
 
     await expect
       .poll(async () => {
