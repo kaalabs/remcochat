@@ -771,7 +771,7 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "admin.web_search.provider.placeholder": "Kies een zoekprovider",
   "admin.web_search.enabled": "Web tools ingeschakeld",
   "admin.web_search.notice.updated": "Webzoekprovider bijgewerkt naar \"{provider}\".",
-  "admin.router.title": "Routermodel",
+  "admin.router.title": "Router",
   "admin.router.description.part1": "Dit bestuurt",
   "admin.router.description.part2": "in",
   "admin.router.description.part3":

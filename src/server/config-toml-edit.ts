@@ -131,6 +131,17 @@ export function updateRouterModelIdInToml(content: string, modelId: string): str
   return content.slice(0, kv.start) + replacement + content.slice(end);
 }
 
+export function updateRouterProviderIdInToml(content: string, providerId: string): string {
+  const table = findTableRange(content, "app.router");
+  const kv = findKeyValueRangeInsideTable(content, table, "provider_id");
+
+  // Replace until end-of-line, preserving indentation and key formatting.
+  const lineEnd = content.indexOf("\n", kv.end);
+  const end = lineEnd === -1 ? content.length : lineEnd;
+  const replacement = `${kv.indent}provider_id = "${providerId}"`;
+  return content.slice(0, kv.start) + replacement + content.slice(end);
+}
+
 export function updateWebToolsSearchProviderInToml(
   content: string,
   provider: "exa" | "brave"

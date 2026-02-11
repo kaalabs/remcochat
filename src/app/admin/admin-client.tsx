@@ -243,7 +243,7 @@ export function AdminClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [activeDraft, setActiveDraft] = useState<string>("");
 
@@ -258,10 +258,11 @@ export function AdminClient() {
     Record<string, boolean>
   >({});
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [modelsNotice, setModelsNotice] = useState<string | null>(null);
 
+  const [routerDraftProviderId, setRouterDraftProviderId] = useState<string>("");
   const [routerDraftModelId, setRouterDraftModelId] = useState<string>("");
   const [routerSaving, setRouterSaving] = useState(false);
+  const [routerError, setRouterError] = useState<string | null>(null);
 
   const [allowedDraftByProviderId, setAllowedDraftByProviderId] = useState<
     Record<string, Set<string>>
@@ -279,7 +280,6 @@ export function AdminClient() {
   const [webSearchLoading, setWebSearchLoading] = useState(true);
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState<string | null>(null);
-  const [webSearchNotice, setWebSearchNotice] = useState<string | null>(null);
   const [webSearchConfig, setWebSearchConfig] = useState<WebSearchProviderResponse | null>(
     null
   );
@@ -301,6 +301,8 @@ export function AdminClient() {
   const llmRunIdRef = useRef(0);
   const webSearchRunIdRef = useRef(0);
   const skillsRunIdRef = useRef(0);
+  const inventoryRunIdRef = useRef(0);
+  const skillsLoadRunIdRef = useRef(0);
   const llmAutoStartedRef = useRef(false);
   const webSearchAutoStartedRef = useRef(false);
   const skillsAutoStartedRef = useRef(false);
@@ -332,15 +334,13 @@ export function AdminClient() {
     setActiveDraft(data.activeProviderId);
   }, [t]);
 
-  const loadInventory = useCallback(async () => {
+  const fetchInventory = useCallback(async () => {
     const res = await fetch("/api/admin/models-inventory", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       throw new Error(json?.error || t("error.admin.models_inventory_load_failed"));
     }
-    const data = (await res.json()) as ModelsInventoryResponse;
-    setInventory(data);
-    setRouterDraftModelId(data.router?.modelId ?? "");
+    return (await res.json()) as ModelsInventoryResponse;
   }, [t]);
 
   const loadSkills = useCallback(async () => {
@@ -384,7 +384,7 @@ export function AdminClient() {
     let canceled = false;
     setLoading(true);
     setError(null);
-    setNotice(null);
+    setSaveNotice(null);
     load()
       .catch((err) => {
         if (canceled) return;
@@ -427,27 +427,34 @@ export function AdminClient() {
     loadReadinessPreflight().catch(() => {});
   }, [loadReadinessPreflight]);
 
-  useEffect(() => {
-    let canceled = false;
+  const refreshInventory = useCallback(async () => {
+    const runId = (inventoryRunIdRef.current += 1);
     setInventoryLoading(true);
     setInventoryError(null);
-    loadInventory()
-      .catch((err) => {
-        if (canceled) return;
-        setInventoryError(
-          err instanceof Error
-            ? err.message
-            : t("error.admin.models_inventory_load_failed")
-        );
-      })
-      .finally(() => {
-        if (canceled) return;
-        setInventoryLoading(false);
-      });
+    try {
+      const data = await fetchInventory();
+      if (inventoryRunIdRef.current !== runId) return;
+      setInventory(data);
+      setRouterDraftProviderId(data.router?.providerId ?? "");
+      setRouterDraftModelId(data.router?.modelId ?? "");
+    } catch (err) {
+      if (inventoryRunIdRef.current !== runId) return;
+      setInventoryError(
+        err instanceof Error ? err.message : t("error.admin.models_inventory_load_failed")
+      );
+    } finally {
+      if (inventoryRunIdRef.current !== runId) return;
+      setInventoryLoading(false);
+    }
+  }, [fetchInventory, t]);
+
+  useEffect(() => {
+    refreshInventory().catch(() => {});
     return () => {
-      canceled = true;
+      // Invalidate any in-flight inventory requests to avoid setting state after unmount.
+      inventoryRunIdRef.current += 1;
     };
-  }, [loadInventory, t]);
+  }, [refreshInventory]);
 
   useEffect(() => {
     if (!inventory) return;
@@ -463,6 +470,16 @@ export function AdminClient() {
     setDefaultDraftByProviderId(nextDefaultDraft);
     setFiltersByProviderId(nextFilters);
   }, [inventory]);
+
+  useEffect(() => {
+    if (!saveNotice) return;
+    const timer = window.setTimeout(() => {
+      setSaveNotice(null);
+    }, 5000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [saveNotice]);
 
   useEffect(() => {
     let canceled = false;
@@ -512,7 +529,7 @@ export function AdminClient() {
 
     setResetSaving(true);
     setError(null);
-    setNotice(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/admin/reset", {
         method: "POST",
@@ -526,7 +543,7 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.reset_failed"));
       }
       setResetConfirm("");
-      setNotice(t("admin.reset.notice.completed"));
+      setSaveNotice(t("admin.reset.notice.completed"));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("error.admin.reset_failed"));
     } finally {
@@ -541,7 +558,7 @@ export function AdminClient() {
 
     setSaving(true);
     setError(null);
-    setNotice(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/providers/active", {
         method: "PUT",
@@ -555,7 +572,7 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.switch_provider_failed"));
       }
       await load();
-      setNotice(t("admin.providers.notice.updated"));
+      setSaveNotice(t("admin.providers.notice.updated"));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : t("error.admin.switch_provider_failed")
@@ -564,23 +581,6 @@ export function AdminClient() {
       setSaving(false);
     }
   };
-
-  const refreshInventory = useCallback(async () => {
-    if (inventoryLoading) return;
-    setInventoryLoading(true);
-    setInventoryError(null);
-    try {
-      await loadInventory();
-    } catch (err) {
-      setInventoryError(
-        err instanceof Error
-          ? err.message
-          : t("error.admin.models_inventory_load_failed")
-      );
-    } finally {
-      setInventoryLoading(false);
-    }
-  }, [inventoryLoading, loadInventory, t]);
 
   const setProviderQuery = (providerId: string, query: string) => {
     setFiltersByProviderId((prev) => ({
@@ -638,7 +638,7 @@ export function AdminClient() {
 
     setModelsSavingByProvider((prev) => ({ ...prev, [providerId]: true }));
     setModelsError(null);
-    setModelsNotice(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/admin/providers/allowed-models", {
         method: "PUT",
@@ -655,7 +655,7 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.allowed_models_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice(t("admin.models.notice.allowed_updated", { providerId }));
+      setSaveNotice(t("admin.models.notice.allowed_updated", { providerId }));
     } catch (err) {
       setModelsError(
         err instanceof Error ? err.message : t("error.admin.allowed_models_update_failed")
@@ -685,7 +685,7 @@ export function AdminClient() {
 
     setDefaultModelSavingByProvider((prev) => ({ ...prev, [providerId]: true }));
     setModelsError(null);
-    setModelsNotice(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/admin/providers/default-model", {
         method: "PUT",
@@ -699,7 +699,7 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.default_model_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice(t("admin.models.notice.default_updated", { providerId }));
+      setSaveNotice(t("admin.models.notice.default_updated", { providerId }));
     } catch (err) {
       setModelsError(
         err instanceof Error ? err.message : t("error.admin.default_model_update_failed")
@@ -711,17 +711,19 @@ export function AdminClient() {
 
   const saveRouterModel = async () => {
     if (!inventory?.router) return;
+    const providerId = String(routerDraftProviderId || inventory.router.providerId || "").trim();
+    if (!providerId) return;
     if (!routerDraftModelId) return;
     if (routerSaving) return;
 
     setRouterSaving(true);
-    setModelsError(null);
-    setModelsNotice(null);
+    setRouterError(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/admin/router/model", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId: routerDraftModelId }),
+        body: JSON.stringify({ providerId, modelId: routerDraftModelId }),
       });
       const json = (await res.json().catch(() => null)) as
         | { ok?: boolean; error?: string }
@@ -730,9 +732,9 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.router_model_update_failed"));
       }
       await refreshInventory();
-      setModelsNotice(t("admin.router.notice.updated"));
+      setSaveNotice(t("admin.router.notice.updated"));
     } catch (err) {
-      setModelsError(
+      setRouterError(
         err instanceof Error ? err.message : t("error.admin.router_model_update_failed")
       );
     } finally {
@@ -740,18 +742,20 @@ export function AdminClient() {
     }
   };
 
-  const refreshSkills = async () => {
-    if (skillsLoading) return;
+  const refreshSkills = useCallback(async () => {
+    const runId = (skillsLoadRunIdRef.current += 1);
     setSkillsLoading(true);
     setSkillsError(null);
     try {
       await loadSkills();
     } catch (err) {
+      if (skillsLoadRunIdRef.current !== runId) return;
       setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
     } finally {
+      if (skillsLoadRunIdRef.current !== runId) return;
       setSkillsLoading(false);
     }
-  };
+  }, [loadSkills, t]);
 
   const saveWebSearchProvider = async () => {
     if (!webSearchConfig || !webSearchConfig.enabled || webSearchSaving) return;
@@ -759,7 +763,7 @@ export function AdminClient() {
 
     setWebSearchSaving(true);
     setWebSearchError(null);
-    setWebSearchNotice(null);
+    setSaveNotice(null);
     try {
       const res = await fetch("/api/admin/web-tools/search-provider", {
         method: "PUT",
@@ -775,7 +779,7 @@ export function AdminClient() {
         );
       }
       await loadWebSearchProvider();
-      setWebSearchNotice(
+      setSaveNotice(
         t("admin.web_search.notice.updated", { provider: webSearchDraft })
       );
     } catch (err) {
@@ -988,6 +992,7 @@ export function AdminClient() {
         startWebSearchReadiness(),
         startSkillsReadiness(pf),
         refreshInventory(),
+        refreshSkills(),
       ]);
     } finally {
       setReadinessRetesting(false);
@@ -996,6 +1001,7 @@ export function AdminClient() {
     loadReadinessPreflight,
     readinessRetesting,
     refreshInventory,
+    refreshSkills,
     startLlmReadiness,
     startSkillsReadiness,
     startWebSearchReadiness,
@@ -1053,7 +1059,7 @@ export function AdminClient() {
   return (
     <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
       <div className="flex h-full min-h-0 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b bg-sidebar pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] text-sidebar-foreground">
+        <header className="relative flex items-center justify-between gap-3 border-b bg-sidebar pb-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[calc(0.75rem+env(safe-area-inset-top,0px))] text-sidebar-foreground">
           <div className="flex min-w-0 items-center gap-3">
             <ShieldIcon className="size-4 shrink-0" />
             <div className="min-w-0">
@@ -1065,11 +1071,18 @@ export function AdminClient() {
               </div>
             </div>
           </div>
+          {saveNotice ? (
+            <div className="pointer-events-none absolute left-1/2 top-1/2 w-full max-w-xl -translate-x-1/2 -translate-y-1/2 px-4">
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-700 dark:text-emerald-300">
+                {saveNotice}
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-center gap-2">
             <Button
               aria-label={t("common.refresh")}
               className="h-9 w-9"
-              disabled={readinessRetesting || inventoryLoading}
+              disabled={readinessRetesting || inventoryLoading || skillsLoading}
               onClick={() => retestAllReadiness()}
               size="icon"
               title={t("common.refresh")}
@@ -1077,7 +1090,10 @@ export function AdminClient() {
               variant="outline"
             >
               <RotateCwIcon
-                className={cn("size-4", (readinessRetesting || inventoryLoading) && "animate-spin")}
+                className={cn(
+                  "size-4",
+                  (readinessRetesting || inventoryLoading || skillsLoading) && "animate-spin"
+                )}
               />
             </Button>
             <Button
@@ -1097,7 +1113,7 @@ export function AdminClient() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="mx-auto w-full max-w-3xl space-y-4">
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <Card>
               <CardHeader>
                 <CardTitle>{t("admin.backup.title")}</CardTitle>
@@ -1121,79 +1137,6 @@ export function AdminClient() {
 
             <Card>
               <CardHeader>
-                <CardTitle>{t("admin.providers.title")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {error ? (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {error}
-                  </div>
-                ) : null}
-                {notice ? (
-                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-                    {notice}
-                  </div>
-                ) : null}
-
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium" htmlFor="admin:provider">
-                      {t("admin.providers.active.label")}
-                    </label>
-                    <Select
-                      disabled={loading || saving}
-                      onValueChange={(value) => setActiveDraft(value)}
-                      value={activeDraft}
-                    >
-                      <SelectTrigger
-                        data-testid="admin:provider-select"
-                        id="admin:provider"
-                      >
-                        <ReadinessDot
-                          state={llmReadinessByProviderId[activeDraft] ?? "untested"}
-                        />
-                        <SelectValue>
-                          {loading
-                            ? t("common.loading")
-                            : providerOptions.find((p) => p.id === activeDraft)?.name ??
-                              activeDraft ??
-                              t("admin.providers.active.placeholder")}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providerOptions.map((p) => (
-                          <SelectItem
-                            data-testid={`admin:provider-option:${p.id}`}
-                            key={p.id}
-                            value={p.id}
-                          >
-                            <div className="flex items-center gap-2">
-                              <ReadinessDot
-                                state={llmReadinessByProviderId[p.id] ?? "untested"}
-                              />
-                              <span>{p.name}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Button
-                    data-testid="admin:provider-save"
-                    disabled={!canSave}
-                    onClick={() => save()}
-                    type="button"
-                  >
-                    {saving ? t("common.saving_ellipsis") : t("common.save")}
-                  </Button>
-                </div>
-
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
                 <CardTitle>{t("admin.web_search.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1202,12 +1145,6 @@ export function AdminClient() {
                     {webSearchError}
                   </div>
                 ) : null}
-                {webSearchNotice ? (
-                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-                    {webSearchNotice}
-                  </div>
-                ) : null}
-
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div className="space-y-2">
                     <label
@@ -1289,29 +1226,87 @@ export function AdminClient() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("admin.providers.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {error ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </div>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor="admin:provider">
+                      {t("admin.providers.active.label")}
+                    </label>
+                    <Select
+                      disabled={loading || saving}
+                      onValueChange={(value) => setActiveDraft(value)}
+                      value={activeDraft}
+                    >
+                      <SelectTrigger
+                        data-testid="admin:provider-select"
+                        id="admin:provider"
+                      >
+                        <ReadinessDot
+                          state={llmReadinessByProviderId[activeDraft] ?? "untested"}
+                        />
+                        <SelectValue>
+                          {loading
+                            ? t("common.loading")
+                            : providerOptions.find((p) => p.id === activeDraft)?.name ??
+                              activeDraft ??
+                              t("admin.providers.active.placeholder")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providerOptions.map((p) => (
+                          <SelectItem
+                            data-testid={`admin:provider-option:${p.id}`}
+                            key={p.id}
+                            value={p.id}
+                          >
+                            <div className="flex items-center gap-2">
+                              <ReadinessDot
+                                state={llmReadinessByProviderId[p.id] ?? "untested"}
+                              />
+                              <span>{p.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button
+                    data-testid="admin:provider-save"
+                    disabled={!canSave}
+                    onClick={() => save()}
+                    type="button"
+                  >
+                    {saving ? t("common.saving_ellipsis") : t("common.save")}
+                  </Button>
+                </div>
+
+              </CardContent>
+            </Card>
+
             {inventory?.router ? (
               <Card>
                 <CardHeader>
                   <CardTitle>{t("admin.router.title")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="text-sm text-muted-foreground">
-                    {t("admin.router.description.part1")} <code>app.router.model_id</code>{" "}
-                    {t("admin.router.description.part2")} <code>config.toml</code>.{" "}
-                    {t("admin.router.description.part3")} <code>allowed_model_ids</code>.
-                  </div>
-
-                  {inventory ? (
-                    <div className="text-xs text-muted-foreground">
-                      {t("admin.router.provider")}:{" "}
-                      <span className="font-mono">{inventory.router.providerId}</span>
+                  {routerError ? (
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {routerError}
                     </div>
                   ) : null}
-
                   {(() => {
-                    const provider = inventory?.providers.find(
-                      (p) => p.id === inventory.router?.providerId
-                    );
+                    const providerId = routerDraftProviderId || inventory.router?.providerId || "";
+                    const provider = inventory?.providers.find((p) => p.id === providerId);
                     const options =
                       provider?.models
                         .filter((m) => m.supported)
@@ -1325,26 +1320,78 @@ export function AdminClient() {
 
                     const canSaveRouter =
                       !routerSaving &&
+                      providerId.trim().length > 0 &&
                       routerDraftModelId.trim().length > 0 &&
-                      routerDraftModelId !== inventory?.router?.modelId;
+                      (providerId !== inventory?.router?.providerId ||
+                        routerDraftModelId !== inventory?.router?.modelId);
 
                     return (
                       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium" htmlFor="admin:router-model">
-                            {t("model.label")}
-                          </label>
-                          <div id="admin:router-model">
-                            <AdminModelPicker
-                              disabled={inventoryLoading || routerSaving || options.length === 0}
-                              onChange={(modelId) => setRouterDraftModelId(modelId)}
-                              options={options}
-                              placeholder={
-                                inventoryLoading ? t("common.loading") : t("model.select.title")
-                              }
-                              triggerTestId="admin:router-model-select"
-                              value={routerDraftModelId}
-                            />
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium" htmlFor="admin:router-provider">
+                              {t("admin.router.provider")}
+                            </label>
+                            <Select
+                              disabled={inventoryLoading || routerSaving}
+                              onValueChange={(value) => {
+                                setRouterDraftProviderId(value);
+                                const nextProvider = inventory?.providers.find((p) => p.id === value);
+                                const supportedModels =
+                                  nextProvider?.models.filter((m) => m.supported) ?? [];
+                                const nextModelId =
+                                  supportedModels.find((m) => m.id === nextProvider?.defaultModelId)
+                                    ?.id ??
+                                  supportedModels[0]?.id ??
+                                  "";
+                                setRouterDraftModelId(nextModelId);
+                              }}
+                              value={providerId}
+                            >
+                              <SelectTrigger id="admin:router-provider">
+                                <ReadinessDot
+                                  state={llmReadinessByProviderId[providerId] ?? "untested"}
+                                />
+	                                <SelectValue>
+	                                  {inventoryLoading
+	                                    ? t("common.loading")
+	                                    : (inventory?.providers.find((p) => p.id === providerId)?.name ??
+	                                        providerId) ||
+	                                      t("admin.providers.active.placeholder")}
+	                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(inventory?.providers ?? []).map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    <div className="flex items-center gap-2">
+                                      <ReadinessDot
+                                        state={llmReadinessByProviderId[p.id] ?? "untested"}
+                                      />
+                                      <span>{p.name}</span>
+                                      <span className="font-mono text-muted-foreground">{p.id}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium" htmlFor="admin:router-model">
+                              {t("model.label")}
+                            </label>
+                            <div id="admin:router-model">
+                              <AdminModelPicker
+                                disabled={inventoryLoading || routerSaving || options.length === 0}
+                                onChange={(modelId) => setRouterDraftModelId(modelId)}
+                                options={options}
+                                placeholder={
+                                  inventoryLoading ? t("common.loading") : t("model.select.title")
+                                }
+                                triggerTestId="admin:router-model-select"
+                                value={routerDraftModelId}
+                              />
+                            </div>
                           </div>
                         </div>
 
@@ -1371,12 +1418,6 @@ export function AdminClient() {
                 {modelsError ? (
                   <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {modelsError}
-                  </div>
-                ) : null}
-
-                {modelsNotice ? (
-                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
-                    {modelsNotice}
                   </div>
                 ) : null}
 
@@ -1709,18 +1750,7 @@ export function AdminClient() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{t("admin.skills.title")}</CardTitle>
-                  <Button
-                    disabled={skillsLoading}
-                    onClick={() => refreshSkills()}
-                    size="sm"
-                    type="button"
-                    variant="secondary"
-                  >
-                    {skillsLoading ? t("common.refreshing_ellipsis") : t("common.refresh")}
-                  </Button>
-                </div>
+                <CardTitle>{t("admin.skills.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {skillsError ? (
@@ -1732,9 +1762,16 @@ export function AdminClient() {
                 {skillsSummary ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={skillsSummary.enabled ? "secondary" : "outline"}>
-                        {skillsSummary.enabled ? t("common.enabled") : t("common.disabled")}
-                      </Badge>
+	                      <Badge
+	                        className={
+	                          skillsSummary.enabled
+	                            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+	                            : "border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+	                        }
+	                        variant="outline"
+	                      >
+	                        {skillsSummary.enabled ? "Actief" : t("common.disabled")}
+	                      </Badge>
                       <Badge variant="outline">
                         {t("admin.skills.summary.discovered")}: {skillsSummary.discovered}
                       </Badge>
@@ -1888,17 +1925,24 @@ export function AdminClient() {
                                       <span className="font-mono break-all">{s.sourceDir}</span>
                                     </div>
                                   ) : null}
-                                  <div className="mt-0.5 text-xs text-muted-foreground">
-                                    {s.description}
-                                  </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-2">
                                   {skills?.usage ? (
-                                    <Badge variant={activatedCount > 0 ? "secondary" : "outline"}>
+                                    <Badge
+                                      className={
+                                        activatedCount > 0
+                                          ? undefined
+                                          : "border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                                      }
+                                      variant={activatedCount > 0 ? "secondary" : "outline"}
+                                    >
                                       {activationLabel}
                                     </Badge>
                                   ) : (
-                                    <Badge variant="outline">
+                                    <Badge
+                                      className="border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                                      variant="outline"
+                                    >
                                       {t("admin.skills.activation.admin_only")}
                                     </Badge>
                                   )}

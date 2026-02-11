@@ -12,6 +12,7 @@ import {
   updateProviderAllowedModelIdsInToml,
   updateProviderDefaultModelIdInToml,
   updateRouterModelIdInToml,
+  updateRouterProviderIdInToml,
   updateWebToolsSearchProviderInToml,
   writeFileAtomic,
 } from "@/server/config-toml-edit";
@@ -107,7 +108,10 @@ export async function updateProviderAllowedModelsInConfigToml(input: {
   resetModelsdevProviderShowCache();
 }
 
-export async function updateRouterModelInConfigToml(input: { modelId: string }) {
+export async function updateRouterModelInConfigToml(input: {
+  modelId: string;
+  providerId?: string;
+}) {
   const modelId = String(input.modelId ?? "").trim();
   if (!modelId) {
     throw new Error("Missing modelId.");
@@ -121,7 +125,10 @@ export async function updateRouterModelInConfigToml(input: { modelId: string }) 
     throw new Error("Router is not enabled in config.toml.");
   }
 
-  const providerId = parsed.intentRouter.providerId;
+  const providerId = String(input.providerId ?? parsed.intentRouter.providerId ?? "").trim();
+  if (!providerId) {
+    throw new Error("Missing providerId.");
+  }
   const provider = parsed.providers.find((p) => p.id === providerId);
   if (!provider) {
     throw new Error(`Router provider_id "${providerId}" is not present in providers.`);
@@ -146,7 +153,8 @@ export async function updateRouterModelInConfigToml(input: { modelId: string }) 
     modelIds: nextAllowed,
   });
 
-  let updatedToml = updateRouterModelIdInToml(original, modelId);
+  let updatedToml = updateRouterProviderIdInToml(original, providerId);
+  updatedToml = updateRouterModelIdInToml(updatedToml, modelId);
   updatedToml = updateProviderAllowedModelIdsInToml(updatedToml, provider.id, nextAllowed);
 
   parseConfigToml(updatedToml);

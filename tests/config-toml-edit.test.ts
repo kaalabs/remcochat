@@ -4,6 +4,7 @@ import {
   updateProviderDefaultModelIdInToml,
   updateProviderAllowedModelIdsInToml,
   updateRouterModelIdInToml,
+  updateRouterProviderIdInToml,
   updateWebToolsSearchProviderInToml,
 } from "../src/server/config-toml-edit";
 
@@ -77,6 +78,33 @@ allowed_model_ids = ["old"]
   const updated = updateRouterModelIdInToml(original, "new-model");
   assert.match(updated, /^\s*model_id = "new-model"\s*$/m);
   assert.doesNotMatch(updated, /^\s*model_id = "old"\s*$/m);
+});
+
+test("updateRouterProviderIdInToml replaces app.router.provider_id", () => {
+  const original = `
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.router]
+enabled = true
+provider_id = "old-provider"
+model_id = "a"
+min_confidence = 0.7
+max_input_chars = 600
+
+[providers.opencode]
+name = "OpenCode Zen"
+api_key_env = "OPENCODE_API_KEY"
+base_url = "https://example.com"
+default_model_id = "a"
+allowed_model_ids = ["a"]
+`;
+
+  const updated = updateRouterProviderIdInToml(original, "new-provider");
+  assert.match(updated, /^\s*provider_id = "new-provider"\s*$/m);
+  assert.doesNotMatch(updated, /^\s*provider_id = "old-provider"\s*$/m);
 });
 
 test("updateProviderDefaultModelIdInToml replaces providers.<id>.default_model_id", () => {

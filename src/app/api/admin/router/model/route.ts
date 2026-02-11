@@ -3,6 +3,7 @@ import { updateRouterModelInConfigToml } from "@/server/models-admin-config";
 import { z } from "zod";
 
 const BodySchema = z.object({
+  providerId: z.string().min(1).optional(),
   modelId: z.string().min(1),
 });
 
@@ -27,4 +28,3 @@ export async function PUT(req: Request) {
     );
   }
 }
-
