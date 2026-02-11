@@ -430,6 +430,19 @@ export type OvNlToolOutput =
       via: OvNlStation | null;
       trips: OvNlTripSummary[];
       recommendedTripUid?: string;
+      query?: {
+        from: string;
+        to: string;
+        via?: string;
+        dateTime?: string;
+        searchForArrival?: boolean;
+        limit: number;
+        lang: string;
+        intent?: OvNlIntent;
+      };
+      page?: {
+        hasMoreLater: boolean;
+      };
       directOnlyAlternatives?: {
         maxTransfers: number;
         trips: OvNlTripSummary[];

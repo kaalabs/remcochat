@@ -542,9 +542,11 @@ function renderTripTimeline(
 function TripsView({
   output,
   i18n,
+  onUpdateOutput,
 }: {
   output: OvNlToolOutput;
   i18n: OvNlI18n;
+  onUpdateOutput?: (output: OvNlToolOutput) => void;
 }) {
   const { locale, t, uiLanguage } = i18n;
   const { directOnlyAlternatives, primaryTripOptions, alternativeTripOptions, tripOptions } =
@@ -713,6 +715,86 @@ function TripsView({
     }
   }, [selectedTrip, tripDetailByCtxRecon, uiLanguage]);
 
+  const [pagingState, setPagingState] = useState<"idle" | "earlier" | "later">("idle");
+
+  const cursorMsForTrip = (trip: OvNlTripSummary, mode: "departure" | "arrival"): number | null => {
+    const raw =
+      mode === "arrival"
+        ? trip.arrivalActualDateTime || trip.arrivalPlannedDateTime
+        : trip.departureActualDateTime || trip.departurePlannedDateTime;
+    if (!raw) return null;
+    const ms = Date.parse(raw);
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  const pageCursorMode: "departure" | "arrival" =
+    output.kind === "trips.search" && output.query?.searchForArrival === true ? "arrival" : "departure";
+
+  const tripDepartures = useMemo(() => {
+    let earliest: number | null = null;
+    let latest: number | null = null;
+    for (const trip of tripOptions) {
+      const ms = cursorMsForTrip(trip, pageCursorMode);
+      if (ms == null) continue;
+      earliest = earliest == null ? ms : Math.min(earliest, ms);
+      latest = latest == null ? ms : Math.max(latest, ms);
+    }
+    return { earliestMs: earliest, latestMs: latest };
+  }, [pageCursorMode, tripOptions]);
+
+  const canPage =
+    output.kind === "trips.search" &&
+    Boolean(output.query?.from && output.query?.to) &&
+    typeof output.query?.limit === "number";
+  const canLoadEarlier =
+    canPage && tripDepartures.earliestMs != null && tripDepartures.earliestMs - Date.now() > 15 * 60 * 1000;
+  const canLoadLater = canPage && hasTrips && tripDepartures.latestMs != null;
+
+  const loadTripPage = useCallback(
+    async (direction: "earlier" | "later") => {
+      if (!canPage) return;
+      if (output.kind !== "trips.search") return;
+      const earliestMs = tripDepartures.earliestMs;
+      const latestMs = tripDepartures.latestMs;
+      if (direction === "earlier" && earliestMs == null) return;
+      if (direction === "later" && latestMs == null) return;
+
+      const base = output.query;
+      if (!base) return;
+
+      let dateTime: string;
+      if (direction === "earlier") {
+        const ms = earliestMs;
+        if (ms == null) return;
+        dateTime = new Date(Math.max(0, ms - 60 * 60 * 1000)).toISOString();
+      } else {
+        const ms = latestMs;
+        if (ms == null) return;
+        dateTime = new Date(ms + 60 * 1000).toISOString();
+      }
+
+      setPagingState(direction);
+      try {
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        const adminToken = readLanAdminToken();
+        if (adminToken) headers["x-remcochat-admin-token"] = adminToken;
+        const res = await fetch("/api/ov-nl/trips/search", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ...base, dateTime }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json || typeof json !== "object") return;
+        const next = json as OvNlToolOutput;
+        if (next.kind !== "trips.search") return;
+        onUpdateOutput?.(next);
+      } finally {
+        setPagingState("idle");
+      }
+    },
+    [canPage, onUpdateOutput, output, tripDepartures.earliestMs, tripDepartures.latestMs]
+  );
+
   const renderTripOptionRows = (trips: OvNlTripSummary[], startIndex: number) =>
     trips.map((trip, index) => {
       const selected = selectedTrip?.uid === trip.uid;
@@ -773,6 +855,19 @@ function TripsView({
     >
       {!isTripDetail ? (
         <div className={styles.optionsColumn}>
+          {output.kind === "trips.search" && canLoadEarlier ? (
+            <div className={styles.pageButtonRow}>
+              <button
+                className={styles.pageButton}
+                disabled={pagingState !== "idle"}
+                onClick={() => loadTripPage("earlier")}
+                type="button"
+              >
+                <span className={styles.pageButtonIcon}>↑</span>
+                {t("ov_nl.trips.load_earlier")}
+              </button>
+            </div>
+          ) : null}
           {output.kind === "journey.detail" ? (
             <div className={styles.optionRow}>
               <div className={styles.optionTimes}>{t("ov_nl.title.journey_details")}</div>
@@ -813,6 +908,19 @@ function TripsView({
           ) : (
             renderTripOptionRows(tripOptions, 0)
           )}
+          {output.kind === "trips.search" && canLoadLater ? (
+            <div className={`${styles.pageButtonRow} ${styles.pageButtonRowBottom}`}>
+              <button
+                className={styles.pageButton}
+                disabled={pagingState !== "idle"}
+                onClick={() => loadTripPage("later")}
+                type="button"
+              >
+                <span className={styles.pageButtonIcon}>↓</span>
+                {t("ov_nl.trips.load_later")}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 	      <div className={styles.detailPanel}>
@@ -991,7 +1099,16 @@ function renderSimple(output: OvNlToolOutput, i18n: OvNlI18n) {
 
 export function OvNlCard({ output }: OvNlCardProps) {
   const i18n = useI18n();
-  const view = viewFromKind(output.kind);
+  const baseKey = `${output.kind}|${"fetchedAt" in output ? output.fetchedAt : ""}|${
+    "cached" in output && output.cached ? "1" : "0"
+  }`;
+  const [override, setOverride] = useState<{ baseKey: string; output: OvNlToolOutput } | null>(null);
+  const displayOutput = override?.baseKey === baseKey ? override.output : output;
+  const onUpdateOutput = useCallback(
+    (next: OvNlToolOutput) => setOverride({ baseKey, output: next }),
+    [baseKey]
+  );
+  const view = viewFromKind(displayOutput.kind);
 
   return (
     <section
@@ -1001,20 +1118,21 @@ export function OvNlCard({ output }: OvNlCardProps) {
     >
       <header className={styles.headerBand}>
         <div className={styles.headerTop}>
-          <HeaderContent i18n={i18n} output={output} />
+          <HeaderContent i18n={i18n} output={displayOutput} />
         </div>
       </header>
 
       <div className={styles.body}>
-        {view === "board" ? renderBoardRows(output, i18n) : null}
+        {view === "board" ? renderBoardRows(displayOutput, i18n) : null}
         {view === "trips" ? (
           <TripsView
             i18n={i18n}
-            output={output}
+            onUpdateOutput={onUpdateOutput}
+            output={displayOutput}
           />
         ) : null}
-        {view === "alerts" ? renderDisruptions(output, i18n) : null}
-        {view === "simple" ? renderSimple(output, i18n) : null}
+        {view === "alerts" ? renderDisruptions(displayOutput, i18n) : null}
+        {view === "simple" ? renderSimple(displayOutput, i18n) : null}
       </div>
     </section>
   );

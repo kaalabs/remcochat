@@ -196,6 +196,50 @@
   background: rgb(0 80 200 / 8%);
 }
 
+.pageButtonRow {
+  border-bottom: 1px solid var(--ov-ns-line);
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--ov-ns-surface) 65%, #fff);
+}
+
+.pageButtonRowBottom {
+  border-bottom: 0;
+  border-top: 1px solid var(--ov-ns-line);
+}
+
+.pageButton {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--ov-ns-blue-strong);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 10px 18px rgb(0 48 130 / 18%);
+}
+
+.pageButton:hover {
+  filter: brightness(1.05);
+}
+
+.pageButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.pageButtonIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .optionMain {
   min-width: 0;
 }

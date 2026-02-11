@@ -450,6 +450,8 @@ export const enMessages = {
   "ov_nl.trips.section.direct": "Direct options",
   "ov_nl.trips.section.alternatives": "Best alternatives ({label})",
   "ov_nl.trips.direct_only_empty": "No direct trips found for this route and time.",
+  "ov_nl.trips.load_earlier": "Earlier options",
+  "ov_nl.trips.load_later": "Later options",
   "ov_nl.trips.load_detailed_legs": "Load detailed legs",
   "ov_nl.intent.ignored": "Ignored preference: {label}",
   "ov_nl.intent.hard.directOnly": "Direct only",
@@ -1010,6 +1012,8 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "ov_nl.trips.section.alternatives": "Beste alternatieven ({label})",
   "ov_nl.trips.direct_only_empty":
     "Geen directe reizen gevonden voor dit traject en tijdstip.",
+  "ov_nl.trips.load_earlier": "Eerdere opties",
+  "ov_nl.trips.load_later": "Latere opties",
   "ov_nl.trips.load_detailed_legs": "Laad detailtrajecten",
   "ov_nl.intent.ignored": "Genegeerde voorkeur: {label}",
   "ov_nl.intent.hard.directOnly": "Alleen direct",

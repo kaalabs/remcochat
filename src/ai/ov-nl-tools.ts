@@ -3786,23 +3786,36 @@ async function executeAction(
           );
           const alternativeTrips = rankedTransferCandidates.slice(0, limit);
 
-	          if (alternativeTrips.length > 0) {
-	            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
-	            const requestedHardKeys = requestedHardKeysFromIntent(intent);
-	            const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
-	            const recommendedTripUid = alternativeTrips[0]?.uid ?? "";
-	            return {
-	              output: {
-	                kind: "trips.search",
-	                from: fromResolved.station,
-                to: toResolved.station,
-                via,
-                trips: [],
-	                recommendedTripUid,
-	                directOnlyAlternatives: {
-	                  maxTransfers: minTransfers,
-	                  trips: alternativeTrips,
-	                },
+		          if (alternativeTrips.length > 0) {
+		            const cacheTtlSeconds = pickActionTtlSeconds(ctx.cfg.cacheMaxTtlSeconds, ctx.ttlHints);
+		            const requestedHardKeys = requestedHardKeysFromIntent(intent);
+		            const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
+		            const recommendedTripUid = alternativeTrips[0]?.uid ?? "";
+		            const query = {
+		              from: validatedInput.args.from,
+		              to: validatedInput.args.to,
+		              via: validatedInput.args.via,
+		              dateTime: effectiveDateTime,
+		              searchForArrival: validatedInput.args.searchForArrival,
+		              limit,
+		              lang,
+		              intent,
+		            };
+		            const page = { hasMoreLater: rankedTransferCandidates.length > alternativeTrips.length };
+		            return {
+		              output: {
+		                kind: "trips.search",
+		                from: fromResolved.station,
+	                to: toResolved.station,
+	                via,
+	                trips: [],
+		                recommendedTripUid,
+		                query,
+		                page,
+		                directOnlyAlternatives: {
+		                  maxTransfers: minTransfers,
+		                  trips: alternativeTrips,
+		                },
 	                requestMeta: {
 	                  requestedHardKeys,
 	                  requestedDirectOnly,
@@ -3840,6 +3853,17 @@ async function executeAction(
 	    const requestedHardKeys = requestedHardKeysFromIntent(intent);
 	    const requestedDirectOnly = requestedDirectOnlyFromIntent(intent);
 	    const recommendedTripUid = trips[0]?.uid ?? "";
+	    const query = {
+	      from: validatedInput.args.from,
+	      to: validatedInput.args.to,
+	      via: validatedInput.args.via,
+	      dateTime: effectiveDateTime,
+	      searchForArrival: validatedInput.args.searchForArrival,
+	      limit,
+	      lang,
+	      intent,
+	    };
+	    const page = { hasMoreLater: rankedTrips.length > trips.length };
 	    return {
 	      output: {
 	        kind: "trips.search",
@@ -3848,6 +3872,8 @@ async function executeAction(
         via,
 	        trips,
 	        recommendedTripUid,
+	        query,
+	        page,
 	        requestMeta: {
 	          requestedHardKeys,
 	          requestedDirectOnly,
