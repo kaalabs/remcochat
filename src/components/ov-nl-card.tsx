@@ -692,10 +692,11 @@ function TripsView({
       }
 
       const detailOutput = json as OvNlToolOutput;
-      if (detailOutput.kind === "trips.detail" && detailOutput.trip) {
+      const detailedTrip = detailOutput.kind === "trips.detail" ? detailOutput.trip : null;
+      if (detailedTrip) {
         setTripDetailByCtxRecon((prev) => ({
           ...prev,
-          [ctxRecon]: { state: "loaded", trip: detailOutput.trip },
+          [ctxRecon]: { state: "loaded", trip: detailedTrip },
         }));
         return;
       }
