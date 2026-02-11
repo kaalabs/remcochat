@@ -1,10 +1,11 @@
 import { isAdminEnabled } from "@/server/admin";
 import { getConfig } from "@/server/config";
 import { updateWebToolsSearchProviderInConfigToml } from "@/server/models-admin-config";
+import { listWebSearchProviders, getWebSearchProviderById } from "@/server/web-search/registry";
 import { z } from "zod";
 
 const BodySchema = z.object({
-  searchProvider: z.enum(["exa", "brave"]),
+  providerId: z.string().min(1),
 });
 
 export async function GET() {
@@ -13,12 +14,12 @@ export async function GET() {
   }
 
   const config = getConfig();
+  const providers = listWebSearchProviders().map((p) => ({ id: p.id, label: p.label }));
   return Response.json(
     {
       enabled: Boolean(config.webTools?.enabled),
-      searchProvider: config.webTools?.searchProvider ?? "exa",
-      hasExaKey: Boolean(String(process.env.EXA_API_KEY ?? "").trim()),
-      hasBraveKey: Boolean(String(process.env.BRAVE_SEARCH_API ?? "").trim()),
+      selectedProviderId: config.webTools?.searchProvider ?? (providers[0]?.id ?? "exa"),
+      providers,
     },
     { headers: { "Cache-Control": "no-store" } }
   );
@@ -33,14 +34,22 @@ export async function PUT(req: Request) {
   const parsed = BodySchema.safeParse(json);
   if (!parsed.success) {
     return Response.json(
-      { error: 'Invalid body. Expected { searchProvider: "exa" | "brave" }.' },
+      { error: 'Invalid body. Expected { providerId: "<id>" }.' },
       { status: 400 }
     );
   }
 
   try {
+    const provider = getWebSearchProviderById(parsed.data.providerId);
+    if (!provider) {
+      return Response.json(
+        { error: "Unknown web search provider." },
+        { status: 400 }
+      );
+    }
     await updateWebToolsSearchProviderInConfigToml({
-      searchProvider: parsed.data.searchProvider,
+      // config currently supports exa/brave; registry validation ensures safety here.
+      searchProvider: provider.id as "exa" | "brave",
     });
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {

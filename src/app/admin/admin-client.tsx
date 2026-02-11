@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/components/i18n-provider";
+import { ReadinessDot, type ReadinessDotState } from "@/components/readiness-dot";
 import { listModelCapabilityBadges, type ModelCapabilities } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
@@ -35,7 +36,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
 const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
@@ -94,6 +95,7 @@ type SkillsAdminResponse = {
     license?: string;
     compatibility?: string;
     allowedTools?: string;
+    detectedTools?: string[];
     sourceDir?: string;
     skillDir?: string;
     skillMdPath?: string;
@@ -114,9 +116,16 @@ type SkillsAdminResponse = {
 
 type WebSearchProviderResponse = {
   enabled: boolean;
-  searchProvider: "exa" | "brave";
-  hasExaKey: boolean;
-  hasBraveKey: boolean;
+  selectedProviderId: string;
+  providers: Array<{ id: string; label: string }>;
+};
+
+type ReadinessPreflightResponse = {
+  webTools: { enabled: boolean };
+  tools: {
+    hueGateway: "enabled" | "disabled" | "blocked";
+    ovNlGateway: "enabled" | "disabled" | "blocked";
+  };
 };
 
 function AdminModelPicker(props: {
@@ -273,7 +282,27 @@ export function AdminClient() {
   const [webSearchConfig, setWebSearchConfig] = useState<WebSearchProviderResponse | null>(
     null
   );
-  const [webSearchDraft, setWebSearchDraft] = useState<"exa" | "brave">("exa");
+  const [webSearchDraft, setWebSearchDraft] = useState<string>("");
+
+  const [readinessPreflight, setReadinessPreflight] =
+    useState<ReadinessPreflightResponse | null>(null);
+  const [llmReadinessByProviderId, setLlmReadinessByProviderId] = useState<
+    Record<string, ReadinessDotState>
+  >({});
+  const [webSearchReadinessByProviderId, setWebSearchReadinessByProviderId] = useState<
+    Record<string, ReadinessDotState>
+  >({});
+  const [skillReadinessByName, setSkillReadinessByName] = useState<
+    Record<string, ReadinessDotState>
+  >({});
+  const [readinessRetesting, setReadinessRetesting] = useState(false);
+
+  const llmRunIdRef = useRef(0);
+  const webSearchRunIdRef = useRef(0);
+  const skillsRunIdRef = useRef(0);
+  const llmAutoStartedRef = useRef(false);
+  const webSearchAutoStartedRef = useRef(false);
+  const skillsAutoStartedRef = useRef(false);
 
   const { locale, t } = useI18n();
 
@@ -285,6 +314,11 @@ export function AdminClient() {
     if (local && local.trim()) return local.trim();
     return "";
   }, []);
+
+  const buildAdminHeaders = useCallback((): Record<string, string> => {
+    const token = readLanAdminToken();
+    return token ? { "x-remcochat-admin-token": token } : {};
+  }, [readLanAdminToken]);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
@@ -309,18 +343,14 @@ export function AdminClient() {
   }, [t]);
 
   const loadSkills = useCallback(async () => {
-    const token = readLanAdminToken();
-    const headers: Record<string, string> = {};
-    if (token) headers["x-remcochat-admin-token"] = token;
-
-    const res = await fetch("/api/skills", { cache: "no-store", headers });
+    const res = await fetch("/api/skills", { cache: "no-store", headers: buildAdminHeaders() });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       throw new Error(json?.error || t("error.admin.skills_load_failed"));
     }
     const data = (await res.json()) as SkillsAdminResponse;
     setSkills(data);
-  }, [readLanAdminToken, t]);
+  }, [buildAdminHeaders, t]);
 
   const loadWebSearchProvider = useCallback(async () => {
     const res = await fetch("/api/admin/web-tools/search-provider", {
@@ -332,8 +362,22 @@ export function AdminClient() {
     }
     const data = (await res.json()) as WebSearchProviderResponse;
     setWebSearchConfig(data);
-    setWebSearchDraft(data.searchProvider);
+    const selected = String(data.selectedProviderId ?? "").trim();
+    const known = data.providers.some((p) => p.id === selected);
+    setWebSearchDraft(known ? selected : (data.providers[0]?.id ?? selected));
   }, [t]);
+
+  const loadReadinessPreflight = useCallback(async () => {
+    const res = await fetch("/api/admin/readiness/preflight", {
+      cache: "no-store",
+      headers: buildAdminHeaders(),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as ReadinessPreflightResponse | null;
+    if (!data) return null;
+    setReadinessPreflight(data);
+    return data;
+  }, [buildAdminHeaders]);
 
   useEffect(() => {
     let canceled = false;
@@ -377,6 +421,10 @@ export function AdminClient() {
       canceled = true;
     };
   }, [loadWebSearchProvider, t]);
+
+  useEffect(() => {
+    loadReadinessPreflight().catch(() => {});
+  }, [loadReadinessPreflight]);
 
   useEffect(() => {
     let canceled = false;
@@ -713,7 +761,7 @@ export function AdminClient() {
 
   const saveWebSearchProvider = async () => {
     if (!webSearchConfig || !webSearchConfig.enabled || webSearchSaving) return;
-    if (webSearchDraft === webSearchConfig.searchProvider) return;
+    if (webSearchDraft === webSearchConfig.selectedProviderId) return;
 
     setWebSearchSaving(true);
     setWebSearchError(null);
@@ -722,7 +770,7 @@ export function AdminClient() {
       const res = await fetch("/api/admin/web-tools/search-provider", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ searchProvider: webSearchDraft }),
+        body: JSON.stringify({ providerId: webSearchDraft }),
       });
       const json = (await res.json().catch(() => null)) as
         | { ok?: boolean; error?: string }
@@ -746,6 +794,242 @@ export function AdminClient() {
       setWebSearchSaving(false);
     }
   };
+
+  async function runWithConcurrency<T>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<void>
+  ) {
+    const max = Math.max(1, Math.floor(concurrency));
+    let idx = 0;
+    const runners = Array.from({ length: Math.min(max, items.length) }, async () => {
+      while (true) {
+        const current = idx;
+        idx += 1;
+        const item = items[current];
+        if (item === undefined) return;
+        await worker(item);
+      }
+    });
+    await Promise.all(runners);
+  }
+
+  const postReadinessRun = useCallback(
+    async (body: unknown) => {
+      const res = await fetch("/api/admin/readiness/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...buildAdminHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return null;
+      return (await res.json().catch(() => null)) as
+        | { status?: string }
+        | null;
+    },
+    [buildAdminHeaders]
+  );
+
+  const startLlmReadiness = useCallback(async () => {
+    const providerIds = (providers?.providers ?? []).map((p) => p.id).filter(Boolean);
+    if (providerIds.length === 0) return;
+
+    llmRunIdRef.current += 1;
+    const runId = llmRunIdRef.current;
+
+    setLlmReadinessByProviderId((prev) => {
+      const next = { ...prev };
+      for (const id of providerIds) next[id] = "untested";
+      return next;
+    });
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        if (llmRunIdRef.current !== runId) return resolve();
+        setLlmReadinessByProviderId((prev) => {
+          const next = { ...prev };
+          for (const id of providerIds) next[id] = "testing";
+          return next;
+        });
+        resolve();
+      });
+    });
+
+    await runWithConcurrency(providerIds, 2, async (providerId) => {
+      if (llmRunIdRef.current !== runId) return;
+      const json = await postReadinessRun({ kind: "llm_provider", providerId });
+      const status = String(json?.status ?? "").trim();
+      const nextState: ReadinessDotState = status === "passed" ? "passed" : "failed";
+      if (llmRunIdRef.current !== runId) return;
+      setLlmReadinessByProviderId((prev) => ({ ...prev, [providerId]: nextState }));
+    });
+  }, [postReadinessRun, providers]);
+
+  const startWebSearchReadiness = useCallback(async () => {
+    const cfg = webSearchConfig;
+    const providerIds = (cfg?.providers ?? []).map((p) => p.id).filter(Boolean);
+    if (!cfg || providerIds.length === 0) return;
+
+    webSearchRunIdRef.current += 1;
+    const runId = webSearchRunIdRef.current;
+
+    if (!cfg.enabled) {
+      setWebSearchReadinessByProviderId((prev) => {
+        const next = { ...prev };
+        for (const id of providerIds) next[id] = "disabled";
+        return next;
+      });
+      return;
+    }
+
+    setWebSearchReadinessByProviderId((prev) => {
+      const next = { ...prev };
+      for (const id of providerIds) next[id] = "untested";
+      return next;
+    });
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        if (webSearchRunIdRef.current !== runId) return resolve();
+        setWebSearchReadinessByProviderId((prev) => {
+          const next = { ...prev };
+          for (const id of providerIds) next[id] = "testing";
+          return next;
+        });
+        resolve();
+      });
+    });
+
+    await runWithConcurrency(providerIds, 2, async (providerId) => {
+      if (webSearchRunIdRef.current !== runId) return;
+      const json = await postReadinessRun({ kind: "web_search_provider", providerId });
+      const status = String(json?.status ?? "").trim();
+      const nextState: ReadinessDotState =
+        status === "passed"
+          ? "passed"
+          : status === "disabled"
+            ? "disabled"
+            : "failed";
+      if (webSearchRunIdRef.current !== runId) return;
+      setWebSearchReadinessByProviderId((prev) => ({ ...prev, [providerId]: nextState }));
+    });
+  }, [postReadinessRun, webSearchConfig]);
+
+  const startSkillsReadiness = useCallback(async (overridePreflight?: ReadinessPreflightResponse | null) => {
+    if (!skills?.enabled) return;
+    const deps = (skills.skills ?? [])
+      .map((s) => ({
+        name: s.name,
+        detectedTools: Array.isArray(s.detectedTools) ? s.detectedTools : [],
+      }))
+      .filter((s) => s.detectedTools.length > 0);
+    if (deps.length === 0) return;
+
+    const pf = overridePreflight ?? readinessPreflight;
+    if (!pf) return;
+
+    skillsRunIdRef.current += 1;
+    const runId = skillsRunIdRef.current;
+
+    const preclassified = new Map<string, ReadinessDotState>();
+    for (const s of deps) {
+      const wantsHue = s.detectedTools.some((t) => t === "hueGateway");
+      const wantsOv = s.detectedTools.some((t) => t === "ovNlGateway");
+      const hue = wantsHue ? pf.tools.hueGateway : "enabled";
+      const ov = wantsOv ? pf.tools.ovNlGateway : "enabled";
+
+      if (hue === "blocked" || ov === "blocked") preclassified.set(s.name, "blocked");
+      else if (hue === "disabled" || ov === "disabled") preclassified.set(s.name, "disabled");
+      else preclassified.set(s.name, "untested");
+    }
+
+    setSkillReadinessByName((prev) => {
+      const next = { ...prev };
+      for (const [name, state] of preclassified.entries()) next[name] = state;
+      return next;
+    });
+
+    const testable = Array.from(preclassified.entries())
+      .filter(([, state]) => state === "untested")
+      .map(([name]) => name);
+    if (testable.length === 0) return;
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        if (skillsRunIdRef.current !== runId) return resolve();
+        setSkillReadinessByName((prev) => {
+          const next = { ...prev };
+          for (const name of testable) next[name] = "testing";
+          return next;
+        });
+        resolve();
+      });
+    });
+
+    await runWithConcurrency(testable, 2, async (skillName) => {
+      if (skillsRunIdRef.current !== runId) return;
+      const json = await postReadinessRun({ kind: "skill", skillName });
+      const status = String(json?.status ?? "").trim();
+      const nextState: ReadinessDotState =
+        status === "passed"
+          ? "passed"
+          : status === "disabled"
+            ? "disabled"
+            : status === "blocked"
+              ? "blocked"
+              : status === "not_applicable"
+                ? "not_applicable"
+                : "failed";
+      if (skillsRunIdRef.current !== runId) return;
+      setSkillReadinessByName((prev) => ({ ...prev, [skillName]: nextState }));
+    });
+  }, [postReadinessRun, readinessPreflight, skills]);
+
+  const retestAllReadiness = useCallback(async () => {
+    if (readinessRetesting) return;
+    setReadinessRetesting(true);
+    try {
+      const pf = await loadReadinessPreflight().catch(() => null);
+      await Promise.all([
+        startLlmReadiness(),
+        startWebSearchReadiness(),
+        startSkillsReadiness(pf),
+      ]);
+    } finally {
+      setReadinessRetesting(false);
+    }
+  }, [
+    loadReadinessPreflight,
+    readinessRetesting,
+    startLlmReadiness,
+    startSkillsReadiness,
+    startWebSearchReadiness,
+  ]);
+
+  useEffect(() => {
+    if (llmAutoStartedRef.current) return;
+    if (!providers || providers.providers.length === 0) return;
+    llmAutoStartedRef.current = true;
+    startLlmReadiness().catch(() => {});
+  }, [providers, startLlmReadiness]);
+
+  useEffect(() => {
+    if (webSearchAutoStartedRef.current) return;
+    if (!webSearchConfig || webSearchConfig.providers.length === 0) return;
+    webSearchAutoStartedRef.current = true;
+    startWebSearchReadiness().catch(() => {});
+  }, [startWebSearchReadiness, webSearchConfig]);
+
+  useEffect(() => {
+    if (skillsAutoStartedRef.current) return;
+    if (!skills?.enabled) return;
+    if (!readinessPreflight) return;
+    const toolTied = (skills.skills ?? []).some(
+      (s) => Array.isArray(s.detectedTools) && s.detectedTools.length > 0
+    );
+    if (!toolTied) return;
+    skillsAutoStartedRef.current = true;
+    startSkillsReadiness(readinessPreflight).catch(() => {});
+  }, [readinessPreflight, skills, startSkillsReadiness]);
 
   const skillsSummary = useMemo(() => {
     const data = skills;
@@ -788,6 +1072,15 @@ export function AdminClient() {
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="secondary">
               <Link href="/">{t("common.back")}</Link>
+            </Button>
+            <Button
+              disabled={readinessRetesting}
+              onClick={() => retestAllReadiness()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              {readinessRetesting ? t("common.retesting_ellipsis") : t("common.retest")}
             </Button>
             <ThemeToggle />
           </div>
@@ -846,11 +1139,16 @@ export function AdminClient() {
                         data-testid="admin:provider-select"
                         id="admin:provider"
                       >
-                        <SelectValue
-                          placeholder={
-                            loading ? t("common.loading") : t("admin.providers.active.placeholder")
-                          }
+                        <ReadinessDot
+                          state={llmReadinessByProviderId[activeDraft] ?? "untested"}
                         />
+                        <SelectValue>
+                          {loading
+                            ? t("common.loading")
+                            : providerOptions.find((p) => p.id === activeDraft)?.name ??
+                              activeDraft ??
+                              t("admin.providers.active.placeholder")}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {providerOptions.map((p) => (
@@ -859,7 +1157,12 @@ export function AdminClient() {
                             key={p.id}
                             value={p.id}
                           >
-                            {p.name}
+                            <div className="flex items-center gap-2">
+                              <ReadinessDot
+                                state={llmReadinessByProviderId[p.id] ?? "untested"}
+                              />
+                              <span>{p.name}</span>
+                            </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -924,7 +1227,7 @@ export function AdminClient() {
                     <Select
                       disabled={webSearchLoading || webSearchSaving || !webSearchConfig?.enabled}
                       onValueChange={(value) =>
-                        setWebSearchDraft(value as "exa" | "brave")
+                        setWebSearchDraft(value)
                       }
                       value={webSearchDraft}
                     >
@@ -932,17 +1235,38 @@ export function AdminClient() {
                         data-testid="admin:web-search-provider-select"
                         id="admin:web-search-provider"
                       >
-                        <SelectValue
-                          placeholder={
-                            webSearchLoading
-                              ? t("common.loading")
-                              : t("admin.web_search.provider.placeholder")
+                        <ReadinessDot
+                          state={
+                            !webSearchConfig?.enabled
+                              ? "disabled"
+                              : webSearchReadinessByProviderId[webSearchDraft] ?? "untested"
                           }
                         />
+                        <SelectValue>
+                          {webSearchLoading
+                            ? t("common.loading")
+                            : (webSearchConfig?.providers ?? []).find(
+                                  (p) => p.id === webSearchDraft
+                                )?.label ??
+                                webSearchDraft ??
+                                t("admin.web_search.provider.placeholder")}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="exa">Exa</SelectItem>
-                        <SelectItem value="brave">Brave Search</SelectItem>
+                        {(webSearchConfig?.providers ?? []).map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <div className="flex items-center gap-2">
+                              <ReadinessDot
+                                state={
+                                  !webSearchConfig?.enabled
+                                    ? "disabled"
+                                    : webSearchReadinessByProviderId[p.id] ?? "untested"
+                                }
+                              />
+                              <span>{p.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -953,7 +1277,7 @@ export function AdminClient() {
                       webSearchLoading ||
                       webSearchSaving ||
                       !webSearchConfig?.enabled ||
-                      webSearchDraft === webSearchConfig.searchProvider
+                      webSearchDraft === webSearchConfig.selectedProviderId
                     }
                     onClick={() => saveWebSearchProvider()}
                     type="button"
@@ -967,16 +1291,6 @@ export function AdminClient() {
                     {t("admin.web_search.enabled")}:{" "}
                     <span className="font-medium">
                       {webSearchConfig.enabled ? t("common.yes") : t("common.no")}
-                    </span>{" "}
-                    · EXA_API_KEY:{" "}
-                    <span className="font-medium">
-                      {webSearchConfig.hasExaKey ? t("common.enabled") : t("common.disabled")}
-                    </span>{" "}
-                    · BRAVE_SEARCH_API:{" "}
-                    <span className="font-medium">
-                      {webSearchConfig.hasBraveKey
-                        ? t("common.enabled")
-                        : t("common.disabled")}
                     </span>
                   </div>
                 ) : null}
@@ -1565,6 +1879,13 @@ export function AdminClient() {
                       </div>
                       <div className="divide-y">
                         {(skills?.skills ?? []).map((s) => {
+                          const detectedTools = Array.isArray(s.detectedTools)
+                            ? s.detectedTools
+                            : [];
+                          const isToolTied = detectedTools.length > 0;
+                          const readinessState = skillReadinessByName[s.name] ?? "untested";
+                          const showReadinessDot =
+                            isToolTied && readinessState !== "not_applicable";
                           const activatedCount = skillsSummary.activatedCounts[s.name] ?? 0;
                           const activationLabel =
                             activatedCount === 0
@@ -1578,7 +1899,12 @@ export function AdminClient() {
                             <div key={s.name} className="px-3 py-2">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0">
-                                  <div className="truncate font-mono text-sm">{s.name}</div>
+                                  <div className="flex items-center gap-2">
+                                    {showReadinessDot ? (
+                                      <ReadinessDot state={readinessState} />
+                                    ) : null}
+                                    <div className="truncate font-mono text-sm">{s.name}</div>
+                                  </div>
                                   {s.sourceDir ? (
                                     <div className="mt-0.5 text-xs text-muted-foreground">
                                       {t("admin.skills.skill.root")}:{" "}
