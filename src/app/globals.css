@@ -220,4 +220,30 @@
   .composer-scale [data-testid="composer:stop"] {
     font-size: 0.875rem !important;
   }
+
+  /*
+    iOS Safari "Request Desktop Website" can trigger width-based breakpoints on phones.
+    Our app uses overflow-hidden on the shell; if the desktop grid is enabled on a phone,
+    the main column can end up off-screen and unreachable.
+
+    Fix structurally: force the mobile shell on touch-first devices (coarse pointer),
+    regardless of the reported viewport width.
+  */
+  @media (hover: none) and (pointer: coarse) {
+    .rc-shell-grid {
+      grid-template-columns: 1fr !important;
+    }
+
+    .rc-desktop-sidebar {
+      display: none !important;
+    }
+
+    .rc-mobile-header {
+      display: flex !important;
+    }
+
+    .rc-mobile-drawer {
+      display: grid !important;
+    }
+  }
 }
