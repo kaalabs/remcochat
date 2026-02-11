@@ -201,10 +201,10 @@ export const enMessages = {
   "admin.providers.notice.updated": "Active provider updated.",
   "admin.providers.description":
     "Switching is global and persistent for this server instance. Existing chats keep their stored model ids; RemcoChat clamps them to the active provider’s allowed models.",
-  "admin.web_search.title": "Web search provider",
+  "admin.web_search.title": "Search the Web",
   "admin.web_search.description":
     "Select the web search provider used for openai_compatible and xai models.",
-  "admin.web_search.provider.label": "Default provider",
+  "admin.web_search.provider.label": "Active provider",
   "admin.web_search.provider.placeholder": "Select a search provider",
   "admin.web_search.enabled": "Web tools enabled",
   "admin.web_search.notice.updated": "Web search provider updated to \"{provider}\".",
@@ -757,17 +757,17 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "admin.danger.placeholder": "Typ RESET",
   "admin.danger.reset": "Alle data resetten",
   "admin.page.subtitle": "Algemene instellingen voor deze RemcoChat-instantie",
-  "admin.providers.title": "Provider wisselen",
+  "admin.providers.title": "LLM Provider",
   "admin.providers.active.label": "Actieve provider",
   "admin.providers.active.placeholder": "Kies een provider",
   "admin.providers.current": "Huidig",
   "admin.providers.notice.updated": "Actieve provider bijgewerkt.",
   "admin.providers.description":
     "Wisselen is globaal en blijvend voor deze server-instantie. Bestaande chats behouden hun opgeslagen model-id’s; RemcoChat beperkt ze tot de toegestane modellen van de actieve provider.",
-  "admin.web_search.title": "Webzoekprovider",
+  "admin.web_search.title": "Zoeken op het Web",
   "admin.web_search.description":
     "Selecteer de webzoekprovider voor openai_compatible en xai modellen.",
-  "admin.web_search.provider.label": "Standaardprovider",
+  "admin.web_search.provider.label": "Actieve provider",
   "admin.web_search.provider.placeholder": "Kies een zoekprovider",
   "admin.web_search.enabled": "Web tools ingeschakeld",
   "admin.web_search.notice.updated": "Webzoekprovider bijgewerkt naar \"{provider}\".",

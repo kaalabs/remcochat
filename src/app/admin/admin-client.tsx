@@ -1,6 +1,5 @@
 "use client";
 
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
   ModelSelector,
   ModelSelectorContent,
@@ -31,8 +30,10 @@ import {
   CheckCircleIcon,
   CheckIcon,
   ChevronDownIcon,
+  RotateCwIcon,
   ShieldIcon,
   Sparkles,
+  XIcon,
   XCircleIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -485,13 +486,6 @@ export function AdminClient() {
     return providers?.providers ?? [];
   }, [providers]);
 
-  const activeProvider = useMemo(() => {
-    if (!providers) return null;
-    return (
-      providers.providers.find((p) => p.id === providers.activeProviderId) ?? null
-    );
-  }, [providers]);
-
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
 
@@ -571,7 +565,7 @@ export function AdminClient() {
     }
   };
 
-  const refreshInventory = async () => {
+  const refreshInventory = useCallback(async () => {
     if (inventoryLoading) return;
     setInventoryLoading(true);
     setInventoryError(null);
@@ -586,7 +580,7 @@ export function AdminClient() {
     } finally {
       setInventoryLoading(false);
     }
-  };
+  }, [inventoryLoading, loadInventory, t]);
 
   const setProviderQuery = (providerId: string, query: string) => {
     setFiltersByProviderId((prev) => ({
@@ -993,6 +987,7 @@ export function AdminClient() {
         startLlmReadiness(),
         startWebSearchReadiness(),
         startSkillsReadiness(pf),
+        refreshInventory(),
       ]);
     } finally {
       setReadinessRetesting(false);
@@ -1000,6 +995,7 @@ export function AdminClient() {
   }, [
     loadReadinessPreflight,
     readinessRetesting,
+    refreshInventory,
     startLlmReadiness,
     startSkillsReadiness,
     startWebSearchReadiness,
@@ -1070,19 +1066,33 @@ export function AdminClient() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild size="sm" variant="secondary">
-              <Link href="/">{t("common.back")}</Link>
+            <Button
+              aria-label={t("common.refresh")}
+              className="h-9 w-9"
+              disabled={readinessRetesting || inventoryLoading}
+              onClick={() => retestAllReadiness()}
+              size="icon"
+              title={t("common.refresh")}
+              type="button"
+              variant="outline"
+            >
+              <RotateCwIcon
+                className={cn("size-4", (readinessRetesting || inventoryLoading) && "animate-spin")}
+              />
             </Button>
             <Button
-              disabled={readinessRetesting}
-              onClick={() => retestAllReadiness()}
-              size="sm"
+              aria-label={t("common.back")}
+              asChild
+              className="h-9 w-9"
+              size="icon"
+              title={t("common.back")}
               type="button"
-              variant="secondary"
+              variant="outline"
             >
-              {readinessRetesting ? t("common.retesting_ellipsis") : t("common.retest")}
+              <Link href="/">
+                <XIcon className="size-4" />
+              </Link>
             </Button>
-            <ThemeToggle />
           </div>
         </header>
 
@@ -1167,17 +1177,6 @@ export function AdminClient() {
                         ))}
                       </SelectContent>
                     </Select>
-                    {activeProvider ? (
-                      <div className="text-xs text-muted-foreground">
-                        {t("admin.providers.current")}:{" "}
-                        <span className="font-medium">{activeProvider.name}</span> ·{" "}
-                        <span className="font-mono">
-                          {Array.from(
-                            new Set(activeProvider.models.map((m) => m.type))
-                          ).join(", ")}
-                        </span>
-                      </div>
-                    ) : null}
                   </div>
 
                   <Button
@@ -1190,9 +1189,6 @@ export function AdminClient() {
                   </Button>
                 </div>
 
-                <div className="text-xs text-muted-foreground">
-                  {t("admin.providers.description")}
-                </div>
               </CardContent>
             </Card>
 
@@ -1211,10 +1207,6 @@ export function AdminClient() {
                     {webSearchNotice}
                   </div>
                 ) : null}
-
-                <div className="text-sm text-muted-foreground">
-                  {t("admin.web_search.description")}
-                </div>
 
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div className="space-y-2">
@@ -1373,27 +1365,9 @@ export function AdminClient() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{t("admin.models.allowed.title")}</CardTitle>
-                  <Button
-                    disabled={inventoryLoading}
-                    onClick={() => refreshInventory()}
-                    size="sm"
-                    type="button"
-                    variant="secondary"
-                  >
-                    {inventoryLoading
-                      ? t("common.refreshing_ellipsis")
-                      : t("common.refresh")}
-                  </Button>
-                </div>
+                <CardTitle>{t("admin.models.allowed.title")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="text-sm text-muted-foreground">
-                  {t("admin.models.allowed.description.part1")} <code>config.toml</code>{" "}
-                  {t("admin.models.allowed.description.part2")}
-                </div>
-
                 {modelsError ? (
                   <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {modelsError}
@@ -1416,15 +1390,6 @@ export function AdminClient() {
                   <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
                 ) : inventory ? (
                   <div className="space-y-3">
-                    <div className="text-xs text-muted-foreground">
-                      {t("admin.models.allowed.inventory.config")}:{" "}
-                      <span className="font-mono">{inventory.configPath}</span> ·{" "}
-                      {t("admin.models.allowed.inventory.loaded")}:{" "}
-                      <span className="font-mono">{inventory.loadedAt}</span> ·{" "}
-                      {t("admin.models.allowed.inventory.modelsdev")}:{" "}
-                      <span className="font-mono">{inventory.modelsdevVersion}</span>
-                    </div>
-
                     <div className="text-xs text-muted-foreground">
                       {t("admin.models.allowed.inventory.hint")}
                     </div>
@@ -1465,7 +1430,10 @@ export function AdminClient() {
                               <span className="mr-2">{p.name}</span>
                               <span className="font-mono text-muted-foreground">{p.id}</span>{" "}
                               {isActive ? (
-                                <Badge className="ml-2" variant="secondary">
+                                <Badge
+                                  className="ml-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                                  variant="outline"
+                                >
                                   {t("common.active")}
                                 </Badge>
                               ) : null}{" "}
@@ -1720,6 +1688,15 @@ export function AdminClient() {
                           </details>
                         );
                       })}
+                    </div>
+
+                    <div className="text-xs text-muted-foreground">
+                      {t("admin.models.allowed.inventory.config")}:{" "}
+                      <span className="font-mono">{inventory.configPath}</span> ·{" "}
+                      {t("admin.models.allowed.inventory.loaded")}:{" "}
+                      <span className="font-mono">{inventory.loadedAt}</span> ·{" "}
+                      {t("admin.models.allowed.inventory.modelsdev")}:{" "}
+                      <span className="font-mono">{inventory.modelsdevVersion}</span>
                     </div>
                   </div>
                 ) : (
