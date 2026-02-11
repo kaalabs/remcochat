@@ -867,15 +867,6 @@ function TripsView({
 	                </div>
 	              </div>
 	            </div>
-	            {output.kind !== "trips.detail" ? (
-	              <div className={styles.detailSubline}>
-	                {tripDateLabel(selectedTrip, locale)
-	                  ? `${tripDateLabel(selectedTrip, locale)} • `
-	                  : ""}
-	                {selectedTrip.departureName} → {selectedTrip.arrivalName} •{" "}
-	                {transfersLabel(selectedTrip.transfers, t)}
-	              </div>
-	            ) : null}
 	            {renderTripTimeline(selectedTripWithDetails?.legs ?? [], i18n, {
 	              openStopsByDefault: output.kind === "trips.detail",
 	              showStopCountLabel: output.kind !== "trips.detail",
