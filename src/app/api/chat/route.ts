@@ -53,6 +53,7 @@ import {
   getWeatherForLocation,
   getWeatherForecastForLocation,
 } from "@/ai/weather";
+import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
 import { routeIntent } from "@/server/intent-router";
@@ -604,7 +605,7 @@ function uiWeatherResponse(input: {
       try {
         const output = await getWeatherForLocation({
           location: input.location,
-          forecastHours: 12,
+          forecastHours: WEATHER_HOURLY_FORECAST_HOURS,
         });
         writer.write({
           type: "tool-output-available",

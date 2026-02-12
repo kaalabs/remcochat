@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StaticMapPreview } from "@/components/static-map-preview";
+import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
 import { MapPin, Wind } from "lucide-react";
 import { createElement } from "react";
 
@@ -52,7 +53,7 @@ function formatNumber(value: number) {
 
 export function Weather(props: WeatherToolOutput) {
   const { locale, t } = useI18n();
-  const hourly = (props.hourly ?? []).slice(0, 12);
+  const hourly = (props.hourly ?? []).slice(0, WEATHER_HOURLY_FORECAST_HOURS);
   const currentIcon = iconForWeatherCode(props.current.weatherCode);
   const currentCondition = labelForWeatherCode(t, props.current.weatherCode);
 

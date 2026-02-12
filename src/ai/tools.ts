@@ -12,15 +12,19 @@ import {
   inferAgendaDescriptionFromUserText,
   pickAgendaDescriptionFromRecord,
 } from "@/ai/agenda-description";
+import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
 
 export const displayWeather = createTool({
   description:
-    "Display the current weather and the next 12 hours forecast for a location.",
+    `Display the current weather and the next ${WEATHER_HOURLY_FORECAST_HOURS} hours forecast for a location.`,
   inputSchema: z.object({
     location: z.string().describe("The location to get the weather for"),
   }),
   execute: async ({ location }) => {
-    return getWeatherForLocation({ location, forecastHours: 12 });
+    return getWeatherForLocation({
+      location,
+      forecastHours: WEATHER_HOURLY_FORECAST_HOURS,
+    });
   },
 });
 

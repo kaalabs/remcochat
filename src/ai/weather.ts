@@ -1,3 +1,5 @@
+import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
+
 export type WeatherToolOutput = {
   location: string;
   resolvedLocation: string;
@@ -269,7 +271,10 @@ export async function getWeatherForLocation(input: {
   const geo = await geocodeLocation(location);
   const forecastHours = Math.min(
     24,
-    Math.max(1, Math.floor(input.forecastHours ?? 12))
+    Math.max(
+      1,
+      Math.floor(input.forecastHours ?? WEATHER_HOURLY_FORECAST_HOURS)
+    )
   );
   const forecast = await fetchCurrentWeather({
     latitude: geo.latitude,

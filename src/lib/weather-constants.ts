@@ -1,0 +1,1 @@
+export const WEATHER_HOURLY_FORECAST_HOURS = 6;
