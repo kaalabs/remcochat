@@ -541,6 +541,17 @@ export async function routeOvNlCommand(input: {
           command: deterministicWithMissing,
         }
       : null;
+
+  const deterministicBoard =
+    deterministicWithMissing &&
+    (deterministicWithMissing.action === "departures.list" ||
+      deterministicWithMissing.action === "departures.window" ||
+      deterministicWithMissing.action === "arrivals.list");
+  if (deterministicBoard) {
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
+  }
+
   const router = getConfig().intentRouter;
   if (!router || !router.enabled) {
     if (deterministicSuccessResult) return deterministicSuccessResult;
