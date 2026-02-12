@@ -1,11 +1,12 @@
 import { createOvNlTools } from "@/ai/ov-nl-tools";
+import { OV_NL_CTX_RECON_MAX_LEN } from "@/lib/ov-nl-constants";
 import type { OvNlToolOutput } from "@/lib/types";
 import { z } from "zod";
 
 export const runtime = "nodejs";
 
 const BodySchema = z.object({
-  ctxRecon: z.string().trim().min(1).max(4000),
+  ctxRecon: z.string().trim().min(1).max(OV_NL_CTX_RECON_MAX_LEN),
   date: z.string().trim().min(1).max(64).optional(),
   lang: z.string().trim().min(2).max(12).optional(),
 });

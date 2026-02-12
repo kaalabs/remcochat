@@ -250,17 +250,46 @@ export async function nsTripDetail(input: {
   date?: string;
   lang: string;
 }): Promise<NsClientResult<Record<string, unknown>>> {
-  const response = await nsGetJson({
-    cfg: input.cfg,
-    path: "/api/v3/trips/trip",
-    query: {
-      ctxRecon: input.ctxRecon,
-      date: input.date,
-    },
-    headers: {
-      lang: input.lang,
-    },
-  });
+  const trimmedDate = typeof input.date === "string" ? input.date.trim() : "";
+  const dateOnlyCandidate =
+    trimmedDate && /^\d{4}-\d{2}-\d{2}t/i.test(trimmedDate) ? trimmedDate.slice(0, 10) : "";
+
+  const tryFetch = async (
+    date: string | undefined
+  ): Promise<{ ok: true; json: unknown; ttlSeconds: number } | { ok: false; error: OvNlClientError }> =>
+    nsGetJson({
+      cfg: input.cfg,
+      path: "/api/v3/trips/trip",
+      query: {
+        ctxRecon: input.ctxRecon,
+        ...(date ? { date } : {}),
+        lang: input.lang,
+      },
+      headers: {
+        "Accept-Language": input.lang,
+        lang: input.lang,
+      },
+    });
+
+  const candidates: Array<string | undefined> = [];
+  if (trimmedDate) candidates.push(trimmedDate);
+  if (dateOnlyCandidate && dateOnlyCandidate !== trimmedDate) candidates.push(dateOnlyCandidate);
+  candidates.push(undefined);
+
+  let response = await tryFetch(candidates[0]);
+  for (let i = 1; i < candidates.length; i += 1) {
+    if (response.ok) break;
+    if (!trimmedDate) break;
+
+    const status = response.error.status;
+    // Retry only when upstream explicitly rejects the date parameter (bad request).
+    // Treat 404 as terminal to avoid extra calls for invalid/expired ctxRecon values.
+    const canRetry = response.error.code === "upstream_http_error" && status === 400;
+    if (!canRetry) break;
+
+    response = await tryFetch(candidates[i]);
+  }
+
   if (!response.ok) return response;
   const decoded = decodeTripDetailJson(response.json);
   if (!decoded.ok) return { ok: false, error: decoded.error };

@@ -670,11 +670,6 @@ function TripsView({
       [ctxRecon]: { state: "loading" },
     }));
 
-    const date =
-      selectedTrip?.departureActualDateTime ||
-      selectedTrip?.departurePlannedDateTime ||
-      undefined;
-
     try {
       const headers: Record<string, string> = { "content-type": "application/json" };
       const adminToken = readLanAdminToken();
@@ -684,7 +679,6 @@ function TripsView({
         headers,
         body: JSON.stringify({
           ctxRecon,
-          ...(date ? { date } : {}),
           lang: uiLanguage,
         }),
       });

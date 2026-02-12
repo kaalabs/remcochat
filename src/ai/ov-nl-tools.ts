@@ -21,6 +21,7 @@ import {
   applyTripsTextHeuristicsToArgs,
   extractRouteFromText,
 } from "@/lib/ov-nl-route-heuristics";
+import { OV_NL_CTX_RECON_MAX_LEN } from "@/lib/ov-nl-constants";
 import type {
   OvNlArrival,
   OvNlDeparture,
@@ -219,7 +220,7 @@ const TripsSearchArgsSchema = z
 
 const TripsDetailArgsSchema = z
   .object({
-    ctxRecon: z.string().trim().min(1).max(4000),
+    ctxRecon: z.string().trim().min(1).max(OV_NL_CTX_RECON_MAX_LEN),
     date: DateTimeInputSchema.optional(),
     lang: z.string().trim().min(2).max(12).optional(),
     intent: OvNlIntentSchema.optional(),
@@ -294,7 +295,7 @@ const OvNlGatewayToolWireArgsSchema = z
     via: LooseString(120),
     searchForArrival: z.boolean().optional(),
     date: LooseString(64),
-    ctxRecon: LooseString(4000),
+    ctxRecon: LooseString(OV_NL_CTX_RECON_MAX_LEN),
 
     id: LooseString(4000),
     train: z.number().int().min(1).max(99_999).optional(),

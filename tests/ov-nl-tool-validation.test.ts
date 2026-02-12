@@ -1437,6 +1437,172 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   );
 });
 
+test("ovNlGateway trips.detail accepts large ctxRecon values", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  const ctxRecon = `CTX-${"x".repeat(5000)}`;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v3/trips/trip")) {
+      assert.equal(url.searchParams.get("ctxRecon"), ctxRecon);
+      return new Response(
+        JSON.stringify({
+          uid: "trip-detail-large-1",
+          ctxRecon,
+          transfers: 0,
+          plannedDurationInMinutes: 10,
+          optimal: true,
+          realtime: false,
+          legs: [
+            {
+              idx: "0",
+              travelType: "PUBLIC_TRANSIT",
+              journeyDetailRef: "journey-large-1",
+              product: { displayName: "SPR 9999" },
+              direction: "Amsterdam Centraal",
+              cancelled: false,
+              origin: { name: "Almere Muziekwijk", plannedDateTime: "2026-02-12T20:00:00+01:00" },
+              destination: { name: "Amsterdam Centraal", plannedDateTime: "2026-02-12T20:20:00+01:00" },
+              stops: [],
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json", "cache-control": "max-age=10" },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const resultUnknown = await ovNlGateway.execute({
+    action: "trips.detail",
+    args: { ctxRecon },
+  });
+  assert.ok(resultUnknown && typeof resultUnknown === "object");
+  const result = resultUnknown as { kind: string; trip?: { ctxRecon?: string } };
+  assert.equal(result.kind, "trips.detail");
+  assert.equal(result.trip?.ctxRecon, ctxRecon);
+});
+
+test("ovNlGateway trips.detail retries without date when upstream rejects date", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.ov_nl]
+enabled = true
+access = "localhost"
+base_urls = ["https://gateway.apiportal.ns.nl/reisinformatie-api"]
+subscription_key_env = "NS_APP_SUBSCRIPTION_KEY"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
+
+  const ctxRecon = "ctx-retry-1";
+  let callCount = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+
+    if (url.pathname.endsWith("/api/v3/trips/trip")) {
+      callCount += 1;
+      if (url.searchParams.has("date")) {
+        return new Response(
+          JSON.stringify({ message: "Invalid date parameter." }),
+          { status: 400, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          uid: "trip-detail-retry-1",
+          ctxRecon,
+          transfers: 0,
+          plannedDurationInMinutes: 10,
+          optimal: true,
+          realtime: false,
+          legs: [],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json", "cache-control": "max-age=10" },
+        }
+      );
+    }
+
+    return new Response(JSON.stringify({ message: "not found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (
+    tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>
+  ).ovNlGateway;
+  assert.ok(ovNlGateway);
+
+  const resultUnknown = await ovNlGateway.execute({
+    action: "trips.detail",
+    args: {
+      ctxRecon,
+      date: "2026-02-12T23:30:00+01:00",
+    },
+  });
+  assert.ok(resultUnknown && typeof resultUnknown === "object");
+  const result = resultUnknown as { kind: string; trip?: { ctxRecon?: string } };
+  assert.equal(result.kind, "trips.detail");
+  assert.equal(result.trip?.ctxRecon, ctxRecon);
+  assert.ok(callCount >= 2);
+});
+
 test("ovNlGateway stations.search ignores irrelevant invalid date fields", async () => {
   const configPath = writeTempConfigToml(`
 version = 2
