@@ -191,9 +191,9 @@ export function listChats(profileId: string): Chat[] {
        FROM chats
        LEFT JOIN chat_pins
          ON chat_pins.chat_id = chats.id
-        AND chat_pins.profile_id = ?
+       AND chat_pins.profile_id = ?
        WHERE chats.profile_id = ? AND chats.deleted_at IS NULL
-       ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC`
+       ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC, chats.created_at DESC, chats.id DESC`
     )
     .all(profileId, profileId) as ChatRow[];
 
@@ -239,7 +239,7 @@ export function listAccessibleChats(profileId: string): Array<Chat & {
             chats.profile_id = ?
             OR chat_folder_members.profile_id = ?
           )
-        ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC
+        ORDER BY (chat_pins.pinned_at IS NOT NULL) DESC, chat_pins.pinned_at DESC, chats.updated_at DESC, chats.created_at DESC, chats.id DESC
       `
     )
     .all(profileId, profileId, profileId, profileId, profileId) as AccessibleChatRow[];

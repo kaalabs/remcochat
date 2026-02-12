@@ -2446,11 +2446,10 @@ export async function POST(req: Request) {
     });
   }
 
-  const ovNlPolicy = computeOvNlRoutingPolicy({
-    routedIntent,
-    explicitSkillName: skillInvocation.explicitSkillName,
-    activatedSkillNames: effectiveChat.activatedSkillNames,
-  });
+    const ovNlPolicy = computeOvNlRoutingPolicy({
+      routedIntent,
+      explicitSkillName: skillInvocation.explicitSkillName,
+    });
 
   const systemParts: string[] = [
     buildSystemPrompt({
