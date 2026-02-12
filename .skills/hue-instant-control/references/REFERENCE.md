@@ -59,6 +59,8 @@ Only use Bash when:
 - tool calling is unavailable, or
 - Hue v2 tools are disabled by config / access policy.
 
+Always Report back to the user why you needed to use Bash fallback.
+
 Prefer executing the bundled scripts in `./.skills/hue-instant-control/scripts/`:
 
 - `health_check.sh` → base URL selection + `/readyz` check
@@ -78,6 +80,8 @@ Prefer executing the bundled scripts in `./.skills/hue-instant-control/scripts/`
   - `X-API-Key: dev-key`
 
 Important: if you are executing via a sandboxed Bash tool, `localhost` refers to the sandbox, not the host machine.
+
+Always perform an initial gateway health_check when this skill is activated by the user and report back to the user either "Hue gateway is healthy" or "Hue gateway is unhealthy".
 
 ### Auth header selection (bash)
 
