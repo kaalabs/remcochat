@@ -1101,7 +1101,6 @@ export function AdminClient() {
     const discovered = data.skills?.length ?? 0;
     const invalid = data.invalid?.length ?? 0;
     const collisions = data.collisions?.length ?? 0;
-    const activatedChats = data.usage?.chatsWithAnyActivatedSkills ?? 0;
     const scannedAt =
       typeof data.scannedAt === "number" ? new Date(data.scannedAt) : null;
     return {
@@ -1109,7 +1108,6 @@ export function AdminClient() {
       discovered,
       invalid,
       collisions,
-      activatedChats,
       scannedAt,
       scanRoots: data.scanRoots ?? [],
       scanRootsMeta: data.scanRootsMeta ?? [],
@@ -1788,14 +1786,6 @@ export function AdminClient() {
                       <Badge variant="outline">
                         {t("admin.skills.summary.collisions")}: {skillsSummary.collisions}
                       </Badge>
-                      {skills?.usage ? (
-                        <Badge variant="outline">
-                          {t("admin.skills.summary.chats_with_activated")}:{" "}
-                          {skillsSummary.activatedChats}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">{t("admin.skills.summary.usage_admin_only")}</Badge>
-                      )}
                     </div>
 
                     <div className="text-sm text-muted-foreground">
