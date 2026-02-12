@@ -118,6 +118,28 @@ test("includes agenda tool guidance when tools are enabled", () => {
   assert.match(prompt, /displayAgenda/);
 });
 
+test("includes OV NL guidance and disallow rule when ovNlGateway is not allowed for the message", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryEnabled: false,
+    memoryLines: [],
+    isTemporary: false,
+    toolsEnabled: true,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+    ovNlToolsEnabled: true,
+    ovNlToolAllowed: false,
+    ovNlToolConfidence: 0.2,
+  });
+
+  assert.match(prompt, /OV NL tool \(ovNlGateway\) is enabled for this chat\./);
+  assert.match(prompt, /do NOT call ovNlGateway/i);
+});
+
 test("omits web tool guidance when disabled", () => {
   const prompt = buildSystemPrompt({
     profileInstructions: "",

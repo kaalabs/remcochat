@@ -4286,7 +4286,7 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
 
   const ovNlGateway = createTool({
     description:
-      "Gateway for Dutch rail (NS) reisinformatie. Supports stations, departures, arrivals, trips, journey details, and disruptions with normalized output.",
+      "Gateway for Dutch rail (NS) live travel information via NS Reisinformatie. Use this for stations, departure/arrival boards, trips between stations, journey details, and disruptions. Do NOT use this for walking/driving directions, general travel planning (flights/hotels/itineraries), or vague location phrases like 'my house'. If the user intent is unclear or required route/station details are missing, ask one concise clarification question instead of calling ovNlGateway.",
     inputSchema: OvNlGatewayToolWireInputSchema,
     execute: async (toolInput): Promise<OvNlToolOutput> => {
       const action = asText((toolInput as { action?: unknown }).action) as OvNlToolAction;

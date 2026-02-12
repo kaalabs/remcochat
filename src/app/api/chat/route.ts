@@ -56,7 +56,7 @@ import {
 import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
-import { routeIntent } from "@/server/intent-router";
+import { OV_NL_ROUTER_MIN_CONFIDENCE, routeIntent, type IntentRoute } from "@/server/intent-router";
 import { routeAgendaCommand } from "@/server/agenda-intent";
 import { parseMemoryAddCommand, parseMemorizeDecision } from "@/server/memory-commands";
 import { getConfig } from "@/server/config";
@@ -79,11 +79,8 @@ import {
   stripExplicitSkillInvocationFromMessages,
 } from "@/server/skills/explicit-invocation";
 import { shouldForceMemoryAnswerTool } from "@/server/memory-answer-routing";
-import {
-  isExplicitWebSearchRequest,
-  shouldPreferOvNlGatewayTool,
-} from "@/server/ov-nl-intent";
 import { runOvFromUserText } from "@/server/ov/runner";
+import { computeOvNlRoutingPolicy } from "@/server/ov/ov-nl-routing-policy";
 import {
   collectUIMessageChunks,
   createUIMessageStreamWithDeferredContinuation,
@@ -885,7 +882,6 @@ function uiOvNlResponse(input: {
 async function tryOvIntentFastPath(input: {
   enabled: boolean;
   shouldTry: boolean;
-  explicitWebSearchRequested: boolean;
   explicitSkillActivationOnly: boolean;
   executeOvGateway: ((input: unknown) => Promise<unknown>) | null;
   text: string;
@@ -897,7 +893,6 @@ async function tryOvIntentFastPath(input: {
   if (!input.enabled) return null;
   if (!input.shouldTry) return null;
   if (input.explicitSkillActivationOnly) return null;
-  if (input.explicitWebSearchRequested) return null;
   if (typeof input.executeOvGateway !== "function") return null;
 
   const routed = await runOvFromUserText({
@@ -1038,6 +1033,7 @@ export async function POST(req: Request) {
   const directMemoryCandidate = parseMemoryAddCommand(lastUserText);
   const canRouteIntent = !isRegenerate && memorizeDecision == null;
   const routerContext = lastAssistantContext(body.messages);
+  let routedIntent: IntentRoute | null = null;
 
   const needsViewerTimeZoneForAgenda = (command: AgendaActionInput) => {
     if (viewerTimeZone) return false;
@@ -1098,6 +1094,7 @@ export async function POST(req: Request) {
         console.error("Intent router failed", err);
         routed = { intent: "none", confidence: 0 };
       }
+      routedIntent = routed;
 
       if (routed && routed.intent === "memory_add") {
         return uiTextResponse({
@@ -1371,11 +1368,11 @@ export async function POST(req: Request) {
         typeof body.temporarySessionId === "string" ? body.temporarySessionId.trim() : "",
       turnUserMessageId: lastUserMessageId || "",
     });
-    const forceOvNlGatewayTool = shouldPreferOvNlGatewayTool({
-      text: lastUserTextFromMessages(skillInvocation.messages),
-      ovNlEnabled: ovNlTools.enabled,
+    const ovNlPolicy = computeOvNlRoutingPolicy({
+      routedIntent,
       explicitSkillName: skillInvocation.explicitSkillName,
     });
+    const forceOvNlGatewayTool = ovNlPolicy.forceFastPath;
     const ovGatewayExecute = (
       ovNlTools.tools as {
         ovNlGateway?: { execute?: (input: unknown) => Promise<unknown> };
@@ -1384,9 +1381,6 @@ export async function POST(req: Request) {
     const ovFastPath = await tryOvIntentFastPath({
       enabled: ovNlTools.enabled,
       shouldTry: !explicitBashCommand && forceOvNlGatewayTool,
-      explicitWebSearchRequested: isExplicitWebSearchRequest(
-        lastUserTextFromMessages(skillInvocation.messages)
-      ),
       explicitSkillActivationOnly,
       executeOvGateway: typeof ovGatewayExecute === "function" ? ovGatewayExecute : null,
       text: lastUserTextFromMessages(skillInvocation.messages),
@@ -1425,6 +1419,9 @@ export async function POST(req: Request) {
       bashToolsProvider: config.bashTools?.provider,
       bashToolsRuntime: config.bashTools?.sandbox?.runtime,
       attachmentsEnabled: config.attachments.enabled,
+      ovNlToolsEnabled: ovNlTools.enabled,
+      ovNlToolAllowed: ovNlPolicy.toolAllowedForPrompt,
+      ovNlToolConfidence: ovNlPolicy.routerConfidence ?? undefined,
     });
 
     if (skillInvocation.explicitSkillName) {
@@ -2000,6 +1997,7 @@ export async function POST(req: Request) {
       console.error("Intent router failed", err);
       routed = { intent: "none", confidence: 0 };
     }
+    routedIntent = routed;
 
       if (routed && routed.intent === "memory_add") {
         if (!profile.memoryEnabled) {
@@ -2448,6 +2446,12 @@ export async function POST(req: Request) {
     });
   }
 
+  const ovNlPolicy = computeOvNlRoutingPolicy({
+    routedIntent,
+    explicitSkillName: skillInvocation.explicitSkillName,
+    activatedSkillNames: effectiveChat.activatedSkillNames,
+  });
+
   const systemParts: string[] = [
     buildSystemPrompt({
       isTemporary: false,
@@ -2466,6 +2470,9 @@ export async function POST(req: Request) {
       bashToolsProvider: config.bashTools?.provider,
       bashToolsRuntime: config.bashTools?.sandbox?.runtime,
       attachmentsEnabled: config.attachments.enabled,
+      ovNlToolsEnabled: ovNlTools.enabled,
+      ovNlToolAllowed: ovNlPolicy.toolAllowedForPrompt,
+      ovNlToolConfidence: ovNlPolicy.routerConfidence ?? undefined,
     }),
   ];
 
@@ -2585,12 +2592,7 @@ export async function POST(req: Request) {
   const explicitBashCommand = bashTools.enabled
     ? extractExplicitBashCommand(lastUserText)
     : null;
-  const forceOvNlGatewayTool = shouldPreferOvNlGatewayTool({
-    text: lastUserTextFromMessages(skillInvocation.messages),
-    ovNlEnabled: ovNlTools.enabled,
-    explicitSkillName: skillInvocation.explicitSkillName,
-    activatedSkillNames: effectiveChat.activatedSkillNames,
-  });
+  const forceOvNlGatewayTool = ovNlPolicy.forceFastPath;
   const ovGatewayExecute = (
     ovNlTools.tools as {
       ovNlGateway?: { execute?: (input: unknown) => Promise<unknown> };
@@ -2599,9 +2601,6 @@ export async function POST(req: Request) {
   const ovFastPath = await tryOvIntentFastPath({
     enabled: ovNlTools.enabled,
     shouldTry: !forceMemoryAnswerTool && !explicitBashCommand && forceOvNlGatewayTool,
-    explicitWebSearchRequested: isExplicitWebSearchRequest(
-      lastUserTextFromMessages(skillInvocation.messages)
-    ),
     explicitSkillActivationOnly: isExplicitSkillActivationOnlyPrompt({
       messages: skillInvocation.messages,
       explicitSkillName: skillInvocation.explicitSkillName,
