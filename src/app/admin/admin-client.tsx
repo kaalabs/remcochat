@@ -32,6 +32,7 @@ import {
   ChevronDownIcon,
   FilterIcon,
   ListIcon,
+  MessageCircleIcon,
   RotateCcwIcon,
   RotateCwIcon,
   SaveIcon,
@@ -399,8 +400,12 @@ export function AdminClient() {
     return (await res.json()) as ModelsInventoryResponse;
   }, [t]);
 
-  const loadSkills = useCallback(async () => {
-    const res = await fetch("/api/skills", { cache: "no-store", headers: buildAdminHeaders() });
+  const loadSkills = useCallback(async (options?: { rescan?: boolean }) => {
+    const rescanParam = options?.rescan ? "?rescan=1" : "";
+    const res = await fetch(`/api/skills${rescanParam}`, {
+      cache: "no-store",
+      headers: buildAdminHeaders(),
+    });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as { error?: string } | null;
       throw new Error(json?.error || t("error.admin.skills_load_failed"));
@@ -803,7 +808,7 @@ export function AdminClient() {
     setSkillsLoading(true);
     setSkillsError(null);
     try {
-      await loadSkills();
+      await loadSkills({ rescan: true });
     } catch (err) {
       if (skillsLoadRunIdRef.current !== runId) return;
       setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
@@ -1741,14 +1746,6 @@ export function AdminClient() {
                       })}
                     </div>
 
-                    <div className="text-xs text-muted-foreground">
-                      {t("admin.models.allowed.inventory.config")}:{" "}
-                      <span className="font-mono">{inventory.configPath}</span> ·{" "}
-                      {t("admin.models.allowed.inventory.loaded")}:{" "}
-                      <span className="font-mono">{inventory.loadedAt}</span> ·{" "}
-                      {t("admin.models.allowed.inventory.modelsdev")}:{" "}
-                      <span className="font-mono">{inventory.modelsdevVersion}</span>
-                    </div>
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">
@@ -1911,14 +1908,6 @@ export function AdminClient() {
                           const showReadinessDot =
                             isToolTied && readinessState !== "not_applicable";
                           const activatedCount = skillsSummary.activatedCounts[s.name] ?? 0;
-                          const activationLabel =
-                            activatedCount === 0
-                              ? t("admin.skills.activation.not_activated")
-                              : activatedCount === 1
-                                ? t("admin.skills.activation.activated_one")
-                                : t("admin.skills.activation.activated_other", {
-                                    count: activatedCount,
-                                  });
                           return (
                             <div key={s.name} className="px-3 py-2">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1939,14 +1928,15 @@ export function AdminClient() {
                                 <div className="flex shrink-0 items-center gap-2">
                                   {skills?.usage ? (
                                     <Badge
-                                      className={
-                                        activatedCount > 0
-                                          ? undefined
-                                          : "border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
-                                      }
-                                      variant={activatedCount > 0 ? "secondary" : "outline"}
+                                      title={t("admin.skills.activation.activated_other", {
+                                        count: activatedCount,
+                                      })}
+                                      variant="secondary"
                                     >
-                                      {activationLabel}
+                                      <MessageCircleIcon className="size-3.5" />
+                                      <span className="font-mono tabular-nums">
+                                        {activatedCount}
+                                      </span>
                                     </Badge>
                                   ) : (
                                     <Badge

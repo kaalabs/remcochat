@@ -1,4 +1,4 @@
-import { getSkillsRegistry } from "@/server/skills/runtime";
+import { getSkillsRegistry, rescanSkillsRegistry } from "@/server/skills/runtime";
 import { isRequestAllowedByAdminPolicy } from "@/server/request-auth";
 import { redactSkillsRegistrySnapshotForPublic } from "@/server/skills/redact";
 import { getSkillsUsageSummary } from "@/server/skills/usage";
@@ -50,7 +50,11 @@ function detectToolsBySkillName(snapshot: { skills?: Array<{ name: string; skill
 }
 
 export function GET(req: Request) {
-  const registry = getSkillsRegistry();
+  const isAdmin = isRequestAllowedByAdminPolicy(req);
+  const url = new URL(req.url);
+  const forceRescanRaw = String(url.searchParams.get("rescan") ?? "").toLowerCase();
+  const forceRescan = forceRescanRaw === "1" || forceRescanRaw === "true";
+  const registry = forceRescan && isAdmin ? rescanSkillsRegistry() : getSkillsRegistry();
   if (!registry) {
     return Response.json({
       enabled: false,
@@ -60,7 +64,6 @@ export function GET(req: Request) {
 
   const snapshot = registry.snapshot();
   const depsByName = detectToolsBySkillName(snapshot);
-  const isAdmin = isRequestAllowedByAdminPolicy(req);
 
   if (!isAdmin) {
     const redacted = redactSkillsRegistrySnapshotForPublic(snapshot) as unknown as {
