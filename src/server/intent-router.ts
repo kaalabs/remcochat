@@ -20,9 +20,15 @@ export type IntentRoute =
       confidence: number;
     }
   | {
+      intent: "ov_nl";
+      confidence: number;
+    }
+  | {
       intent: "none";
       confidence: number;
     };
+
+export const OV_NL_ROUTER_MIN_CONFIDENCE = 0.9;
 
 const IntentSchema = z.object({
   intent: z.enum([
@@ -31,6 +37,7 @@ const IntentSchema = z.object({
     "weather_current",
     "weather_forecast",
     "agenda",
+    "ov_nl",
   ]),
   confidence: z.number().min(0).max(1),
   memory_candidate: z.string().optional().default(""),
@@ -42,12 +49,16 @@ const ROUTER_PROMPT = [
   "You are RemcoChat's intent router. Classify ONLY the latest user message.",
   "You may be given brief context about the prior assistant response or tool usage; use it only to interpret follow-up commands.",
   "The user message may be in any language. Classify based on meaning, not keyword matching.",
-  "Choose one intent: none | memory_add | weather_current | weather_forecast | agenda.",
+  "Choose one intent: none | memory_add | weather_current | weather_forecast | agenda | ov_nl.",
   "Only set intent when you are confident; otherwise choose none.",
   "If the user explicitly asks to memorize/remember/save/store something in memory, choose intent=memory_add and extract the memory_candidate (omit the command phrase). Set confidence high (>=0.85) for clear memory requests.",
   "Use memory_add only when the user is asking to store/remember new info, not when they are asking a question about existing memory.",
   "If the user is asking to save a quick note (note this, jot this down, make a note), choose intent=none.",
   "If the user is asking to add, change, delete, share, or view agenda/calendar/schedule items (including time windows like 'coming week' / 'next week'), choose intent=agenda.",
+  "If the user is asking for Dutch rail / NS live travel info (stations, departure/arrival boards, trips between stations, platforms/tracks, disruptions/delays/cancellations), choose intent=ov_nl.",
+  "Use ov_nl only when the user wants Dutch rail live travel information that should be answered via the ovNlGateway tool.",
+  "If the user is doing general travel planning, asking for walking/driving directions, talking about an address (e.g. 'my house'), or just mentioning the Netherlands ('NL') without a concrete rail request, choose intent=none.",
+  "If context indicates the last_tool was ovNlGateway and the user sends a short follow-up refinement (later/earlier, fewer transfers, direct-only, change from/to), choose intent=ov_nl.",
   "If intent=memory_add, extract a clean memory_candidate that is self-contained and includes context (who/what/why, include relationships/time if stated).",
   "Avoid single-word or context-free fragments; if the message lacks context, choose intent=none.",
   "If intent=weather_current or weather_forecast, extract the location name.",
@@ -64,6 +75,12 @@ const ROUTER_PROMPT = [
   '- "wat is het weer in amsterdam?" -> weather_current',
   '- "note this: buy milk" -> none',
   '- "weather in amsterdam" -> weather_current',
+  '- "wat zijn de vertrektijden op utrecht centraal?" -> ov_nl',
+  '- "van amsterdam centraal naar utrecht centraal vandaag" -> ov_nl',
+  '- "zijn er storingen tussen rotterdam en den haag?" -> ov_nl',
+  '- "walk" -> none',
+  '- "NL" -> none',
+  '- "my house" -> none',
   "Return JSON only.",
 ].join("\n");
 
@@ -122,7 +139,6 @@ export async function routeIntent(input: {
   if (confidence < router.minConfidence) {
     return { intent: "none", confidence };
   }
-
   switch (object.intent) {
     case "memory_add": {
       const memoryCandidate = String(object.memory_candidate ?? "").trim();
@@ -141,6 +157,8 @@ export async function routeIntent(input: {
     }
     case "agenda":
       return { intent: "agenda", confidence };
+    case "ov_nl":
+      return { intent: "ov_nl", confidence };
     default:
       return { intent: "none", confidence };
   }

@@ -22,9 +22,11 @@ const BOARD_WINDOW_PATTERNS = [
 ] as const;
 
 const BOARD_STATION_PATTERNS = [
+  /\bvanaf\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
   /\bvan\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
   /\bop\s+station\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
   /\bstation\s+(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
+  /\bvanaf\s+(?!\d{1,2}(?::|\.)\d{2}\b)(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
   /\bvan\s+(?!\d{1,2}(?::|\.)\d{2}\b)(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
   /\bop\s+(?!\d{1,2}(?::|\.)\d{2}\b)(.+?)(?=$|[.?!,;]|\s+\b(?:tussen|om|naar|met|zonder|voor|for|from|to|between|arrivals?|departures?|vertrek(?:ken|bord|tijden?)?|aankomst(?:en|bord)?|show|toon|geef|laat|zien|please)\b)/i,
 ] as const;

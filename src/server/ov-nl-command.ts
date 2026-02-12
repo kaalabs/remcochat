@@ -552,6 +552,13 @@ export async function routeOvNlCommand(input: {
     if (deterministicMissingResult) return deterministicMissingResult;
   }
 
+  const deterministicTripsSearch =
+    deterministicWithMissing && deterministicWithMissing.action === "trips.search";
+  if (deterministicTripsSearch) {
+    if (deterministicSuccessResult) return deterministicSuccessResult;
+    if (deterministicMissingResult) return deterministicMissingResult;
+  }
+
   const router = getConfig().intentRouter;
   if (!router || !router.enabled) {
     if (deterministicSuccessResult) return deterministicSuccessResult;

@@ -15,6 +15,9 @@ export function buildSystemPrompt(input: {
   bashToolsProvider?: string;
   bashToolsRuntime?: string;
   attachmentsEnabled: boolean;
+  ovNlToolsEnabled?: boolean;
+  ovNlToolAllowed?: boolean;
+  ovNlToolConfidence?: number;
 }) {
   const clampRevision = (value: number) => {
     if (!Number.isFinite(value)) return 1;
@@ -122,6 +125,24 @@ export function buildSystemPrompt(input: {
           'If the user asks to add, update, delete, share, or list agenda items, you MUST call the "displayAgenda" tool and DO NOT output any other text unless required details are missing.',
           'For agenda listing, use range.kind = today | tomorrow | this_week | this_month | next_n_days (with days).',
           "If the user just says 'show my agenda' without a window, default to next_n_days with days=30.",
+          ...(input.ovNlToolsEnabled
+            ? [
+                "OV NL tool (ovNlGateway) is enabled for this chat.",
+                "Use ovNlGateway ONLY for Dutch rail / NS live travel info (stations, departure/arrival boards, trips between stations, disruptions). Do not call it speculatively.",
+                ...(input.ovNlToolAllowed === false
+                  ? ["For this user message, do NOT call ovNlGateway."]
+                  : input.ovNlToolAllowed === true
+                    ? [
+                        `ovNlGateway is allowed for this user message (router_confidence=${Number.isFinite(
+                          input.ovNlToolConfidence ?? NaN
+                        )
+                          ? String(input.ovNlToolConfidence)
+                          : "unknown"}).`,
+                        "If required details (station/from/to) are missing, ask one concise clarification question and do not call ovNlGateway yet.",
+                      ]
+                    : []),
+              ]
+            : []),
           ...(input.webToolsEnabled
             ? [
                 [
