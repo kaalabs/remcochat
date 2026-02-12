@@ -94,6 +94,12 @@ export const enMessages = {
   "tool.status.denied": "Denied",
 
   "theme.toggle.aria": "Toggle theme",
+  "theme.toggle.title": "Toggle light/dark",
+  "theme.menu.aria": "Select theme",
+  "theme.menu.title": "Theme",
+  "theme.mode.system": "System",
+  "theme.mode.light": "Light",
+  "theme.mode.dark": "Dark",
 
   "model.label": "Model",
   "model.select.title": "Select model",
@@ -657,6 +663,12 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "tool.status.denied": "Geweigerd",
 
   "theme.toggle.aria": "Thema wisselen",
+  "theme.toggle.title": "Licht/donker wisselen",
+  "theme.menu.aria": "Thema kiezen",
+  "theme.menu.title": "Thema",
+  "theme.mode.system": "Systeem",
+  "theme.mode.light": "Licht",
+  "theme.mode.dark": "Donker",
 
   "model.label": "Model",
   "model.select.title": "Model kiezen",

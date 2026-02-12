@@ -2776,6 +2776,14 @@ export function HomeClient({
     window.setTimeout(() => focusComposer({ toEnd: true }), 0);
   }, [focusComposer]);
 
+  const setDesktopSidebarCollapsedWithComposerFocus = useCallback(
+    (collapsed: boolean) => {
+      setDesktopSidebarCollapsed(collapsed);
+      window.setTimeout(() => focusComposer({ toEnd: true }), 0);
+    },
+    [focusComposer]
+  );
+
   const renderSidebar = (mode: "desktop" | "drawer") => {
 	    const closeIfDrawer = () => {
 	      if (mode !== "drawer") return;
@@ -2820,7 +2828,7 @@ export function HomeClient({
                 aria-pressed={!desktopSidebarCollapsed}
                 className="h-9 w-9"
                 data-testid="sidebar:desktop-toggle"
-                onClick={() => setDesktopSidebarCollapsed(true)}
+                onClick={() => setDesktopSidebarCollapsedWithComposerFocus(true)}
                 title={t("sidebar.collapse.aria")}
                 type="button"
                 variant="outline"
@@ -3887,6 +3895,7 @@ export function HomeClient({
   const desktopGridStyle = {
     "--rc-desktop-sidebar-cols": desktopSidebarColumns,
   } as CSSProperties;
+  const chatColumnMaxWidthClass = desktopSidebarCollapsed ? "max-w-none" : "max-w-5xl";
 
   return (
 	    <div className="h-dvh w-full overflow-hidden bg-background text-foreground">
@@ -3955,7 +3964,7 @@ export function HomeClient({
                       aria-label={t("sidebar.expand.aria")}
                       className="h-9 w-9"
                       data-testid="sidebar:desktop-toggle"
-                      onClick={() => setDesktopSidebarCollapsed(false)}
+                      onClick={() => setDesktopSidebarCollapsedWithComposerFocus(false)}
                       title={t("sidebar.expand.aria")}
                       type="button"
                       variant="outline"
@@ -4068,7 +4077,13 @@ export function HomeClient({
             resize="smooth"
           >
             <StickToBottom.Content className="w-full py-4 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:py-6 sm:pl-[max(1.375rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:py-8 md:pl-[max(1.75rem,env(safe-area-inset-left,0px))] md:pr-[max(2rem,env(safe-area-inset-right,0px))]">
-              <div className="mr-auto ml-1 flex w-[calc(100%-0.25rem)] max-w-5xl flex-col gap-6 sm:ml-2 sm:w-[calc(100%-0.5rem)] md:ml-2.5 md:w-[calc(100%-0.625rem)] lg:ml-3 lg:w-[calc(100%-0.75rem)]">
+              <div
+                className={
+                  "mr-auto ml-1 flex w-[calc(100%-0.25rem)] flex-col gap-6 " +
+                  chatColumnMaxWidthClass +
+                  " sm:ml-2 sm:w-[calc(100%-0.5rem)] md:ml-2.5 md:w-[calc(100%-0.625rem)] lg:ml-3 lg:w-[calc(100%-0.75rem)]"
+                }
+              >
                 {messages.length === 0 ? (
                   <div className="text-center text-sm text-muted-foreground">
                     {openingMessage || openingMessageFallback}
@@ -5217,7 +5232,13 @@ export function HomeClient({
           </StickToBottom>
 
 			          <div className="shrink-0 bg-transparent pb-[calc(0.75rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-3 sm:pl-[max(1.375rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pb-[calc(1rem+max(var(--rc-safe-bottom),var(--rc-keyboard-inset)))] md:pl-[max(1.75rem,env(safe-area-inset-left,0px))] md:pr-[max(2rem,env(safe-area-inset-right,0px))] md:pt-4">
-		            <div className="mr-auto ml-1 w-[calc(100%-0.25rem)] max-w-5xl sm:ml-2 sm:w-[calc(100%-0.5rem)] md:ml-2.5 md:w-[calc(100%-0.625rem)] lg:ml-3 lg:w-[calc(100%-0.75rem)]">
+		            <div
+                  className={
+                    "mr-auto ml-1 w-[calc(100%-0.25rem)] " +
+                    chatColumnMaxWidthClass +
+                    " sm:ml-2 sm:w-[calc(100%-0.5rem)] md:ml-2.5 md:w-[calc(100%-0.625rem)] lg:ml-3 lg:w-[calc(100%-0.75rem)]"
+                  }
+                >
 		              <PromptInput
 		                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
 		                className={
