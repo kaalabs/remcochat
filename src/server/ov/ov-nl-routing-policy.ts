@@ -47,7 +47,17 @@ export function computeOvNlRoutingPolicy(input: {
   );
 
   const forceFastPath = skillForced || allowFastPathByRouter;
-  const toolAllowedForPrompt = skillForced ? true : input.routedIntent ? allowByRouter : undefined;
+  // Only "greenlight" the OV tool based on routing. Do not "blacklist" it on intent=none, because
+  // a router miss would otherwise prevent ovNlGateway calls for obviously OV-related prompts.
+  const toolAllowedForPrompt = skillForced
+    ? true
+    : input.routedIntent
+      ? allowByRouter
+        ? true
+        : input.routedIntent.intent === "none"
+          ? undefined
+          : false
+      : undefined;
 
   return { skillForced, allowByRouter, forceFastPath, toolAllowedForPrompt, routerConfidence };
 }

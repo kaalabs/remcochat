@@ -26,6 +26,15 @@ test("computeOvNlRoutingPolicy blocks OV when router intent is none", () => {
   });
   assert.equal(policy.allowByRouter, false);
   assert.equal(policy.forceFastPath, false);
+  assert.equal(policy.toolAllowedForPrompt, undefined);
+});
+
+test("computeOvNlRoutingPolicy blocks OV when router selected another intent", () => {
+  const policy = computeOvNlRoutingPolicy({
+    routedIntent: { intent: "weather_current", confidence: 0.9, location: "Amsterdam" },
+  });
+  assert.equal(policy.allowByRouter, false);
+  assert.equal(policy.forceFastPath, false);
   assert.equal(policy.toolAllowedForPrompt, false);
 });
 

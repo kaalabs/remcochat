@@ -140,6 +140,26 @@ test("includes OV NL guidance and disallow rule when ovNlGateway is not allowed 
   assert.match(prompt, /do NOT call ovNlGateway/i);
 });
 
+test("does not blacklist ovNlGateway when ovNlToolAllowed is unset", () => {
+  const prompt = buildSystemPrompt({
+    profileInstructions: "",
+    profileInstructionsRevision: 1,
+    chatInstructions: "",
+    chatInstructionsRevision: 1,
+    memoryEnabled: false,
+    memoryLines: [],
+    isTemporary: false,
+    toolsEnabled: true,
+    webToolsEnabled: false,
+    bashToolsEnabled: false,
+    attachmentsEnabled: false,
+    ovNlToolsEnabled: true,
+  });
+
+  assert.match(prompt, /OV NL tool \(ovNlGateway\) is enabled for this chat\./);
+  assert.doesNotMatch(prompt, /do NOT call ovNlGateway/i);
+});
+
 test("omits web tool guidance when disabled", () => {
   const prompt = buildSystemPrompt({
     profileInstructions: "",
