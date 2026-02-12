@@ -21,9 +21,8 @@ Use the `ovNlGateway` tool first for Dutch railway (NS) questions.
 
 1. Prefer `ovNlGateway` for anything that can change minute-to-minute (departures, delays, cancellations, platforms, disruptions).
 2. Do **not** use Bash/web search for live travel data. For boards/trips/disruptions, always use `ovNlGateway`.
-3. Use web search (if available) only for policy/static info that the gateway cannot answer (tickets/pricing, refunds, bike rules, accessibility, station facilities).
-4. If a station name is ambiguous, ask a short disambiguation question or run a station lookup to propose options.
-5. Never claim “live” updates unless you actually used `ovNlGateway` in this turn.
+3. If a station name is ambiguous, ask a short disambiguation question or run a station lookup to propose options.
+4. Never claim “live” updates unless you actually used `ovNlGateway` in this turn.
 
 ## Tool contract (input)
 
@@ -100,7 +99,7 @@ Most actions return a matching `kind` (e.g. `kind: "trips.search"`). Two special
 
 - Keep answers concise and practical.
 - Highlight delays, cancellations, platform changes, and transfer counts.
-- When multiple trip options exist, summarize the top options first.
+- When multiple trip options exist, reason first about what option is the 'best option' to match the user prompt or the user known preferences and highlight that best option.
 
 ## Suggested call flows (recipes)
 
