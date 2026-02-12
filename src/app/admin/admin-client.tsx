@@ -30,7 +30,11 @@ import {
   CheckCircleIcon,
   CheckIcon,
   ChevronDownIcon,
+  FilterIcon,
+  ListIcon,
+  RotateCcwIcon,
   RotateCwIcon,
+  SaveIcon,
   ShieldIcon,
   Sparkles,
   XIcon,
@@ -237,6 +241,58 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
     if (!b.has(v)) return false;
   }
   return true;
+}
+
+function AdminSaveButton(props: {
+  disabled: boolean;
+  onClick: () => void;
+  saving: boolean;
+  testId: string;
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+  const label = props.saving ? t("common.saving_ellipsis") : t("common.save");
+
+  return (
+    <Button
+      aria-label={label}
+      className={props.compact ? "size-8" : "h-9 w-9"}
+      data-testid={props.testId}
+      disabled={props.disabled}
+      onClick={props.onClick}
+      size="icon"
+      title={label}
+      type="button"
+    >
+      {props.saving ? <RotateCwIcon className="size-4 animate-spin" /> : <SaveIcon className="size-4" />}
+    </Button>
+  );
+}
+
+function AdminResetButton(props: {
+  disabled: boolean;
+  onClick: () => void;
+  testId: string;
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+  const label = t("common.reset");
+
+  return (
+    <Button
+      aria-label={label}
+      className={props.compact ? "size-8" : "h-9 w-9"}
+      data-testid={props.testId}
+      disabled={props.disabled}
+      onClick={props.onClick}
+      size="icon"
+      title={label}
+      type="button"
+      variant="secondary"
+    >
+      <RotateCcwIcon className="size-4" />
+    </Button>
+  );
 }
 
 export function AdminClient() {
@@ -1200,8 +1256,7 @@ export function AdminClient() {
                     </Select>
                   </div>
 
-                  <Button
-                    data-testid="admin:web-search-provider-save"
+                  <AdminSaveButton
                     disabled={
                       webSearchLoading ||
                       webSearchSaving ||
@@ -1209,10 +1264,9 @@ export function AdminClient() {
                       webSearchDraft === webSearchConfig.selectedProviderId
                     }
                     onClick={() => saveWebSearchProvider()}
-                    type="button"
-                  >
-                    {webSearchSaving ? t("common.saving_ellipsis") : t("common.save")}
-                  </Button>
+                    saving={webSearchSaving}
+                    testId="admin:web-search-provider-save"
+                  />
                 </div>
 
                 {webSearchConfig ? (
@@ -1280,14 +1334,12 @@ export function AdminClient() {
                     </Select>
                   </div>
 
-                  <Button
-                    data-testid="admin:provider-save"
+                  <AdminSaveButton
                     disabled={!canSave}
                     onClick={() => save()}
-                    type="button"
-                  >
-                    {saving ? t("common.saving_ellipsis") : t("common.save")}
-                  </Button>
+                    saving={saving}
+                    testId="admin:provider-save"
+                  />
                 </div>
 
               </CardContent>
@@ -1395,14 +1447,12 @@ export function AdminClient() {
                           </div>
                         </div>
 
-                        <Button
-                          data-testid="admin:router-model-save"
+                        <AdminSaveButton
                           disabled={!canSaveRouter}
                           onClick={() => saveRouterModel()}
-                          type="button"
-                        >
-                          {routerSaving ? t("common.saving_ellipsis") : t("common.save")}
-                        </Button>
+                          saving={routerSaving}
+                          testId="admin:router-model-save"
+                        />
                       </div>
                     );
                   })()}
@@ -1469,7 +1519,9 @@ export function AdminClient() {
                           <details className="rounded-md border px-3 py-2" key={p.id}>
                             <summary className="cursor-pointer select-none text-sm font-medium">
                               <span className="mr-2">{p.name}</span>
-                              <span className="font-mono text-muted-foreground">{p.id}</span>{" "}
+                              <span className="ml-2 inline-flex items-center rounded-full border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                {draft.size} / {p.models.length}
+                              </span>
                               {isActive ? (
                                 <Badge
                                   className="ml-2 border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
@@ -1477,24 +1529,10 @@ export function AdminClient() {
                                 >
                                   {t("common.active")}
                                 </Badge>
-                              ) : null}{" "}
-                              <span className="text-muted-foreground">
-                                ·{" "}
-                                {t("admin.models.allowed.summary_counts", {
-                                  allowed: draft.size,
-                                  total: p.models.length,
-                                })}
-                              </span>
+                              ) : null}
                             </summary>
 
                             <div className="mt-3 space-y-3">
-                              <div className="text-xs text-muted-foreground">
-                                default_model_id:{" "}
-                                <span className="font-mono">{p.defaultModelId}</span> · modelsdev
-                                provider:{" "}
-                                <span className="font-mono">{p.modelsdevProviderId}</span>
-                              </div>
-
                               <div className="grid gap-3 rounded-md border bg-muted/20 px-3 py-2 sm:grid-cols-[1fr_auto] sm:items-end">
                                 <div className="space-y-2">
                                   <label
@@ -1521,37 +1559,22 @@ export function AdminClient() {
                                       value={defaultDraft}
                                     />
                                   </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {t("admin.models.default_model.helper.part1")}{" "}
-                                    <code>providers.{p.id}.default_model_id</code>{" "}
-                                    {t("admin.models.default_model.helper.part2")}{" "}
-                                    <code>allowed_model_ids</code>{" "}
-                                    {t("admin.models.default_model.helper.part3")}
-                                  </div>
                                 </div>
 
                                 <div className="flex justify-end gap-2">
-                                  <Button
-                                    data-testid={`admin:default-model-reset:${p.id}`}
+                                  <AdminResetButton
+                                    compact
                                     disabled={!hasDefaultChange || savingDefault}
                                     onClick={() => resetProviderDefaultDraft(p.id)}
-                                    size="sm"
-                                    type="button"
-                                    variant="secondary"
-                                  >
-                                    {t("common.reset")}
-                                  </Button>
-                                  <Button
-                                    data-testid={`admin:default-model-save:${p.id}`}
+                                    testId={`admin:default-model-reset:${p.id}`}
+                                  />
+                                  <AdminSaveButton
+                                    compact
                                     disabled={!hasDefaultChange || savingDefault || hasChanges}
                                     onClick={() => saveProviderDefaultDraft(p.id)}
-                                    size="sm"
-                                    type="button"
-                                  >
-                                    {savingDefault
-                                      ? t("common.saving_ellipsis")
-                                      : t("common.save")}
-                                  </Button>
+                                    saving={savingDefault}
+                                    testId={`admin:default-model-save:${p.id}`}
+                                  />
                                 </div>
 
                                 {hasChanges ? (
@@ -1591,37 +1614,42 @@ export function AdminClient() {
 
                                 <div className="flex flex-wrap justify-end gap-2">
                                   <Button
+                                    aria-label={
+                                      filter.showAll
+                                        ? t("admin.models.show_allowed")
+                                        : t("admin.models.show_all")
+                                    }
+                                    className="size-8"
                                     data-testid={`admin:models-showall:${p.id}`}
                                     onClick={() => toggleProviderShowAll(p.id)}
-                                    size="sm"
+                                    size="icon"
+                                    title={
+                                      filter.showAll
+                                        ? t("admin.models.show_allowed")
+                                        : t("admin.models.show_all")
+                                    }
                                     type="button"
                                     variant="secondary"
                                   >
-                                    {filter.showAll
-                                      ? t("admin.models.show_allowed")
-                                      : t("admin.models.show_all")}
+                                    {filter.showAll ? (
+                                      <FilterIcon className="size-4" />
+                                    ) : (
+                                      <ListIcon className="size-4" />
+                                    )}
                                   </Button>
-                                  <Button
-                                    data-testid={`admin:allowed-models-reset:${p.id}`}
+                                  <AdminResetButton
+                                    compact
                                     disabled={!hasChanges || savingProvider}
                                     onClick={() => resetProviderDraft(p.id)}
-                                    size="sm"
-                                    type="button"
-                                    variant="secondary"
-                                  >
-                                    {t("common.reset")}
-                                  </Button>
-                                  <Button
-                                    data-testid={`admin:allowed-models-save:${p.id}`}
+                                    testId={`admin:allowed-models-reset:${p.id}`}
+                                  />
+                                  <AdminSaveButton
+                                    compact
                                     disabled={!hasChanges || savingProvider}
                                     onClick={() => saveProviderDraft(p.id)}
-                                    size="sm"
-                                    type="button"
-                                  >
-                                    {savingProvider
-                                      ? t("common.saving_ellipsis")
-                                      : t("common.save")}
-                                  </Button>
+                                    saving={savingProvider}
+                                    testId={`admin:allowed-models-save:${p.id}`}
+                                  />
                                 </div>
                               </div>
 
