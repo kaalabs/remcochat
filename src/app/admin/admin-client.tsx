@@ -1686,31 +1686,7 @@ export function AdminClient() {
                                           <div className="min-w-0 flex-1 space-y-1">
                                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                                               <div className="min-w-0">
-                                                <div className="truncate text-sm font-medium">
-                                                  {m.label}{" "}
-                                                  <span className="font-mono text-xs text-muted-foreground">
-                                                    {m.id}
-                                                  </span>
-                                                </div>
-                                                <div className="text-xs text-muted-foreground">
-                                                  {m.modelType ? (
-                                                    <>
-                                                      {t("admin.models.model_type.label")}{" "}
-                                                      <span className="font-mono">
-                                                        {m.modelType}
-                                                      </span>
-                                                    </>
-                                                  ) : (
-                                                    <>{t("admin.models.model_type.unknown")}</>
-                                                  )}
-                                                  {m.npm ? (
-                                                    <>
-                                                      {" "}
-                                                      · npm{" "}
-                                                      <span className="font-mono">{m.npm}</span>
-                                                    </>
-                                                  ) : null}
-                                                </div>
+                                                <div className="truncate text-sm font-medium">{m.label}</div>
                                               </div>
 
                                               <div className="flex flex-wrap gap-1">
@@ -1720,12 +1696,18 @@ export function AdminClient() {
                                                   </Badge>
                                                 ) : null}
                                                 {isDefault ? (
-                                                  <Badge variant="secondary">
+                                                  <Badge
+                                                    className="border-amber-500/30 bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                                                    variant="outline"
+                                                  >
                                                     {t("admin.models.badge.default")}
                                                   </Badge>
                                                 ) : null}
                                                 {isRouter ? (
-                                                  <Badge variant="secondary">
+                                                  <Badge
+                                                    className="border-amber-500/30 bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                                                    variant="outline"
+                                                  >
                                                     {t("admin.models.badge.router")}
                                                   </Badge>
                                                 ) : null}
