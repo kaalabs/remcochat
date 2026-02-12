@@ -2,6 +2,13 @@ import type { LanguageModelUsage } from "ai";
 
 export type UiLanguage = "en" | "nl";
 
+export type ProfileAvatar = {
+  mediaType: string;
+  sizeBytes: number;
+  updatedAt: string;
+  position: { x: number; y: number };
+};
+
 export type Profile = {
   id: string;
   name: string;
@@ -11,6 +18,7 @@ export type Profile = {
   customInstructionsRevision: number;
   memoryEnabled: boolean;
   uiLanguage: UiLanguage;
+  avatar: ProfileAvatar | null;
 };
 
 export type Chat = {

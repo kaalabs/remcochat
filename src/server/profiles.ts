@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getActiveProviderConfig } from "@/server/model-registry";
 import { deleteAttachmentsForProfile } from "@/server/attachments";
+import { deleteProfileAvatar } from "@/server/profile-avatars";
 
 type ProfileRow = {
   id: string;
@@ -14,6 +15,11 @@ type ProfileRow = {
   custom_instructions_revision: number;
   memory_enabled: 0 | 1;
   ui_language: string;
+  avatar_media_type: string | null;
+  avatar_size_bytes: number | null;
+  avatar_updated_at: string | null;
+  avatar_pos_x: number | null;
+  avatar_pos_y: number | null;
 };
 
 function rowToProfile(row: ProfileRow): Profile {
@@ -31,6 +37,24 @@ function rowToProfile(row: ProfileRow): Profile {
     customInstructionsRevision: Number(row.custom_instructions_revision ?? 1),
     memoryEnabled: Boolean(row.memory_enabled),
     uiLanguage: normalizeUiLanguage(row.ui_language, "en"),
+    avatar:
+      row.avatar_media_type && row.avatar_updated_at
+        ? {
+            mediaType: String(row.avatar_media_type),
+            sizeBytes: Number(row.avatar_size_bytes ?? 0),
+            updatedAt: String(row.avatar_updated_at),
+            position: {
+              x: (() => {
+                const v = Number(row.avatar_pos_x ?? 50);
+                return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 50;
+              })(),
+              y: (() => {
+                const v = Number(row.avatar_pos_y ?? 50);
+                return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 50;
+              })(),
+            },
+          }
+        : null,
   };
 }
 
@@ -38,7 +62,10 @@ export function listProfiles(opts?: { seedUiLanguage?: UiLanguage }): Profile[] 
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language
+      `SELECT id, name, created_at, default_model_id,
+              custom_instructions, custom_instructions_revision,
+              memory_enabled, ui_language,
+              avatar_media_type, avatar_size_bytes, avatar_updated_at, avatar_pos_x, avatar_pos_y
        FROM profiles
        ORDER BY created_at ASC`
     )
@@ -98,7 +125,10 @@ export function getProfile(id: string): Profile {
   const db = getDb();
   const row = db
     .prepare(
-      `SELECT id, name, created_at, default_model_id, custom_instructions, custom_instructions_revision, memory_enabled, ui_language
+      `SELECT id, name, created_at, default_model_id,
+              custom_instructions, custom_instructions_revision,
+              memory_enabled, ui_language,
+              avatar_media_type, avatar_size_bytes, avatar_updated_at, avatar_pos_x, avatar_pos_y
        FROM profiles WHERE id = ?`
     )
     .get(id) as ProfileRow | undefined;
@@ -177,6 +207,7 @@ export async function deleteProfile(id: string) {
   const db = getDb();
   // Ensure we surface a consistent "not found" error.
   getProfile(id);
+  await deleteProfileAvatar(id).catch(() => {});
   await deleteAttachmentsForProfile(id);
   db.prepare(`DELETE FROM profiles WHERE id = ?`).run(id);
 }

@@ -22,7 +22,12 @@ function initSchema(database: Database.Database) {
       custom_instructions TEXT NOT NULL DEFAULT '',
       custom_instructions_revision INTEGER NOT NULL DEFAULT 1,
       memory_enabled INTEGER NOT NULL DEFAULT 1,
-      ui_language TEXT NOT NULL DEFAULT 'en'
+      ui_language TEXT NOT NULL DEFAULT 'en',
+      avatar_media_type TEXT,
+      avatar_size_bytes INTEGER,
+      avatar_updated_at TEXT,
+      avatar_pos_x REAL NOT NULL DEFAULT 50,
+      avatar_pos_y REAL NOT NULL DEFAULT 50
     );
 
     CREATE TABLE IF NOT EXISTS profile_memory (
@@ -344,6 +349,41 @@ function initSchema(database: Database.Database) {
   if (!hasUiLanguage) {
     database.exec(
       `ALTER TABLE profiles ADD COLUMN ui_language TEXT NOT NULL DEFAULT 'en';`
+    );
+  }
+
+  const hasAvatarMediaType = profileColumns.some(
+    (c) => c.name === "avatar_media_type"
+  );
+  if (!hasAvatarMediaType) {
+    database.exec(`ALTER TABLE profiles ADD COLUMN avatar_media_type TEXT;`);
+  }
+
+  const hasAvatarSizeBytes = profileColumns.some(
+    (c) => c.name === "avatar_size_bytes"
+  );
+  if (!hasAvatarSizeBytes) {
+    database.exec(`ALTER TABLE profiles ADD COLUMN avatar_size_bytes INTEGER;`);
+  }
+
+  const hasAvatarUpdatedAt = profileColumns.some(
+    (c) => c.name === "avatar_updated_at"
+  );
+  if (!hasAvatarUpdatedAt) {
+    database.exec(`ALTER TABLE profiles ADD COLUMN avatar_updated_at TEXT;`);
+  }
+
+  const hasAvatarPosX = profileColumns.some((c) => c.name === "avatar_pos_x");
+  if (!hasAvatarPosX) {
+    database.exec(
+      `ALTER TABLE profiles ADD COLUMN avatar_pos_x REAL NOT NULL DEFAULT 50;`
+    );
+  }
+
+  const hasAvatarPosY = profileColumns.some((c) => c.name === "avatar_pos_y");
+  if (!hasAvatarPosY) {
+    database.exec(
+      `ALTER TABLE profiles ADD COLUMN avatar_pos_y REAL NOT NULL DEFAULT 50;`
     );
   }
 

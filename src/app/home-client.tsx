@@ -85,6 +85,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ChangeEvent,
   type KeyboardEventHandler,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -115,6 +116,8 @@ import { ConversationScrollButton } from "@/components/ai-elements/conversation"
 	import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
 	import type { TimezonesToolOutput } from "@/ai/timezones";
 	import type { UrlSummaryToolOutput } from "@/ai/url-summary";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { ProfileAvatarPositioner } from "@/components/profile-avatar-positioner";
 import {
 		  ArchiveIcon,
 		  BookmarkIcon,
@@ -146,6 +149,11 @@ import {
 import { nanoid } from "nanoid";
 import Link from "next/link";
 import { parseAttachmentUrl } from "@/lib/attachment-url";
+import { getProfileAvatarSrc } from "@/lib/profile-avatar";
+import {
+  ALLOWED_PROFILE_AVATAR_MEDIA_TYPES,
+  MAX_PROFILE_AVATAR_SIZE_BYTES,
+} from "@/lib/profile-avatar-constraints";
 import {
   clampDesktopSidebarWidth,
   DESKTOP_SIDEBAR_DEFAULT_WIDTH_PX,
@@ -821,6 +829,26 @@ export function HomeClient({
   const [memoryEnabledDraft, setMemoryEnabledDraft] = useState(true);
   const [uiLanguageDraft, setUiLanguageDraft] = useState<Profile["uiLanguage"]>("en");
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [avatarDraftFile, setAvatarDraftFile] = useState<File | null>(null);
+  const [avatarDraftObjectUrl, setAvatarDraftObjectUrl] = useState<string | null>(
+    null
+  );
+  const [avatarPositionDraft, setAvatarPositionDraft] = useState<{ x: number; y: number }>({
+    x: 50,
+    y: 50,
+  });
+  const [avatarRemoveDraft, setAvatarRemoveDraft] = useState(false);
+  const [avatarDraftError, setAvatarDraftError] = useState<string | null>(null);
+  const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (!avatarDraftObjectUrl) return;
+      try {
+        URL.revokeObjectURL(avatarDraftObjectUrl);
+      } catch {}
+    };
+  }, [avatarDraftObjectUrl]);
 
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const [deleteProfileConfirm, setDeleteProfileConfirm] = useState("");
@@ -2491,6 +2519,14 @@ export function HomeClient({
     setProfileInstructionsDraft(activeProfile.customInstructions ?? "");
     setMemoryEnabledDraft(Boolean(activeProfile.memoryEnabled));
     setUiLanguageDraft(activeProfile.uiLanguage ?? "en");
+    setAvatarDraftError(null);
+    setAvatarDraftFile(null);
+    setAvatarDraftObjectUrl(null);
+    setAvatarRemoveDraft(false);
+    setAvatarPositionDraft(activeProfile.avatar?.position ?? { x: 50, y: 50 });
+    if (avatarFileInputRef.current) {
+      avatarFileInputRef.current.value = "";
+    }
 
     fetch(`/api/profiles/${activeProfile.id}/memory`)
       .then((r) => r.json())
@@ -2499,6 +2535,50 @@ export function HomeClient({
       })
       .catch(() => {});
   }, [activeProfile, settingsOpen]);
+
+  const avatarMaxMb = Math.max(1, Math.ceil(MAX_PROFILE_AVATAR_SIZE_BYTES / 1_000_000));
+
+  const chooseAvatarFile = useCallback(() => {
+    setAvatarDraftError(null);
+    avatarFileInputRef.current?.click();
+  }, []);
+
+  const handleAvatarFileChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0] ?? null;
+      if (!file) return;
+
+      if (!ALLOWED_PROFILE_AVATAR_MEDIA_TYPES.includes(file.type as never)) {
+        setAvatarDraftError(t("profile.photo.error.unsupported"));
+        e.target.value = "";
+        return;
+      }
+
+      if (file.size > MAX_PROFILE_AVATAR_SIZE_BYTES) {
+        setAvatarDraftError(t("profile.photo.error.too_large", { mb: avatarMaxMb }));
+        e.target.value = "";
+        return;
+      }
+
+      setAvatarDraftError(null);
+      setAvatarRemoveDraft(false);
+      setAvatarDraftFile(file);
+      setAvatarPositionDraft({ x: 50, y: 50 });
+      setAvatarDraftObjectUrl(URL.createObjectURL(file));
+    },
+    [avatarMaxMb, t]
+  );
+
+  const removeAvatarDraft = useCallback(() => {
+    setAvatarDraftError(null);
+    setAvatarDraftFile(null);
+    setAvatarDraftObjectUrl(null);
+    setAvatarPositionDraft({ x: 50, y: 50 });
+    setAvatarRemoveDraft(Boolean(activeProfile?.avatar));
+    if (avatarFileInputRef.current) {
+      avatarFileInputRef.current.value = "";
+    }
+  }, [activeProfile?.avatar]);
 
   const saveProfileSettings = useCallback(async () => {
     if (!activeProfile) return;
@@ -2522,10 +2602,69 @@ export function HomeClient({
         throw new Error(data.error || t("error.profile.settings_save_failed"));
       }
 
-      setProfiles((prev) =>
-        prev.map((p) => (p.id === data.profile!.id ? data.profile! : p))
-      );
-      setUiLanguage(data.profile.uiLanguage);
+      let nextProfile = data.profile;
+
+      const avatarWasRemoved = avatarRemoveDraft && Boolean(activeProfile.avatar);
+      const avatarWasUploaded = Boolean(avatarDraftFile);
+      const avatarPosWasChanged =
+        Boolean(activeProfile.avatar) &&
+        !avatarRemoveDraft &&
+        !avatarDraftFile &&
+        (() => {
+          const prev = activeProfile.avatar?.position ?? { x: 50, y: 50 };
+          return (
+            Math.abs(prev.x - avatarPositionDraft.x) > 0.1 ||
+            Math.abs(prev.y - avatarPositionDraft.y) > 0.1
+          );
+        })();
+
+      if (avatarWasRemoved) {
+        const avatarRes = await fetch(`/api/profiles/${activeProfile.id}/avatar`, {
+          method: "DELETE",
+        });
+        const avatarData = (await avatarRes.json().catch(() => null)) as
+          | { profile?: Profile; error?: string }
+          | null;
+        if (!avatarRes.ok || !avatarData?.profile) {
+          throw new Error(avatarData?.error || t("error.profile.avatar_save_failed"));
+        }
+        nextProfile = avatarData.profile;
+      } else if (avatarWasUploaded && avatarDraftFile) {
+        const form = new FormData();
+        form.set("file", avatarDraftFile);
+        form.set("posX", String(avatarPositionDraft.x));
+        form.set("posY", String(avatarPositionDraft.y));
+        const avatarRes = await fetch(`/api/profiles/${activeProfile.id}/avatar`, {
+          method: "PUT",
+          body: form,
+        });
+        const avatarData = (await avatarRes.json().catch(() => null)) as
+          | { profile?: Profile; error?: string }
+          | null;
+        if (!avatarRes.ok || !avatarData?.profile) {
+          throw new Error(avatarData?.error || t("error.profile.avatar_save_failed"));
+        }
+        nextProfile = avatarData.profile;
+      } else if (avatarPosWasChanged) {
+        const avatarRes = await fetch(`/api/profiles/${activeProfile.id}/avatar`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            posX: avatarPositionDraft.x,
+            posY: avatarPositionDraft.y,
+          }),
+        });
+        const avatarData = (await avatarRes.json().catch(() => null)) as
+          | { profile?: Profile; error?: string }
+          | null;
+        if (!avatarRes.ok || !avatarData?.profile) {
+          throw new Error(avatarData?.error || t("error.profile.avatar_save_failed"));
+        }
+        nextProfile = avatarData.profile;
+      }
+
+      setProfiles((prev) => prev.map((p) => (p.id === nextProfile.id ? nextProfile : p)));
+      setUiLanguage(nextProfile.uiLanguage);
       setSettingsOpen(false);
     } catch (err) {
       setSettingsError(
@@ -2536,6 +2675,10 @@ export function HomeClient({
     }
   }, [
     activeProfile,
+    avatarDraftFile,
+    avatarPositionDraft.x,
+    avatarPositionDraft.y,
+    avatarRemoveDraft,
     memoryEnabledDraft,
     profileInstructionsDraft,
     settingsSaving,
@@ -3823,19 +3966,44 @@ export function HomeClient({
               value={activeProfile?.id ?? ""}
             >
               <SelectTrigger
-                className="h-9 min-w-0 flex-1"
+                className="h-20 min-w-0 flex-1 data-[size=default]:h-20"
                 data-testid="profile:select-trigger"
                 suppressHydrationWarning
               >
                 <SelectValue
-                  className="min-w-0 max-w-full truncate"
+                  className="min-w-0 max-w-full"
                   placeholder={t("profile.select.placeholder")}
-                />
+                >
+                  {activeProfile ? (
+                    <div className="flex min-w-0 items-center gap-3">
+                      <ProfileAvatar
+                        name={activeProfile.name}
+                        position={activeProfile.avatar?.position ?? null}
+                        sizePx={40}
+                        src={getProfileAvatarSrc(activeProfile)}
+                      />
+                      <span className="min-w-0 truncate">{activeProfile.name}</span>
+                    </div>
+                  ) : null}
+                </SelectValue>
               </SelectTrigger>
 	              <SelectContent>
 	                {profiles.map((p) => (
-	                  <SelectItem data-testid={`profile:option:${p.id}`} key={p.id} value={p.id}>
-	                    {p.name}
+	                  <SelectItem
+                      className="py-2"
+                      data-testid={`profile:option:${p.id}`}
+                      key={p.id}
+                      value={p.id}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <ProfileAvatar
+                          name={p.name}
+                          position={p.avatar?.position ?? null}
+                          sizePx={28}
+                          src={getProfileAvatarSrc(p)}
+                        />
+                        <span className="min-w-0 truncate">{p.name}</span>
+                      </div>
 	                  </SelectItem>
 	                ))}
 	              </SelectContent>
@@ -3843,7 +4011,7 @@ export function HomeClient({
 
             <Button
               aria-label={t("profile.new.title")}
-              className="h-9 w-9 px-0"
+              className="h-10 w-10 px-0"
               data-testid="profile:new"
               onClick={() => {
                 setCreateOpen(true);
@@ -3858,7 +4026,7 @@ export function HomeClient({
 
             <Button
               aria-label={t("profile.settings.title")}
-              className="h-9 w-9 px-0"
+              className="h-10 w-10 px-0"
               data-testid="profile:settings-open"
               disabled={status !== "ready"}
               onClick={() => {
@@ -5653,7 +5821,78 @@ export function HomeClient({
 	                        {t("profile.language.option.nl")}
 	                      </SelectItem>
 	                    </SelectContent>
-	                  </Select>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">{t("profile.photo.label")}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t("profile.photo.description")}
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <ProfileAvatarPositioner
+                      data-testid="profile:avatar-positioner"
+                      disabled={settingsSaving || avatarRemoveDraft}
+                      name={activeProfile?.name ?? ""}
+                      onPositionChange={setAvatarPositionDraft}
+                      position={avatarPositionDraft}
+                      sizePx={96}
+                      src={
+                        avatarRemoveDraft
+                          ? null
+                          : avatarDraftObjectUrl ??
+                            (activeProfile ? getProfileAvatarSrc(activeProfile) : null)
+                      }
+                    />
+
+                    <div className="space-y-2">
+                      <input
+                        accept={ALLOWED_PROFILE_AVATAR_MEDIA_TYPES.join(",")}
+                        className="hidden"
+                        onChange={handleAvatarFileChange}
+                        ref={avatarFileInputRef}
+                        type="file"
+                      />
+
+                      <Button
+                        className="h-9"
+                        disabled={settingsSaving || !activeProfile}
+                        onClick={() => chooseAvatarFile()}
+                        type="button"
+                        variant="outline"
+                      >
+                        {activeProfile?.avatar || avatarDraftFile
+                          ? t("profile.photo.change")
+                          : t("profile.photo.upload")}
+                      </Button>
+
+                      <Button
+                        className="h-9"
+                        disabled={settingsSaving || (!activeProfile?.avatar && !avatarDraftFile)}
+                        onClick={() => removeAvatarDraft()}
+                        type="button"
+                        variant="outline"
+                      >
+                        {t("profile.photo.remove")}
+                      </Button>
+
+                      <div className="text-xs text-muted-foreground">
+                        {t("profile.photo.max_size", { mb: avatarMaxMb })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {!avatarRemoveDraft &&
+                  (avatarDraftObjectUrl || activeProfile?.avatar) ? (
+                    <div className="text-xs text-muted-foreground">
+                      {t("profile.photo.drag_hint")}
+                    </div>
+                  ) : null}
+
+                  {avatarDraftError ? (
+                    <div className="text-sm text-destructive">{avatarDraftError}</div>
+                  ) : null}
                 </div>
 
 	              <div className="space-y-2">
