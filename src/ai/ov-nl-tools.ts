@@ -2200,6 +2200,7 @@ function normalizeTripLeg(
     destinationPlannedTrack: asNullableText(destination.plannedTrack),
     destinationActualTrack: asNullableText(destination.actualTrack),
     journeyDetailRef: asNullableText(leg.journeyDetailRef),
+    messages: normalizeMessages(leg.messages),
     stopCount: stops ? stops.length : stopsRaw.length,
     ...(stops ? { stops } : {}),
   };
@@ -2302,6 +2303,7 @@ function normalizeJourneyLegs(rawJourney: unknown, fallbackJourneyId: string): O
       destinationPlannedTrack: asNullableText(arrival?.plannedTrack),
       destinationActualTrack: asNullableText(arrival?.actualTrack),
       journeyDetailRef: fallbackJourneyId || null,
+      messages: [],
       stopCount: 0,
     });
   }

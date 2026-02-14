@@ -9,6 +9,7 @@ import { _resetConfigCacheForTests } from "../src/server/config";
 const ORIGINAL_CONFIG_PATH = process.env.REMCOCHAT_CONFIG_PATH;
 const ORIGINAL_ENABLE = process.env.REMCOCHAT_ENABLE_BASH_TOOL;
 const ORIGINAL_ADMIN_TOKEN = process.env.REMCOCHAT_ADMIN_TOKEN;
+const ORIGINAL_FETCH = globalThis.fetch;
 
 function writeTempConfigToml(content: string) {
   const filePath = path.join(
@@ -21,6 +22,8 @@ function writeTempConfigToml(content: string) {
 
 afterEach(() => {
   _resetConfigCacheForTests();
+
+  globalThis.fetch = ORIGINAL_FETCH;
 
   if (ORIGINAL_CONFIG_PATH === undefined) {
     delete process.env.REMCOCHAT_CONFIG_PATH;
@@ -153,3 +156,57 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.deepEqual(result.tools, {});
 });
 
+test("does not expose docker bash tools when sandboxd cannot reach docker socket", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.bash_tools]
+enabled = true
+provider = "docker"
+access = "localhost"
+
+[app.bash_tools.docker]
+orchestrator_url = "http://127.0.0.1:8080"
+
+[app.bash_tools.seed]
+mode = "git"
+git_url = "https://example.com/repo.git"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.REMCOCHAT_ENABLE_BASH_TOOL = "1";
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "http://127.0.0.1:8080/v1/health") {
+      return new Response(
+        JSON.stringify({ error: "connect ENOENT /var/run/docker.sock" }),
+        {
+          status: 500,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        },
+      );
+    }
+    throw new Error(`Unexpected fetch in test: ${url}`);
+  }) as typeof globalThis.fetch;
+
+  const result = await createBashTools({
+    request: new Request("http://localhost/api/chat", {
+      headers: { host: "localhost" },
+    }),
+    sessionKey: "test:docker-sock-missing",
+  });
+
+  assert.equal(result.enabled, false);
+  assert.deepEqual(result.tools, {});
+});

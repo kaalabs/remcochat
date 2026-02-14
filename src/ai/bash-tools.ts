@@ -63,11 +63,98 @@ type SandboxEntry = {
 const sandboxesByKey = new Map<string, SandboxEntry>();
 const createLocks = new Map<string, Promise<SandboxEntry>>();
 
+type DockerSandboxdHealth = {
+  orchestratorUrl: string;
+  checkedAt: number;
+  ok: boolean;
+  message: string;
+};
+
+let cachedDockerSandboxdHealth: DockerSandboxdHealth | null = null;
+const loggedSandboxdHealthWarnings = new Set<string>();
+
 function isTruthyEnv(value: unknown): boolean {
   const v = String(value ?? "")
     .trim()
     .toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function dockerSandboxdHealthMessageFromBodyText(text: string): string {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) return "sandboxd returned an error.";
+
+  try {
+    const json = JSON.parse(trimmed) as unknown;
+    if (json && typeof json === "object" && "error" in json) {
+      const msg = (json as { error?: unknown }).error;
+      if (typeof msg === "string" && msg.trim()) return msg.trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  return trimmed;
+}
+
+async function dockerSandboxdHealthCheck(cfg: NonNullable<RemcoChatConfig["bashTools"]>): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  if (cfg.provider !== "docker") return { ok: true, message: "" };
+  if (!cfg.docker) return { ok: false, message: "Missing docker bash_tools config." };
+
+  const orchestratorUrl = String(cfg.docker.orchestratorUrl ?? "").replace(/\/+$/, "");
+  const now = Date.now();
+
+  const ttlMs = 5_000;
+  if (
+    cachedDockerSandboxdHealth &&
+    cachedDockerSandboxdHealth.orchestratorUrl === orchestratorUrl &&
+    now - cachedDockerSandboxdHealth.checkedAt >= 0 &&
+    now - cachedDockerSandboxdHealth.checkedAt <= ttlMs
+  ) {
+    return {
+      ok: cachedDockerSandboxdHealth.ok,
+      message: cachedDockerSandboxdHealth.message,
+    };
+  }
+
+  let ok = false;
+  let message = "";
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 800);
+  try {
+    const res = await fetch(`${orchestratorUrl}/v1/health`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+
+    if (res.ok) {
+      ok = true;
+      message = "";
+    } else {
+      const text = await res.text().catch(() => "");
+      ok = false;
+      message = dockerSandboxdHealthMessageFromBodyText(text);
+    }
+  } catch (err) {
+    ok = false;
+    message = err instanceof Error ? err.message : "Failed to reach sandboxd.";
+  } finally {
+    clearTimeout(timer);
+  }
+
+  cachedDockerSandboxdHealth = {
+    orchestratorUrl,
+    checkedAt: now,
+    ok,
+    message,
+  };
+
+  return { ok, message };
 }
 
 function sandboxCredentialsFromEnv(): {
@@ -1043,6 +1130,20 @@ export async function createBashTools(input: {
     return { enabled: false, tools: {} };
   }
 
+  if (cfg.provider === "docker") {
+    const health = await dockerSandboxdHealthCheck(cfg);
+    if (!health.ok) {
+      const key = `${cfg.docker?.orchestratorUrl ?? ""}|${health.message}`;
+      if (!loggedSandboxdHealthWarnings.has(key)) {
+        loggedSandboxdHealthWarnings.add(key);
+        console.warn(
+          `[bash-tools] Docker sandbox disabled (sandboxd unhealthy): ${health.message}`,
+        );
+      }
+      return { enabled: false, tools: {} };
+    }
+  }
+
   try {
     prewarmSandboxEntry(input.sessionKey, cfg);
     const { createBashTool } = await loadBashTool();
@@ -1133,6 +1234,18 @@ export async function runExplicitBashCommand(input: {
       stderr: "Bash tools are not enabled for this request.",
       exitCode: 1,
     };
+  }
+
+  if (cfg.provider === "docker") {
+    const health = await dockerSandboxdHealthCheck(cfg);
+    if (!health.ok) {
+      return {
+        enabled: false,
+        stdout: "",
+        stderr: `Docker sandbox is unavailable: ${health.message}`,
+        exitCode: 1,
+      };
+    }
   }
 
   const entry = await getOrCreateSandboxEntry(input.sessionKey, cfg);

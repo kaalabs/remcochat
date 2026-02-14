@@ -1,4 +1,6 @@
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
 import { Writable } from "node:stream";
 import { URL } from "node:url";
 import Dockerode from "dockerode";
@@ -102,6 +104,61 @@ function safeMs(value: unknown, fallback: number, min: number, max: number): num
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function socketPathFromDockerHost(dockerHost: string): string | null {
+  const raw = String(dockerHost ?? "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("unix://")) {
+    const path = raw.slice("unix://".length).trim();
+    return path || null;
+  }
+  return null;
+}
+
+function isUsableUnixSocketPath(candidate: string): boolean {
+  const path = String(candidate ?? "").trim();
+  if (!path) return false;
+  try {
+    const st = fs.statSync(path);
+    return st.isSocket();
+  } catch {
+    return false;
+  }
+}
+
+function resolveDockerSocketPath(): {
+  socketPath: string;
+  source: string;
+  candidates: string[];
+} {
+  const envSocket = String(process.env.SANDBOXD_DOCKER_SOCKET ?? "").trim();
+  if (envSocket) {
+    return { socketPath: envSocket, source: "SANDBOXD_DOCKER_SOCKET", candidates: [envSocket] };
+  }
+
+  const fromDockerHost = socketPathFromDockerHost(String(process.env.DOCKER_HOST ?? ""));
+  if (fromDockerHost) {
+    return { socketPath: fromDockerHost, source: "DOCKER_HOST", candidates: [fromDockerHost] };
+  }
+
+  const home = os.homedir();
+  const candidates = [
+    "/var/run/docker.sock",
+    `${home}/.docker/run/docker.sock`, // Docker Desktop (macOS)
+    `${home}/.orbstack/run/docker.sock`, // OrbStack
+    `${home}/.colima/default/docker.sock`, // Colima
+    `${home}/.rd/docker.sock`, // Rancher Desktop
+  ];
+
+  for (const c of candidates) {
+    if (isUsableUnixSocketPath(c)) {
+      return { socketPath: c, source: "auto", candidates };
+    }
+  }
+
+  // Fall back to the conventional Linux path even if unusable, so errors remain actionable.
+  return { socketPath: "/var/run/docker.sock", source: "default", candidates };
 }
 
 function resolveRuntime(runtime: unknown): SandboxRuntime {
@@ -886,7 +943,8 @@ async function main() {
   const maxConcurrentSandboxes = safeMs(process.env.SANDBOXD_MAX_CONCURRENT, 2, 1, 10);
   const defaultIdleTtlMs = safeMs(process.env.SANDBOXD_DEFAULT_IDLE_TTL_MS, 15 * 60_000, 10_000, 6 * 60 * 60_000);
   const maxBodyBytes = safeMs(process.env.SANDBOXD_MAX_BODY_BYTES, 50 * 1024 * 1024, 1024, 200 * 1024 * 1024);
-  const socketPath = String(process.env.SANDBOXD_DOCKER_SOCKET ?? "/var/run/docker.sock").trim() || "/var/run/docker.sock";
+  const resolvedSocket = resolveDockerSocketPath();
+  const socketPath = resolvedSocket.socketPath;
   const requireToken =
     !isLocalhostHost(bindHost) &&
     (isTruthyEnv(process.env.SANDBOXD_REQUIRE_TOKEN) || true);
@@ -916,6 +974,17 @@ async function main() {
     sandboxIdBySessionKey: new Map(),
     commandsById: new Map(),
   };
+
+  if (resolvedSocket.source === "auto") {
+    console.log(`[sandboxd] docker socket: ${socketPath} (auto-detected)`);
+  } else if (resolvedSocket.source === "default") {
+    console.warn(
+      `[sandboxd] docker socket not found at known locations; defaulting to ${socketPath}. ` +
+        `Set SANDBOXD_DOCKER_SOCKET (or DOCKER_HOST=unix://...) to a valid socket.`,
+    );
+  } else {
+    console.log(`[sandboxd] docker socket: ${socketPath} (${resolvedSocket.source})`);
+  }
 
   await ensureSandboxNetwork(state);
   await rehydrateFromEngine(state);

@@ -22,7 +22,7 @@ type ExaSearchResponse = {
 type ExaSearchInput = {
   query: string;
   numResults: number;
-  type?: "neural" | "fast" | "auto" | "deep";
+  type?: "instant" | "neural" | "fast" | "auto" | "deep";
   livecrawl?: "never" | "fallback" | "preferred" | "always";
   livecrawlTimeout?: number;
   textMaxCharacters?: number;
@@ -44,6 +44,8 @@ function getExaApiKey() {
   if (!key) throw new Error("Missing EXA_API_KEY for Exa search.");
   return key;
 }
+
+const FORCED_EXA_SEARCH_TYPE = "instant" as const;
 
 async function runExaSearch(input: ExaSearchInput): Promise<ExaSearchResponse> {
   const key = getExaApiKey();
@@ -68,7 +70,8 @@ async function runExaSearch(input: ExaSearchInput): Promise<ExaSearchResponse> {
     body: JSON.stringify({
       query: input.query,
       numResults: input.numResults,
-      type: input.type ?? "auto",
+      // Always use Exa "instant" mode for fast, consistent results.
+      type: FORCED_EXA_SEARCH_TYPE,
       livecrawl: input.livecrawl ?? "preferred",
       ...(input.livecrawlTimeout
         ? { livecrawlTimeout: input.livecrawlTimeout }
@@ -163,7 +166,8 @@ export function createExaSearchTool() {
         .max(25)
         .optional()
         .describe("Number of results to return."),
-      type: z.enum(["neural", "fast", "auto", "deep"]).optional(),
+      // Accepted for backwards-compatibility, but ignored (server forces "instant").
+      type: z.enum(["instant", "neural", "fast", "auto", "deep"]).optional(),
       livecrawl: z.enum(["never", "fallback", "preferred", "always"]).optional(),
       livecrawl_timeout_ms: z
         .number()

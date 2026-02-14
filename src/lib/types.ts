@@ -288,6 +288,7 @@ export type OvNlTripLeg = {
   destinationPlannedTrack: string | null;
   destinationActualTrack: string | null;
   journeyDetailRef: string | null;
+  messages: string[];
   stopCount: number;
   stops?: OvNlTripLegStop[];
 };

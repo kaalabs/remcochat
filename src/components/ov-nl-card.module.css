@@ -283,6 +283,12 @@
   color: var(--ov-ns-blue);
 }
 
+.badgeWarning {
+  background: #b42318;
+  color: #fff;
+  box-shadow: 0 5px 10px rgb(180 35 24 / 22%);
+}
+
 .optionSubline {
   margin-top: 4px;
   color: color-mix(in srgb, var(--ov-ns-text) 72%, white);

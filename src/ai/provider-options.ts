@@ -84,7 +84,7 @@ export function createProviderOptions(input: {
       break;
     }
     case "openai_compatible": {
-      appendOptions(out, "openai-compatible", {
+      appendOptions(out, "openaiCompatible", {
         reasoningEffort: reasoningEffortForOpenAICompatible(effort),
       });
       break;

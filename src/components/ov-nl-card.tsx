@@ -10,6 +10,7 @@ import type {
   OvNlTripSummary,
 } from "@/lib/types";
 import { pickRecommendedTrip, pickRecommendedTripUidForSearch } from "@/lib/ov-nl-recommendation";
+import { tripHasLegDisruptions } from "@/lib/ov-nl-trip-disruption";
 import styles from "./ov-nl-card.module.css";
 
 type OvNlCardProps = {
@@ -796,8 +797,16 @@ function TripsView({
       const isDirect = tripBadges.directTripUids.has(trip.uid);
       const isFastest = tripBadges.fastestTripUids.has(trip.uid);
       const isMinTransfers = tripBadges.minTransfersTripUids.has(trip.uid);
-      const badges: Array<{ label: string; tone: "primary" | "secondary" }> = [];
+      const hasDisruptions = tripHasLegDisruptions(trip);
+      const badges: Array<{ label: string; tone: "primary" | "secondary" | "warning"; testId?: string }> = [];
       if (isRecommended) badges.push({ label: t("ov_nl.trips.badge.best"), tone: "primary" });
+      if (hasDisruptions) {
+        badges.push({
+          label: t("ov_nl.trips.badge.disruption"),
+          tone: "warning",
+          testId: `ov-nl-card:trip-option:${startIndex + index}:disruption`,
+        });
+      }
       if (isDirect) badges.push({ label: t("ov_nl.trips.badge.direct"), tone: "secondary" });
       if (isFastest) badges.push({ label: t("ov_nl.trips.badge.fastest"), tone: "secondary" });
       if (isMinTransfers && !isDirect) {
@@ -830,8 +839,15 @@ function TripsView({
             <div className={styles.badgeStack} aria-label={t("ov_nl.trips.badges.aria")}>
               {badges.map((badge) => (
                 <span
-                  className={`${styles.badge} ${badge.tone === "primary" ? styles.badgePrimary : styles.badgeSecondary}`}
+                  className={`${styles.badge} ${
+                    badge.tone === "primary"
+                      ? styles.badgePrimary
+                      : badge.tone === "warning"
+                        ? styles.badgeWarning
+                        : styles.badgeSecondary
+                  }`}
                   key={badge.label}
+                  {...(badge.testId ? { "data-testid": badge.testId } : {})}
                 >
                   {badge.label}
                 </span>

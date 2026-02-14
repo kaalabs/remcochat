@@ -64,7 +64,7 @@ test("openai_responses sets openai.reasoningEffort", () => {
   });
 });
 
-test("openai_compatible sets openai-compatible.reasoningEffort", () => {
+test("openai_compatible sets openaiCompatible.reasoningEffort", () => {
   const providerOptions = createProviderOptions({
     modelType: "openai_compatible",
     providerModelId: "some-model",
@@ -73,7 +73,7 @@ test("openai_compatible sets openai-compatible.reasoningEffort", () => {
     reasoning: reasoningConfig,
   });
   assert.deepEqual(providerOptions, {
-    "openai-compatible": {
+    openaiCompatible: {
       reasoningEffort: "medium",
     },
   });
