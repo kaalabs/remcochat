@@ -166,6 +166,10 @@ cache_max_ttl_seconds = 60
 [providers.opencode]
 name = "OpenCode Zen"
 api_key_env = "OPENCODE_API_KEY"
+# NOTE: Requests are made from the RemcoChat server to this base_url.
+# If you see a 403 error like `unsupported_country_region_territory`, it usually means
+# the gateway/proxy (or upstream provider) is not available from the server's region.
+# Fix: switch providers or change base_url to a gateway hosted in a supported region.
 base_url = "https://opencode.ai/zen/v1"
 modelsdev_provider_id = "opencode"
 default_model_id = "gpt-5.2"

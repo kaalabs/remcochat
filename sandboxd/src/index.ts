@@ -220,6 +220,7 @@ type ServerState = {
   sandboxesById: Map<string, SandboxEntry>;
   sandboxIdBySessionKey: Map<string, string>;
   commandsById: Map<string, CommandEntry>;
+  ensuringImages: Map<string, Promise<void>>;
 };
 
 async function ensureSandboxNetwork(state: ServerState) {
@@ -259,6 +260,87 @@ async function ensureImage(state: ServerState, image: string) {
       else resolve();
     });
   });
+}
+
+function runtimeDockerfilePath(runtime: SandboxRuntime): string | null {
+  // `sandbox-images/node24/Dockerfile` is a polyglot runtime image (Node 24 + Python 3.13 + tools).
+  if (runtime === "node24" || runtime === "python3.13") return "sandbox-images/node24/Dockerfile";
+  return null;
+}
+
+async function buildLocalDockerfileImage(state: ServerState, opts: {
+  imageTag: string;
+  dockerfilePath: string;
+}) {
+  const dockerfile = fs.readFileSync(opts.dockerfilePath);
+  const pack = tar.pack();
+  pack.entry({ name: "Dockerfile" }, dockerfile);
+  pack.finalize();
+
+  const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    state.docker.buildImage(
+      pack as unknown as NodeJS.ReadableStream,
+      {
+        t: opts.imageTag,
+        dockerfile: "Dockerfile",
+        pull: true,
+        forcerm: true,
+      } as unknown as Record<string, unknown>,
+      (err: unknown, s: unknown) => {
+        if (err) reject(err);
+        else if (!s) reject(new Error("Failed to build image (no stream)."));
+        else resolve(s as NodeJS.ReadableStream);
+      }
+    );
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    state.docker.modem.followProgress(stream, (err: unknown) => {
+      if (err) reject(err as Error);
+      else resolve();
+    });
+  });
+}
+
+async function ensureRuntimeImage(state: ServerState, runtime: SandboxRuntime) {
+  const image = resolveImage(runtime);
+  const ensuring = state.ensuringImages.get(image);
+  if (ensuring) return ensuring;
+
+  const promise = (async () => {
+    try {
+      await state.docker.getImage(image).inspect();
+      return;
+    } catch {
+      // fall through
+    }
+
+    const dockerfilePath = runtimeDockerfilePath(runtime);
+    const autobuildDisabled = isTruthyEnv(process.env.SANDBOXD_DISABLE_AUTOBUILD);
+    if (!dockerfilePath || autobuildDisabled) {
+      throw new Error(
+        `Missing Docker image ${image}. Build it with: ` +
+          `docker build -t ${image} -f sandbox-images/node24/Dockerfile .`
+      );
+    }
+    if (!fs.existsSync(dockerfilePath)) {
+      throw new Error(
+        `Missing Docker image ${image} and cannot auto-build (Dockerfile not found at ${dockerfilePath}). ` +
+          `Build it from the repo root with: docker build -t ${image} -f sandbox-images/node24/Dockerfile .`
+      );
+    }
+
+    console.log(`[sandboxd] building sandbox runtime image: ${image}`);
+    await buildLocalDockerfileImage(state, { imageTag: image, dockerfilePath });
+    console.log(`[sandboxd] built sandbox runtime image: ${image}`);
+  })();
+
+  state.ensuringImages.set(image, promise);
+  try {
+    await promise;
+  } finally {
+    state.ensuringImages.delete(image);
+  }
 }
 
 async function rehydrateFromEngine(state: ServerState) {
@@ -434,6 +516,8 @@ async function createSandbox(state: ServerState, input: {
   ports: number[];
 }): Promise<SandboxEntry> {
   await evictIfNeeded(state);
+
+  await ensureRuntimeImage(state, input.runtime);
 
   const sandboxId = nanoid();
   const containerName = `remcochat-sandbox-${sandboxId}`;
@@ -973,6 +1057,7 @@ async function main() {
     sandboxesById: new Map(),
     sandboxIdBySessionKey: new Map(),
     commandsById: new Map(),
+    ensuringImages: new Map(),
   };
 
   if (resolvedSocket.source === "auto") {

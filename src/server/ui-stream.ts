@@ -478,3 +478,115 @@ export function createUIMessageStreamWithToolErrorContinuation<T>(input: {
     },
   });
 }
+
+function isAbortLikeError(err: unknown): boolean {
+  if (!err) return false;
+  if (typeof err === "object") {
+    const name = (err as { name?: unknown }).name;
+    if (name === "AbortError") return true;
+  }
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("aborted")) return true;
+    if (msg.includes("aborterror")) return true;
+    if (msg.includes("cancelled")) return true;
+    if (msg.includes("canceled")) return true;
+  }
+  return false;
+}
+
+export function createUIMessageStreamWithFatalErrorFallback<T>(input: {
+  stream: ReadableStream<T>;
+  createMessageId: () => string;
+  messageMetadata?: unknown;
+  errorTextFromError: (err: unknown) => string;
+}): ReadableStream<T> {
+  return new ReadableStream({
+    async start(controller) {
+      const reader = input.stream.getReader();
+      let activeMessageId: string | null = null;
+      let injectedErrorText = false;
+      let sawFinish = false;
+      let openTextId: string | null = null;
+
+      const injectErrorText = (text: string) => {
+        if (injectedErrorText) return;
+        injectedErrorText = true;
+
+        const messageId = activeMessageId ?? input.createMessageId();
+        if (!activeMessageId) {
+          controller.enqueue(
+            { type: "start", messageId, messageMetadata: input.messageMetadata } as T,
+          );
+          activeMessageId = messageId;
+        }
+
+        const normalized = text.trim() || "Request failed.";
+        if (openTextId) {
+          controller.enqueue(
+            { type: "text-delta", id: openTextId, delta: `\n\n${normalized}` } as T,
+          );
+          controller.enqueue({ type: "text-end", id: openTextId } as T);
+          openTextId = null;
+        } else {
+          controller.enqueue({ type: "text-start", id: messageId } as T);
+          controller.enqueue({ type: "text-delta", id: messageId, delta: normalized } as T);
+          controller.enqueue({ type: "text-end", id: messageId } as T);
+        }
+        controller.enqueue(
+          { type: "finish", finishReason: "stop", messageMetadata: input.messageMetadata } as T,
+        );
+        sawFinish = true;
+      };
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = value as unknown;
+          if (isRecord(chunk)) {
+            if (chunk?.type === "start" && typeof chunk.messageId === "string") {
+              activeMessageId = chunk.messageId;
+            }
+            if (chunk?.type === "text-start" && typeof chunk.id === "string") {
+              openTextId = chunk.id;
+            }
+            if (chunk?.type === "text-end" && typeof chunk.id === "string") {
+              if (openTextId === chunk.id) openTextId = null;
+            }
+
+            if (chunk?.type === "finish") {
+              sawFinish = true;
+              controller.enqueue(value);
+              continue;
+            }
+
+            if (chunk?.type === "error" && typeof chunk.errorText === "string") {
+              injectErrorText(chunk.errorText);
+              try {
+                await reader.cancel();
+              } catch {
+                // ignore
+              }
+              break;
+            }
+          }
+
+          controller.enqueue(value);
+        }
+
+        controller.close();
+      } catch (err) {
+        if (isAbortLikeError(err)) {
+          controller.close();
+        } else {
+          if (!sawFinish) injectErrorText(input.errorTextFromError(err));
+          controller.close();
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}

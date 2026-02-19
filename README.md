@@ -17,7 +17,7 @@ Prereqs:
 
 2) Set at least one provider API key in your shell:
 - `export VERCEL_AI_GATEWAY_API_KEY=...`
-- `export OPENCODE_API_KEY=...` (if your active provider is OpenCode Zen)
+- `export OPENCODE_API_KEY=...` (if your active provider is OpenCode Zen; if you get `unsupported_country_region_territory`, switch providers or change `base_url`)
 
 3) Install deps + run:
 - `npm install`

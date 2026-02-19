@@ -84,10 +84,12 @@ import { computeOvNlRoutingPolicy } from "@/server/ov/ov-nl-routing-policy";
 import {
   collectUIMessageChunks,
   createUIMessageStreamWithDeferredContinuation,
+  createUIMessageStreamWithFatalErrorFallback,
   createUIMessageStreamWithToolErrorContinuation,
   stripUIMessageStream,
   type ToolStreamError,
 } from "@/server/ui-stream";
+import { formatLlmCallErrorForUser } from "@/server/llm-errors";
 
 export const maxDuration = 30;
 
@@ -1536,6 +1538,18 @@ export async function POST(req: Request) {
       chatInstructionsRevision: 0,
     };
 
+    const providerInfo = config.providers.find((p) => p.id === resolved!.providerId);
+    const errorTextFromError = (err: unknown) => {
+      console.error("LLM request failed", err);
+      return formatLlmCallErrorForUser(err, {
+        providerName: providerInfo?.name,
+        providerId: resolved!.providerId,
+        baseUrl: providerInfo?.baseUrl,
+        modelType: resolved!.modelType,
+        providerModelId: resolved!.providerModelId,
+      });
+    };
+
     const messageMetadata = ({
       part,
     }: {
@@ -1551,45 +1565,54 @@ export async function POST(req: Request) {
       return undefined;
     };
 
-    const result = streamText({
-      model: resolved!.model,
-      system,
-      messages: modelMessages,
-      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-        ? { temperature: 0 }
-        : {}),
-      ...(providerOptions ? { providerOptions } : {}),
-      ...(resolved!.capabilities.tools
-        ? {
-          ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-	          stopWhen: [
-	            hasToolCall("displayWeather"),
-	            hasToolCall("displayWeatherForecast"),
-	            ...(stopAfterCurrentDateTime
-	              ? [hasToolCall("displayCurrentDateTime")]
-	              : []),
-	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-	            hasToolCall("displayNotes"),
-	            hasToolCall("displayMemoryPrompt"),
-	            hasToolCall("displayMemoryAnswer"),
-            hasToolCall("displayList"),
-            hasToolCall("displayListsOverview"),
-            hasToolCall("displayAgenda"),
-            hasToolCall("displayUrlSummary"),
-            hasToolCall("summarizeURL"),
-            stepCountIs(maxSteps),
-          ],
-	          tools: {
-	            ...chatTools,
-	            ...webTools.tools,
-	            ...bashTools.tools,
-	            ...skillsTools.tools,
-	            ...hueGatewayTools.tools,
-              ...ovNlTools.tools,
-	          } as StreamTextToolSet,
-	        }
-	      : { stopWhen: [stepCountIs(5)] }),
-	    });
+    let result: ReturnType<typeof streamText>;
+    try {
+      result = streamText({
+        model: resolved!.model,
+        system,
+        messages: modelMessages,
+        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+          ? { temperature: 0 }
+          : {}),
+        ...(providerOptions ? { providerOptions } : {}),
+        ...(resolved!.capabilities.tools
+          ? {
+              ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
+              stopWhen: [
+                hasToolCall("displayWeather"),
+                hasToolCall("displayWeatherForecast"),
+                ...(stopAfterCurrentDateTime
+                  ? [hasToolCall("displayCurrentDateTime")]
+                  : []),
+                ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+                hasToolCall("displayNotes"),
+                hasToolCall("displayMemoryPrompt"),
+                hasToolCall("displayMemoryAnswer"),
+                hasToolCall("displayList"),
+                hasToolCall("displayListsOverview"),
+                hasToolCall("displayAgenda"),
+                hasToolCall("displayUrlSummary"),
+                hasToolCall("summarizeURL"),
+                stepCountIs(maxSteps),
+              ],
+              tools: {
+                ...chatTools,
+                ...webTools.tools,
+                ...bashTools.tools,
+                ...skillsTools.tools,
+                ...hueGatewayTools.tools,
+                ...ovNlTools.tools,
+              } as StreamTextToolSet,
+            }
+          : { stopWhen: [stepCountIs(5)] }),
+      });
+    } catch (err) {
+      return uiTextResponse({
+        headers,
+        text: errorTextFromError(err),
+        messageMetadata: baseMessageMetadata,
+      });
+    }
 
     const shouldAutoContinuePerplexity =
       webTools.enabled &&
@@ -1599,24 +1622,31 @@ export async function POST(req: Request) {
       generateMessageId: nanoid,
       messageMetadata,
       sendReasoning: config.reasoning.exposeToClient,
+      onError: errorTextFromError,
     });
 
     const shouldInspectForContinuation = shouldAutoContinuePerplexity;
     if (!shouldInspectForContinuation) {
       return createUIMessageStreamResponse({
         headers,
-        stream: createUIMessageStreamWithToolErrorContinuation({
-          stream: baseUIStream,
-          shouldContinue: () => false,
-          createContinuationStream: async () => null,
+        stream: createUIMessageStreamWithFatalErrorFallback({
+          stream: createUIMessageStreamWithToolErrorContinuation({
+            stream: baseUIStream,
+            shouldContinue: () => false,
+            createContinuationStream: async () => null,
+          }),
+          createMessageId: nanoid,
+          messageMetadata: baseMessageMetadata,
+          errorTextFromError,
         }),
       });
     }
 
     return createUIMessageStreamResponse({
       headers,
-      stream: createUIMessageStreamWithDeferredContinuation({
-        stream: baseUIStream,
+      stream: createUIMessageStreamWithFatalErrorFallback({
+        stream: createUIMessageStreamWithDeferredContinuation({
+          stream: baseUIStream,
           collect: (inspectionStream) =>
             collectUIMessageChunks(inspectionStream, {
               isWebToolName,
@@ -1632,125 +1662,131 @@ export async function POST(req: Request) {
             if (!needsPerplexityContinuation) {
               if (collected.toolErrors.length === 0) return null;
 
+              const continuationMessages = modelMessages.concat([
+                {
+                  role: "user" as const,
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: formatToolErrorsForPrompt(collected.toolErrors),
+                    },
+                  ],
+                },
+              ]);
+
+              const continued = streamText({
+                model: resolved!.model,
+                system,
+                messages: continuationMessages,
+                toolChoice: "none",
+                tools: {
+                  ...chatTools,
+                  ...webTools.tools,
+                  ...bashTools.tools,
+                  ...skillsTools.tools,
+                  ...hueGatewayTools.tools,
+                  ...ovNlTools.tools,
+                } as StreamTextToolSet,
+                ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                  ? { temperature: 0 }
+                  : {}),
+                ...(providerOptions ? { providerOptions } : {}),
+                stopWhen: [stepCountIs(5)],
+              });
+
+              const continuedStream = continued.toUIMessageStream({
+                generateMessageId: nanoid,
+                messageMetadata,
+                sendReasoning: config.reasoning.exposeToClient,
+                onError: errorTextFromError,
+              });
+              const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+                stream: continuedStream,
+                shouldContinue: () => false,
+                createContinuationStream: async () => null,
+              });
+              return stripUIMessageStream(safeContinuedStream, { dropStart: true });
+            }
+
+            const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
+              maxResults: 5,
+              maxSnippetChars: 420,
+            });
+
+            if (!formatted.ok) {
+              return uiTextContinuationStream({
+                text: `Web search error: ${formatted.errorText}`,
+                messageMetadata: baseMessageMetadata,
+              });
+            }
+
+            const continuationText = [
+              "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
+              lastUserText ? `User question: ${lastUserText}` : "",
+              formatted.text,
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
             const continuationMessages = modelMessages.concat([
               {
                 role: "user" as const,
-                content: [
-                  {
-                    type: "text" as const,
-                    text: formatToolErrorsForPrompt(collected.toolErrors),
-                  },
-                ],
+                content: [{ type: "text" as const, text: continuationText }],
               },
             ]);
+
+            const tools = {
+              ...chatTools,
+              ...webTools.tools,
+              ...bashTools.tools,
+            } as StreamTextToolSet;
+            delete tools.perplexity_search;
 
             const continued = streamText({
               model: resolved!.model,
               system,
               messages: continuationMessages,
-              toolChoice: "none",
-	              tools: {
-	                ...chatTools,
-	                ...webTools.tools,
-	                ...bashTools.tools,
-	                ...skillsTools.tools,
-	                ...hueGatewayTools.tools,
-                  ...ovNlTools.tools,
-	              } as StreamTextToolSet,
               ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                 ? { temperature: 0 }
                 : {}),
               ...(providerOptions ? { providerOptions } : {}),
-              stopWhen: [stepCountIs(5)],
+              ...(resolved!.capabilities.tools
+                ? {
+                    ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
+                    stopWhen: [
+                      hasToolCall("displayWeather"),
+                      hasToolCall("displayWeatherForecast"),
+                      ...(stopAfterCurrentDateTime
+                        ? [hasToolCall("displayCurrentDateTime")]
+                        : []),
+                      ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+                      hasToolCall("displayNotes"),
+                      hasToolCall("displayMemoryPrompt"),
+                      hasToolCall("displayMemoryAnswer"),
+                      hasToolCall("displayList"),
+                      hasToolCall("displayListsOverview"),
+                      hasToolCall("displayAgenda"),
+                      hasToolCall("displayUrlSummary"),
+                      hasToolCall("summarizeURL"),
+                      stepCountIs(maxSteps),
+                    ],
+                    tools,
+                  }
+                : { stopWhen: [stepCountIs(5)] }),
             });
 
             const continuedStream = continued.toUIMessageStream({
               generateMessageId: nanoid,
               messageMetadata,
               sendReasoning: config.reasoning.exposeToClient,
+              onError: errorTextFromError,
             });
-            const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
-              stream: continuedStream,
-              shouldContinue: () => false,
-              createContinuationStream: async () => null,
-            });
-            return stripUIMessageStream(safeContinuedStream, { dropStart: true });
-          }
-
-          const formatted = formatPerplexitySearchResultsForPrompt(perplexityOutput, {
-            maxResults: 5,
-            maxSnippetChars: 420,
-          });
-
-          if (!formatted.ok) {
-            return uiTextContinuationStream({
-              text: `Web search error: ${formatted.errorText}`,
-              messageMetadata: baseMessageMetadata,
-            });
-          }
-
-          const continuationText = [
-            "Web search results (from perplexity_search). Use these to answer the user's last message. Include source URLs where relevant.",
-            lastUserText ? `User question: ${lastUserText}` : "",
-            formatted.text,
-          ]
-            .filter(Boolean)
-            .join("\n\n");
-
-          const continuationMessages = modelMessages.concat([
-            {
-              role: "user" as const,
-              content: [{ type: "text" as const, text: continuationText }],
-            },
-          ]);
-
-	          const tools = {
-	            ...chatTools,
-	            ...webTools.tools,
-	            ...bashTools.tools,
-	          } as StreamTextToolSet;
-	          delete tools.perplexity_search;
-
-          const continued = streamText({
-            model: resolved!.model,
-            system,
-            messages: continuationMessages,
-            ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-              ? { temperature: 0 }
-              : {}),
-            ...(providerOptions ? { providerOptions } : {}),
-            ...(resolved!.capabilities.tools
-              ? {
-                  ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-	                  stopWhen: [
-                    hasToolCall("displayWeather"),
-                    hasToolCall("displayWeatherForecast"),
-                    ...(stopAfterCurrentDateTime
-                      ? [hasToolCall("displayCurrentDateTime")]
-                      : []),
-                    ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-                    hasToolCall("displayNotes"),
-                    hasToolCall("displayMemoryPrompt"),
-                    hasToolCall("displayMemoryAnswer"),
-                    hasToolCall("displayList"),
-	                    hasToolCall("displayListsOverview"),
-	                    hasToolCall("displayAgenda"),
-	                    hasToolCall("displayUrlSummary"),
-	                    hasToolCall("summarizeURL"),
-	                    stepCountIs(maxSteps),
-	                  ],
-                  tools,
-                }
-              : { stopWhen: [stepCountIs(5)] }),
-          });
-
-          const continuedStream = continued.toUIMessageStream({
-            generateMessageId: nanoid,
-            messageMetadata,
-            sendReasoning: config.reasoning.exposeToClient,
-          });
-          return stripUIMessageStream(continuedStream, { dropStart: true });
-        },
+            return stripUIMessageStream(continuedStream, { dropStart: true });
+          },
+        }),
+        createMessageId: nanoid,
+        messageMetadata: baseMessageMetadata,
+        errorTextFromError,
       }),
     });
   }
@@ -2624,48 +2660,81 @@ export async function POST(req: Request) {
   });
   if (ovFastPath) return ovFastPath;
 
+  const baseMessageMetadata = {
+    createdAt: now,
+    turnUserMessageId: lastUserMessageId || undefined,
+    profileInstructionsRevision: currentProfileRevision,
+    chatInstructionsRevision: currentChatRevision,
+  };
+
+  const providerInfo = config.providers.find((p) => p.id === resolved!.providerId);
+  const errorTextFromError = (err: unknown) => {
+    console.error("LLM request failed", err);
+    return formatLlmCallErrorForUser(err, {
+      providerName: providerInfo?.name,
+      providerId: resolved!.providerId,
+      baseUrl: providerInfo?.baseUrl,
+      modelType: resolved!.modelType,
+      providerModelId: resolved!.providerModelId,
+    });
+  };
+
 	  const forcedToolChoice = forceMemoryAnswerTool
 	    ? ({ type: "tool", toolName: "displayMemoryAnswer" } as const)
 	    : explicitBashCommand
 	      ? ({ type: "tool", toolName: "bash" } as const)
 	      : null;
-	  const result = streamText({
-    model: resolved!.model,
-    system,
-    messages: modelMessages,
-    ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
-      ? { temperature: isRegenerate ? 0.9 : 0 }
-      : {}),
-    ...(providerOptions ? { providerOptions } : {}),
-    ...(resolved!.capabilities.tools
-      ? {
-          ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-	          stopWhen: [
-	            hasToolCall("displayWeather"),
-	            hasToolCall("displayWeatherForecast"),
-	            ...(stopAfterCurrentDateTime
-	              ? [hasToolCall("displayCurrentDateTime")]
-	              : []),
-	            ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-	            hasToolCall("displayNotes"),
-	            hasToolCall("displayMemoryPrompt"),
-	            hasToolCall("displayMemoryAnswer"),
-	            hasToolCall("displayList"),
-	            hasToolCall("displayListsOverview"),
-	            hasToolCall("displayAgenda"),
-	            stepCountIs(maxSteps),
-	          ],
-	          tools: {
-	            ...chatTools,
-	            ...webTools.tools,
-	            ...bashTools.tools,
-	            ...skillsTools.tools,
-	            ...hueGatewayTools.tools,
-              ...ovNlTools.tools,
-	          } as StreamTextToolSet,
-	        }
-	      : { stopWhen: [stepCountIs(5)] }),
-	  });
+    let result: ReturnType<typeof streamText>;
+    try {
+      result = streamText({
+        model: resolved!.model,
+        system,
+        messages: modelMessages,
+        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+          ? { temperature: isRegenerate ? 0.9 : 0 }
+          : {}),
+        ...(providerOptions ? { providerOptions } : {}),
+        ...(resolved!.capabilities.tools
+          ? {
+              ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
+              stopWhen: [
+                hasToolCall("displayWeather"),
+                hasToolCall("displayWeatherForecast"),
+                ...(stopAfterCurrentDateTime
+                  ? [hasToolCall("displayCurrentDateTime")]
+                  : []),
+                ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
+                hasToolCall("displayNotes"),
+                hasToolCall("displayMemoryPrompt"),
+                hasToolCall("displayMemoryAnswer"),
+                hasToolCall("displayList"),
+                hasToolCall("displayListsOverview"),
+                hasToolCall("displayAgenda"),
+                stepCountIs(maxSteps),
+              ],
+              tools: {
+                ...chatTools,
+                ...webTools.tools,
+                ...bashTools.tools,
+                ...skillsTools.tools,
+                ...hueGatewayTools.tools,
+                ...ovNlTools.tools,
+              } as StreamTextToolSet,
+            }
+          : { stopWhen: [stepCountIs(5)] }),
+      });
+    } catch (err) {
+      return uiTextResponse({
+        headers: {
+          "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+          "x-remcochat-temporary": "0",
+          "x-remcochat-profile-id": profile.id,
+          "x-remcochat-chat-id": effectiveChat.id,
+        },
+        text: errorTextFromError(err),
+        messageMetadata: baseMessageMetadata,
+      });
+    }
 
 	  const headers = {
 	    "x-remcochat-api-version": REMCOCHAT_API_VERSION,
@@ -2712,13 +2781,6 @@ export async function POST(req: Request) {
       "x-remcochat-ov-nl-tools": Object.keys(ovNlTools.tools).join(","),
 	  };
 
-  const baseMessageMetadata = {
-    createdAt: now,
-    turnUserMessageId: lastUserMessageId || undefined,
-    profileInstructionsRevision: currentProfileRevision,
-    chatInstructionsRevision: currentChatRevision,
-  };
-
   const messageMetadata = ({
     part,
   }: {
@@ -2742,30 +2804,37 @@ export async function POST(req: Request) {
     generateMessageId: nanoid,
     messageMetadata,
     sendReasoning: config.reasoning.exposeToClient,
+    onError: errorTextFromError,
   });
 
 	  const shouldInspectForContinuation = shouldAutoContinuePerplexity;
   if (!shouldInspectForContinuation) {
     return createUIMessageStreamResponse({
       headers,
-      stream: createUIMessageStreamWithToolErrorContinuation({
-        stream: baseUIStream,
-        shouldContinue: () => false,
-        createContinuationStream: async () => null,
+      stream: createUIMessageStreamWithFatalErrorFallback({
+        stream: createUIMessageStreamWithToolErrorContinuation({
+          stream: baseUIStream,
+          shouldContinue: () => false,
+          createContinuationStream: async () => null,
+        }),
+        createMessageId: nanoid,
+        messageMetadata: baseMessageMetadata,
+        errorTextFromError,
       }),
     });
   }
 
   return createUIMessageStreamResponse({
     headers,
-	    stream: createUIMessageStreamWithDeferredContinuation({
-	      stream: baseUIStream,
-	      collect: (inspectionStream) =>
-	        collectUIMessageChunks(inspectionStream, {
-	          isWebToolName,
-	          captureChunks: false,
-	        }),
-	      createContinuationStream: async (collected) => {
+    stream: createUIMessageStreamWithFatalErrorFallback({
+      stream: createUIMessageStreamWithDeferredContinuation({
+        stream: baseUIStream,
+        collect: (inspectionStream) =>
+          collectUIMessageChunks(inspectionStream, {
+            isWebToolName,
+            captureChunks: false,
+          }),
+        createContinuationStream: async (collected) => {
 	        const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
 	        const needsPerplexityContinuation =
 	          collected.finishReason === "tool-calls" &&
@@ -2807,11 +2876,12 @@ export async function POST(req: Request) {
             stopWhen: [stepCountIs(5)],
           });
 
-          const continuedStream = continued.toUIMessageStream({
-            generateMessageId: nanoid,
-            messageMetadata,
-            sendReasoning: config.reasoning.exposeToClient,
-          });
+            const continuedStream = continued.toUIMessageStream({
+              generateMessageId: nanoid,
+              messageMetadata,
+              sendReasoning: config.reasoning.exposeToClient,
+              onError: errorTextFromError,
+            });
           const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
             stream: continuedStream,
             shouldContinue: () => false,
@@ -2893,9 +2963,14 @@ export async function POST(req: Request) {
           generateMessageId: nanoid,
           messageMetadata,
           sendReasoning: config.reasoning.exposeToClient,
+          onError: errorTextFromError,
         });
         return stripUIMessageStream(continuedStream, { dropStart: true });
-      },
+        },
+      }),
+      createMessageId: nanoid,
+      messageMetadata: baseMessageMetadata,
+      errorTextFromError,
     }),
   });
 }

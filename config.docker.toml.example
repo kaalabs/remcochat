@@ -71,6 +71,10 @@ api_key_env = "HUE_API_KEY"
 
 [providers.opencode]
 name = "OpenCode Zen"
+# NOTE: Requests are made from the RemcoChat server to this base_url.
+# If you see a 403 error like `unsupported_country_region_territory`, it usually means
+# the gateway/proxy (or upstream provider) is not available from the server's region.
+# Fix: switch providers or change base_url to a gateway hosted in a supported region.
 base_url = "https://opencode.ai/zen/v1"
 api_key_env = "OPENCODE_API_KEY"
 modelsdev_provider_id = "opencode"
