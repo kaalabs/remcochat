@@ -491,6 +491,8 @@ function isAbortLikeError(err: unknown): boolean {
     if (msg.includes("aborterror")) return true;
     if (msg.includes("cancelled")) return true;
     if (msg.includes("canceled")) return true;
+    if (msg.includes("controller is already closed")) return true;
+    if (msg.includes("invalid state")) return true;
   }
   return false;
 }
@@ -508,6 +510,21 @@ export function createUIMessageStreamWithFatalErrorFallback<T>(input: {
       let injectedErrorText = false;
       let sawFinish = false;
       let openTextId: string | null = null;
+      let streamClosed = false;
+
+      const safeEnqueue = (chunk: T): boolean => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(chunk);
+          return true;
+        } catch (err) {
+          if (isAbortLikeError(err)) {
+            streamClosed = true;
+            return false;
+          }
+          throw err;
+        }
+      };
 
       const injectErrorText = (text: string) => {
         if (injectedErrorText) return;
@@ -515,27 +532,27 @@ export function createUIMessageStreamWithFatalErrorFallback<T>(input: {
 
         const messageId = activeMessageId ?? input.createMessageId();
         if (!activeMessageId) {
-          controller.enqueue(
+          if (!safeEnqueue(
             { type: "start", messageId, messageMetadata: input.messageMetadata } as T,
-          );
+          )) return;
           activeMessageId = messageId;
         }
 
         const normalized = text.trim() || "Request failed.";
         if (openTextId) {
-          controller.enqueue(
+          if (!safeEnqueue(
             { type: "text-delta", id: openTextId, delta: `\n\n${normalized}` } as T,
-          );
-          controller.enqueue({ type: "text-end", id: openTextId } as T);
+          )) return;
+          if (!safeEnqueue({ type: "text-end", id: openTextId } as T)) return;
           openTextId = null;
         } else {
-          controller.enqueue({ type: "text-start", id: messageId } as T);
-          controller.enqueue({ type: "text-delta", id: messageId, delta: normalized } as T);
-          controller.enqueue({ type: "text-end", id: messageId } as T);
+          if (!safeEnqueue({ type: "text-start", id: messageId } as T)) return;
+          if (!safeEnqueue({ type: "text-delta", id: messageId, delta: normalized } as T)) return;
+          if (!safeEnqueue({ type: "text-end", id: messageId } as T)) return;
         }
-        controller.enqueue(
+        if (!safeEnqueue(
           { type: "finish", finishReason: "stop", messageMetadata: input.messageMetadata } as T,
-        );
+        )) return;
         sawFinish = true;
       };
 
@@ -558,7 +575,7 @@ export function createUIMessageStreamWithFatalErrorFallback<T>(input: {
 
             if (chunk?.type === "finish") {
               sawFinish = true;
-              controller.enqueue(value);
+              if (!safeEnqueue(value)) break;
               continue;
             }
 
@@ -573,16 +590,16 @@ export function createUIMessageStreamWithFatalErrorFallback<T>(input: {
             }
           }
 
-          controller.enqueue(value);
+          if (!safeEnqueue(value)) break;
         }
 
-        controller.close();
+        if (!streamClosed) controller.close();
       } catch (err) {
         if (isAbortLikeError(err)) {
-          controller.close();
+          if (!streamClosed) controller.close();
         } else {
           if (!sawFinish) injectErrorText(input.errorTextFromError(err));
-          controller.close();
+          if (!streamClosed) controller.close();
         }
       } finally {
         reader.releaseLock();
