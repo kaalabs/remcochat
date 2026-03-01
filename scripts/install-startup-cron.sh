@@ -9,7 +9,7 @@ command -v crontab >/dev/null 2>&1 || die "crontab not found"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-START_CMD="${REPO_DIR}/scripts/start-remcochat.sh --proxy"
+START_CMD="${REPO_DIR}/scripts/start-remcochat.sh"
 
 CRON_TAG="# remcochat:startup"
 CRON_LINE="@reboot ${START_CMD} >> /tmp/remcochat-startup.log 2>&1"

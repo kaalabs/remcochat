@@ -13,7 +13,7 @@ Environment variables:
   REMOTE        Git remote to track (default: origin)
   COMPOSE_FILE  Compose file path relative to REPO_DIR (default: docker-compose.yml)
   COMPOSE_FILES Comma-separated compose file paths relative to REPO_DIR (overrides COMPOSE_FILE)
-               Example: docker-compose.yml,docker-compose.proxy.yml
+               Example: docker-compose.yml,docker-compose.dev.yml
   REMOVE_ORPHANS Whether to delete orphan containers during update (default: 1)
   LOCK_FILE     Flock lock file path (default: /tmp/remcochat-update.lock)
 
@@ -55,6 +55,34 @@ compose() {
     return
   fi
   die "docker compose not available (need docker compose v2 or docker-compose)"
+}
+
+wait_compose_service_http() {
+  local service="$1"
+  local url="$2"
+  local attempts="${3:-40}"
+  local sleep_s="${4:-1}"
+
+  local i=1
+  local cid=""
+  local timeout_cmd=""
+  if command -v timeout >/dev/null 2>&1; then
+    timeout_cmd="timeout 4s"
+  fi
+
+  while [[ "$i" -le "$attempts" ]]; do
+    cid="$(compose "${COMPOSE_ARGS[@]}" ps -q "$service" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$cid" ]] && $timeout_cmd docker exec "$cid" node -e '
+      fetch(process.argv[1])
+        .then((r) => { if (!r.ok) process.exit(1); })
+        .catch(() => process.exit(1));
+    ' "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_s"
+    i=$((i + 1))
+  done
+  return 1
 }
 
 validate_toml_syntax() {
@@ -151,12 +179,6 @@ if [[ -n "$COMPOSE_FILES" ]]; then
   IFS=',' read -r -a compose_files <<<"$COMPOSE_FILES"
 else
   compose_files=("$COMPOSE_FILE")
-
-  # If a proxy container already exists, default to including the proxy compose file to avoid
-  # accidentally deleting it via --remove-orphans when COMPOSE_FILES isn't set.
-  if [[ -f "docker-compose.proxy.yml" ]] && docker ps -a --format '{{.Names}}' | grep -qx 'remcochat-proxy'; then
-    compose_files+=("docker-compose.proxy.yml")
-  fi
 fi
 
 COMPOSE_ARGS=()
@@ -220,5 +242,9 @@ if is_truthy "$REMOVE_ORPHANS"; then
 fi
 
 compose "${COMPOSE_ARGS[@]}" up -d --build "${REMOVE_ARGS[@]}"
+
+log "Health checks"
+wait_compose_service_http "sandboxd" "http://127.0.0.1:8080/v1/health" 50 1 || die "sandboxd not healthy after update; try: docker compose ${COMPOSE_ARGS[*]} logs --tail 200 sandboxd"
+wait_compose_service_http "remcochat" "http://127.0.0.1:3000/" 60 1 || die "remcochat not ready inside container (:3000) after update; this stack expects access via Traefik/Tailnet"
 
 log "Update complete: $(git rev-parse HEAD)"

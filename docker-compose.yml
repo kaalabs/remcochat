@@ -4,13 +4,14 @@ services:
       context: .
     container_name: remcochat
     restart: unless-stopped
+    networks:
+      - traefik-proxy
+      - internal
     init: true
     extra_hosts:
       # Linux Docker does not always provide host.docker.internal by default.
       # Map it explicitly so Hue Gateway fallback URL works from inside the app container.
       - "host.docker.internal:host-gateway"
-    ports:
-      - "127.0.0.1:3100:3000"
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
@@ -28,6 +29,20 @@ services:
       HUE_AUTH_HEADER: ${HUE_AUTH_HEADER:-}
       HUE_TOKEN: ${HUE_TOKEN:-}
       HUE_API_KEY: ${HUE_API_KEY:-}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+
+      - traefik.http.routers.remcochat-int.rule=Host(`remcochat.int.remcokortekaas.nl`)
+      - traefik.http.routers.remcochat-int.entrypoints=tailnetwebsecure
+      - traefik.http.routers.remcochat-int.tls=true
+      - traefik.http.routers.remcochat-int.tls.certresolver=internalle
+      # OPTIONAL but recommended on first internal app: request a wildcard cert once
+      # - "traefik.http.routers.remcochat-int.tls.domains[0].main=int.remcokortekaas.nl"
+      # - "traefik.http.routers.remcochat-int.tls.domains[0].sans=*.int.remcokortekaas.nl"
+
+      # IMPORTANT: set to the actual port remcochat listens on inside the container
+      - traefik.http.services.remcochat-int.loadbalancer.server.port=3000
     volumes:
       - remcochat_data:/app/data
       - remcochat_config:/app/config
@@ -47,6 +62,8 @@ services:
       dockerfile: sandboxd/Dockerfile
     container_name: remcochat-sandboxd
     restart: unless-stopped
+    networks:
+      - internal
     environment:
       SANDBOXD_BIND_HOST: "0.0.0.0"
       # Publish sandbox ports (sandboxUrl) only on a restricted host interface.
@@ -58,3 +75,9 @@ services:
 volumes:
   remcochat_data:
   remcochat_config:
+
+networks:
+  traefik-proxy:
+    external: true
+  internal:
+    driver: bridge

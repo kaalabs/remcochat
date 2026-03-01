@@ -148,7 +148,7 @@ if [[ "$INCLUDE_DOCKER" -eq 1 ]]; then
   # Best-effort: scan compose logs without printing them unless a match is found.
   if docker compose version >/dev/null 2>&1; then
     log "Scanning docker compose logs for token (best-effort)"
-    if docker compose -f "$REPO_DIR/docker-compose.yml" -f "$REPO_DIR/docker-compose.proxy.yml" logs --no-color 2>/dev/null | rg --fixed-strings -n "$TOKEN" >/dev/null 2>&1; then
+    if docker compose -f "$REPO_DIR/docker-compose.yml" logs --no-color 2>/dev/null | rg --fixed-strings -n "$TOKEN" >/dev/null 2>&1; then
       log "FOUND token in docker compose logs (not printing full logs)."
       found=1
     else

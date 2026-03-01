@@ -18,3 +18,98 @@ nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
 nginx: configuration file /etc/nginx/nginx.conf test is successful
 2026/01/31 16:17:04 [notice] 63#63: signal process started
 [2026-01-31T16:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-13T04:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/13 04:17:04 [notice] 175#175: signal process started
+[2026-02-13T04:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-13T16:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/13 16:17:04 [notice] 31#31: signal process started
+[2026-02-13T16:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-14T04:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/14 04:17:04 [notice] 47#47: signal process started
+[2026-02-14T04:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-14T16:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/14 16:17:04 [notice] 63#63: signal process started
+[2026-02-14T16:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-15T04:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/15 04:17:04 [notice] 79#79: signal process started
+[2026-02-15T04:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-15T16:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/15 16:17:04 [notice] 95#95: signal process started
+[2026-02-15T16:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-16T04:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/16 04:17:04 [notice] 111#111: signal process started
+[2026-02-16T04:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-16T16:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/16 16:17:04 [notice] 127#127: signal process started
+[2026-02-16T16:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-17T04:17:01+00:00] renew start blog.remcokortekaas.nl
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+2026/02/17 04:17:04 [notice] 143#143: signal process started
+[2026-02-17T04:17:04+00:00] renew done blog.remcokortekaas.nl
+[2026-02-17T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-18T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-18T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-19T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-19T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-20T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-20T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-21T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-21T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-22T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-22T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-23T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-23T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-24T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-24T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-25T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-25T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-26T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-26T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-27T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-27T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-28T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-02-28T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-03-01T04:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running
+[2026-03-01T16:17:01+00:00] renew start blog.remcokortekaas.nl
+Error response from daemon: container 937816b6ca6afb7b5bdc2f30095f696df0baed2fcc61972a85b8a36a77dc91f3 is not running

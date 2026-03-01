@@ -8,11 +8,10 @@ start-remcochat.sh
 Boot/start helper for the RemcoChat docker compose stack (remcochat + sandboxd).
 
 Usage:
-  scripts/start-remcochat.sh [--build] [--proxy] [--publish-sandboxd]
+  scripts/start-remcochat.sh [--build] [--publish-sandboxd]
 
 Options:
   --build   Force rebuild of compose images and sandbox runtime image.
-  --proxy   Also start the nginx reverse proxy (serves https://<host>/remcochat on port 443).
   --publish-sandboxd  Publish sandboxd on host port 8080 (diagnostic/dev only).
 
 Prereqs:
@@ -32,16 +31,11 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 FORCE_BUILD=0
-ENABLE_PROXY=0
 PUBLISH_SANDBOXD=0
 while [[ "${#}" -gt 0 ]]; do
   case "${1}" in
     --build)
       FORCE_BUILD=1
-      shift
-      ;;
-    --proxy)
-      ENABLE_PROXY=1
       shift
       ;;
     --publish-sandboxd)
@@ -84,12 +78,6 @@ compose() {
 cd "$REPO_DIR"
 
 [[ -f docker-compose.yml ]] || die "missing docker-compose.yml in $REPO_DIR"
-  if [[ "$ENABLE_PROXY" -eq 1 ]]; then
-    [[ -f docker-compose.proxy.yml ]] || die "missing docker-compose.proxy.yml in $REPO_DIR"
-    [[ -f nginx/remcochat.conf ]] || die "missing nginx/remcochat.conf in $REPO_DIR"
-    [[ -x scripts/check-proxy-certs.sh ]] || die "missing scripts/check-proxy-certs.sh"
-    scripts/check-proxy-certs.sh || die "proxy cert preflight failed"
-  fi
 [[ -f .env ]] || die "missing .env in $REPO_DIR (copy from .env.example and set required values)"
 
 dotenv_get() {
@@ -191,13 +179,6 @@ if [[ "$PUBLISH_SANDBOXD" -eq 1 ]]; then
   [[ -f docker-compose.dev.yml ]] || die "missing docker-compose.dev.yml in $REPO_DIR"
   COMPOSE_FILES+=(-f docker-compose.dev.yml)
 fi
-if [[ "$ENABLE_PROXY" -eq 1 ]]; then
-  COMPOSE_FILES+=(-f docker-compose.proxy.yml)
-else
-  if [[ -f docker-compose.proxy.yml ]]; then
-    log "NOTE: reverse proxy not started (pass --proxy to start remcochat-proxy)"
-  fi
-fi
 
 log "Starting compose stack"
 if [[ "$FORCE_BUILD" -eq 1 ]]; then
@@ -206,34 +187,26 @@ else
   compose "${COMPOSE_FILES[@]}" up -d
 fi
 
-wait_http_ok() {
-  local url="$1"
-  local label="$2"
-  local attempts="${3:-30}"
+wait_compose_service_http() {
+  local service="$1"
+  local url="$2"
+  local attempts="${3:-40}"
   local sleep_s="${4:-1}"
 
   local i=1
-  while [[ "$i" -le "$attempts" ]]; do
-    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep "$sleep_s"
-    i=$((i + 1))
-  done
-  return 1
-}
+  local cid=""
+  local timeout_cmd=""
+  if command -v timeout >/dev/null 2>&1; then
+    timeout_cmd="timeout 4s"
+  fi
 
-wait_compose_sandboxd_health() {
-  local attempts="${1:-40}"
-  local sleep_s="${2:-1}"
-
-  local i=1
   while [[ "$i" -le "$attempts" ]]; do
-    if compose "${COMPOSE_FILES[@]}" exec -T sandboxd node -e '
-      fetch("http://127.0.0.1:8080/v1/health")
+    cid="$(compose "${COMPOSE_FILES[@]}" ps -q "$service" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$cid" ]] && $timeout_cmd docker exec "$cid" node -e '
+      fetch(process.argv[1])
         .then((r) => { if (!r.ok) process.exit(1); })
         .catch(() => process.exit(1));
-    ' >/dev/null 2>&1; then
+    ' "$url" >/dev/null 2>&1; then
       return 0
     fi
     sleep "$sleep_s"
@@ -243,23 +216,11 @@ wait_compose_sandboxd_health() {
 }
 
 log "Health checks"
-wait_compose_sandboxd_health 50 1 || die "sandboxd not healthy (private to docker network); try: docker compose -f docker-compose.yml logs --tail 200 sandboxd"
-wait_http_ok "http://127.0.0.1:3100/" "remcochat" 60 1 || die "remcochat not serving on http://127.0.0.1:3100"
-  if [[ "$ENABLE_PROXY" -eq 1 ]]; then
-    curl -fsSk --max-time 2 https://127.0.0.1/remcochat/ >/dev/null 2>&1 || die "proxy not serving on https://127.0.0.1/remcochat/"
-    if ! compose "${COMPOSE_FILES[@]}" ps --services --status running 2>/dev/null | grep -qx "remcochat-proxy"; then
-      log "ERROR: remcochat-proxy is not running"
-      compose "${COMPOSE_FILES[@]}" ps -a || true
-      compose "${COMPOSE_FILES[@]}" logs --tail 200 remcochat-proxy || true
-      exit 3
-    fi
-  fi
+wait_compose_service_http "sandboxd" "http://127.0.0.1:8080/v1/health" 50 1 || die "sandboxd not healthy (private to docker network); try: docker compose -f docker-compose.yml logs --tail 200 sandboxd"
+wait_compose_service_http "remcochat" "http://127.0.0.1:3000/" 60 1 || die "remcochat not ready inside container (:3000); this stack expects access via Traefik/Tailnet"
 
-log "OK: remcochat on http://127.0.0.1:3100 (local only)"
+log "OK: remcochat is serving on :3000 inside the compose network (access via Traefik/Tailnet)."
 log "OK: sandboxd is private to the docker network (remcochat -> http://sandboxd:8080). Published sandbox ports bind to ${sandboxd_publish_host_ip}."
 if [[ "$PUBLISH_SANDBOXD" -eq 1 ]]; then
   log "NOTE: sandboxd API is also published on http://${sandboxd_host_bind_ip}:8080 (--publish-sandboxd)."
-fi
-if [[ "$ENABLE_PROXY" -eq 1 ]]; then
-  log "OK: proxy on https://<host>/remcochat/ (443)"
 fi
