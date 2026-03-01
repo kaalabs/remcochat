@@ -39,7 +39,7 @@ Prereqs:
 - `REMCOCHAT_ENABLE_BASH_TOOL=1` (required if you want bash tools / sandboxd)
 - `REMCOCHAT_CONFIG_TOML=./config.docker.toml`
 - `REMCOCHAT_MODELSDEV_CLI_HOST_DIR=/path/to/modelsdev` (must contain `bin/run.js` or `bin/modelsdev`)
-- Plus your provider keys (`VERCEL_AI_GATEWAY_API_KEY` and/or `OPENCODE_API_KEY`)
+- Plus your provider keys (`VERCEL_AI_GATEWAY_API_KEY`, `OPENCODE_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`, `FIREWORKS_API_KEY`) as needed by your configured providers
 
 3) Start:
 - `scripts/start-remcochat.sh --build`
