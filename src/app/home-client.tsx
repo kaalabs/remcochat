@@ -371,6 +371,14 @@ export function HomeClient({
     },
     [scrollTranscriptToBottom]
   );
+  const pinTranscriptToBottomIfFollowing = useCallback(() => {
+    const ctx = stickToBottomContextRef.current;
+    if (!ctx) return;
+    void ctx.scrollToBottom({
+      animation: "instant",
+      preserveScrollPosition: true,
+    });
+  }, []);
 
   const [profiles, setProfiles] = useState<Profile[]>(initialProfiles);
   const [activeProfileId, setActiveProfileId] = useState<string>(
@@ -2061,6 +2069,26 @@ export function HomeClient({
     loadedChatIdRef.current = "";
     syncRef.current = null;
   }, [activeProfileId]);
+
+  useEffect(() => {
+    if (status !== "submitted" && status !== "streaming") return;
+
+    let firstRaf = 0;
+    let secondRaf = 0;
+
+    pinTranscriptToBottomIfFollowing();
+    firstRaf = requestAnimationFrame(() => {
+      pinTranscriptToBottomIfFollowing();
+      secondRaf = requestAnimationFrame(() => {
+        pinTranscriptToBottomIfFollowing();
+      });
+    });
+
+    return () => {
+      if (firstRaf) cancelAnimationFrame(firstRaf);
+      if (secondRaf) cancelAnimationFrame(secondRaf);
+    };
+  }, [messages, pinTranscriptToBottomIfFollowing, status]);
 
   useEffect(() => {
     if (!activeProfile) return;
@@ -4242,7 +4270,11 @@ export function HomeClient({
             contextRef={stickToBottomContextRef}
             data-testid="chat:transcript"
             initial="instant"
-            resize="smooth"
+            resize={
+              status === "submitted" || status === "streaming"
+                ? "instant"
+                : "smooth"
+            }
           >
             <StickToBottom.Content className="w-full py-4 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:py-6 sm:pl-[max(1.375rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:py-8 md:pl-[max(1.75rem,env(safe-area-inset-left,0px))] md:pr-[max(2rem,env(safe-area-inset-right,0px))]">
               <div
