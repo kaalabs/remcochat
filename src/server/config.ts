@@ -54,6 +54,14 @@ const SkillsSchema = z
   })
   .optional();
 
+const LocalAccessSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowed_commands: z.array(z.string().min(1)).optional(),
+    allowed_directories: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+
 const ReasoningSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -162,6 +170,7 @@ const RawConfigSchema = z.object({
     router: IntentRouterSchema,
     web_tools: WebToolsSchema,
     skills: SkillsSchema,
+    local_access: LocalAccessSchema,
     reasoning: ReasoningSchema,
     bash_tools: BashToolsSchema,
     hue_gateway: HueGatewaySchema,
@@ -191,6 +200,11 @@ export type RemcoChatConfig = {
     maxSkills: number;
     maxSkillMdBytes: number;
     maxResourceBytes: number;
+  } | null;
+  localAccess: {
+    enabled: true;
+    allowedCommands: string[];
+    allowedDirectories: string[];
   } | null;
   intentRouter: {
     enabled: boolean;
@@ -319,6 +333,58 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
         `config.toml: providers.${provider.id}.default_model_id "${provider.defaultModelId}" is not present in providers.${provider.id}.allowed_model_ids`
       );
     }
+  }
+
+  let localAccess: RemcoChatConfig["localAccess"] = null;
+  const rawLocalAccess = raw.app.local_access ?? {};
+  const localAccessEnabled = Boolean(rawLocalAccess.enabled ?? false);
+  if (localAccessEnabled) {
+    const repoBaseDir = process.cwd();
+    const homeDir = os.homedir();
+
+    const resolveDirEntry = (dir: string): string[] => {
+      const trimmed = String(dir ?? "").trim();
+      if (!trimmed) return [];
+      if (trimmed === "~") return [homeDir];
+      if (trimmed.startsWith("~/")) return [path.join(homeDir, trimmed.slice(2))];
+      if (path.isAbsolute(trimmed)) return [trimmed];
+      return [path.resolve(repoBaseDir, trimmed)];
+    };
+
+    const rawAllowedDirs = Array.isArray(rawLocalAccess.allowed_directories)
+      ? rawLocalAccess.allowed_directories.map((d) => String(d).trim()).filter(Boolean)
+      : [];
+    const rawAllowedCommands = Array.isArray(rawLocalAccess.allowed_commands)
+      ? rawLocalAccess.allowed_commands.map((c) => String(c).trim()).filter(Boolean)
+      : [];
+
+    const allowedDirectories: string[] = [];
+    const seenDirs = new Set<string>();
+    for (const entry of rawAllowedDirs) {
+      for (const resolved of resolveDirEntry(entry)) {
+        const normalized = String(resolved ?? "").trim().replace(/[\\/]+$/, "");
+        if (!normalized) continue;
+        if (seenDirs.has(normalized)) continue;
+        seenDirs.add(normalized);
+        allowedDirectories.push(normalized);
+      }
+    }
+
+    const allowedCommands: string[] = [];
+    const seenCmds = new Set<string>();
+    for (const entry of rawAllowedCommands) {
+      const normalized = String(entry ?? "").trim();
+      if (!normalized) continue;
+      if (seenCmds.has(normalized)) continue;
+      seenCmds.add(normalized);
+      allowedCommands.push(normalized);
+    }
+
+    localAccess = {
+      enabled: true,
+      allowedCommands,
+      allowedDirectories,
+    };
   }
 
   let skills: RemcoChatConfig["skills"] = null;
@@ -940,6 +1006,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): RemcoChatConfig 
     defaultProviderId,
     providers,
     skills,
+    localAccess,
     intentRouter,
     webTools,
     reasoning: {

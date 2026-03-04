@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { getDb } from "@/server/db";
+import { getConfig } from "@/server/config";
+import { requireLocalPathAllowed } from "@/server/local-access";
 import {
   ALLOWED_PROFILE_AVATAR_MEDIA_TYPES,
   MAX_PROFILE_AVATAR_SIZE_BYTES,
@@ -26,10 +28,21 @@ export function isAllowedProfileAvatarMediaType(mediaType: string): boolean {
   return ALLOWED_MEDIA_TYPES.has(String(mediaType ?? "").trim().toLowerCase());
 }
 
+let cachedAvatarsDir: { env: string; dir: string } | null = null;
 function avatarsDir(): string {
   const fromEnv = String(process.env.REMCOCHAT_PROFILE_AVATARS_DIR ?? "").trim();
-  if (fromEnv) return path.resolve(fromEnv);
-  return path.join(process.cwd(), "data", "profile-avatars");
+  if (cachedAvatarsDir && cachedAvatarsDir.env === fromEnv) return cachedAvatarsDir.dir;
+  const dir = fromEnv
+    ? path.resolve(fromEnv)
+    : path.join(process.cwd(), "data", "profile-avatars");
+  requireLocalPathAllowed({
+    cfg: getConfig(),
+    localPath: dir,
+    feature: "profile_avatars.storage",
+    operation: "write",
+  });
+  cachedAvatarsDir = { env: fromEnv, dir };
+  return dir;
 }
 
 function avatarFilePath(profileId: string): string {

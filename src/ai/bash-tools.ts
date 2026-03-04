@@ -6,6 +6,7 @@ import type { Sandbox as BashToolSandbox } from "bash-tool";
 import { createDockerSandboxClient } from "@/ai/docker-sandbox-client";
 import type { RemcoChatConfig } from "@/server/config";
 import { getConfig } from "@/server/config";
+import { requireLocalPathAllowed } from "@/server/local-access";
 import { tool as createTool } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -426,6 +427,13 @@ async function seedSandboxFromUpload(
   if (!root)
     throw new Error("bash_tools.project_root is required for upload seed.");
 
+  requireLocalPathAllowed({
+    cfg: getConfig(),
+    localPath: root,
+    feature: "bash_tools.seed.upload",
+    operation: "seed",
+  });
+
   let stat: { isDirectory(): boolean };
   try {
     stat = await fs.stat(root);
@@ -539,6 +547,13 @@ async function seedDockerSandboxFromUpload(
   const root = cfg.projectRoot;
   if (!root)
     throw new Error("bash_tools.project_root is required for upload seed.");
+
+  requireLocalPathAllowed({
+    cfg: getConfig(),
+    localPath: root,
+    feature: "bash_tools.seed.upload",
+    operation: "seed",
+  });
 
   let stat: { isDirectory(): boolean };
   try {

@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { getConfig } from "@/server/config";
+import { requireLocalPathAllowed } from "@/server/local-access";
 
 let db: Database.Database | null = null;
 
@@ -420,6 +422,13 @@ export function getDb() {
   const dbPath =
     process.env.REMCOCHAT_DB_PATH ??
     path.join(process.cwd(), "data", "remcochat.sqlite");
+
+  requireLocalPathAllowed({
+    cfg: getConfig(),
+    localPath: path.dirname(dbPath),
+    feature: "db.storage",
+    operation: "write",
+  });
 
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 

@@ -3,6 +3,7 @@ import { discoverSkills } from "@/server/skills/registry";
 import type { SkillRecord, SkillsRegistry, SkillsRegistrySnapshot } from "@/server/skills/types";
 import { logEvent } from "@/server/log";
 import { redactSkillsRegistrySnapshotForPublic } from "@/server/skills/redact";
+import { requireLocalPathAllowed } from "@/server/local-access";
 
 let cachedRegistry: SkillsRegistry | null | undefined;
 
@@ -12,8 +13,23 @@ function discoverAndBuildRegistry(): SkillsRegistry | null {
     return null;
   }
 
+  const config = getConfig();
+  const scanRoots = cfg.directories.filter((dir) => {
+    try {
+      requireLocalPathAllowed({
+        cfg: config,
+        localPath: dir,
+        feature: "skills.discovery",
+        operation: "scan",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   const discovery = discoverSkills({
-    scanRoots: cfg.directories,
+    scanRoots,
     maxSkills: cfg.maxSkills,
   });
 

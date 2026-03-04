@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ModelCapabilities } from "@/lib/models";
 import type { ModelType } from "@/server/config";
+import { getConfig } from "@/server/config";
+import { requireLocalCommandAllowed } from "@/server/local-access";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,6 +63,11 @@ export function modelsdevTimeoutMs(): number {
 }
 
 export async function getModelsdevVersion(): Promise<string> {
+  requireLocalCommandAllowed({
+    cfg: getConfig(),
+    command: "modelsdev",
+    feature: "modelsdev.version",
+  });
   const res = await execFileAsync("modelsdev", ["--version"], {
     timeout: 20_000,
     maxBuffer: 1024 * 1024,
@@ -72,6 +79,11 @@ export async function modelsdevProviderShow(
   providerId: string,
   timeoutMs: number
 ): Promise<ModelsDevProviderShowResponse> {
+  requireLocalCommandAllowed({
+    cfg: getConfig(),
+    command: "modelsdev",
+    feature: "modelsdev.provider_show",
+  });
   const res = await execFileAsync(
     "modelsdev",
     ["providers", "show", providerId, "-d", "--json", "--timeout", String(timeoutMs)],

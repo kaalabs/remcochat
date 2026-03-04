@@ -5,6 +5,7 @@ import {
   updateProviderAllowedModelIdsInToml,
   updateRouterModelIdInToml,
   updateRouterProviderIdInToml,
+  updateLocalAccessInToml,
   updateWebToolsSearchProviderInToml,
 } from "../src/server/config-toml-edit";
 
@@ -173,4 +174,48 @@ test("updateWebToolsSearchProviderInToml throws when app.web_tools is missing", 
     () => updateWebToolsSearchProviderInToml("version = 2\n", "exa"),
     /missing table \[app\.web_tools\]/
   );
+});
+
+test("updateLocalAccessInToml inserts missing app.local_access table", () => {
+  const original = `
+version = 2
+
+[app]
+default_provider_id = "opencode"
+`;
+
+  const updated = updateLocalAccessInToml(original, {
+    enabled: true,
+    allowedCommands: ["modelsdev"],
+    allowedDirectories: ["."],
+  });
+
+  assert.match(updated, /\[app\.local_access\]/);
+  assert.match(updated, /^\s*enabled = true\s*$/m);
+  assert.match(updated, /allowed_commands = \[\n\s+"modelsdev",\n\s*\]/m);
+  assert.match(updated, /allowed_directories = \[\n\s+"\.",\n\s*\]/m);
+});
+
+test("updateLocalAccessInToml replaces keys in existing table", () => {
+  const original = `
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.local_access]
+enabled = false
+allowed_commands = ["old"]
+allowed_directories = ["old"]
+`;
+
+  const updated = updateLocalAccessInToml(original, {
+    enabled: true,
+    allowedCommands: ["modelsdev", "git"],
+    allowedDirectories: ["./data"],
+  });
+
+  assert.match(updated, /^\s*enabled = true\s*$/m);
+  assert.match(updated, /allowed_commands = \[\n\s+"modelsdev",\n\s+"git",\n\s*\]/m);
+  assert.match(updated, /allowed_directories = \[\n\s+"\.\/*data",\n\s*\]/m);
 });

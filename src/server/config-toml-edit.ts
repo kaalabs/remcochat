@@ -78,12 +78,80 @@ function renderTomlStringArray(
   key: string,
   values: string[]
 ): string {
+  const escapeTomlBasicString = (value: string): string => {
+    return String(value ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  };
   const lines = [
     `${indent}${key} = [`,
-    ...values.map((v) => `${indent}  "${v}",`),
+    ...values.map((v) => `${indent}  "${escapeTomlBasicString(v)}",`),
     `${indent}]`,
   ];
   return lines.join("\n");
+}
+
+function ensureTableExists(content: string, header: string, initialBody?: string): string {
+  const headerRe = new RegExp(`^\\s*\\[${escapeRegExp(header)}\\]\\s*$`, "m");
+  if (headerRe.test(content)) return content;
+
+  const trimmed = content.replace(/\s*$/, "");
+  const body = String(initialBody ?? "").trim();
+  const insertion = [`[${header}]`, ...(body ? [body] : [])].join("\n");
+  return `${trimmed}\n\n${insertion}\n`;
+}
+
+function upsertBooleanKeyInTable(
+  content: string,
+  header: string,
+  key: string,
+  value: boolean
+): string {
+  const table = findTableRange(content, header);
+  const slice = content.slice(table.start, table.end);
+  const hasKey = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`, "m").test(slice);
+
+  if (hasKey) {
+    const kv = findKeyValueRangeInsideTable(content, table, key);
+    const lineEnd = content.indexOf("\n", kv.end);
+    const end = lineEnd === -1 ? content.length : lineEnd;
+    const replacement = `${kv.indent}${key} = ${value ? "true" : "false"}`;
+    return content.slice(0, kv.start) + replacement + content.slice(end);
+  }
+
+  const headerIdx = content.indexOf(`[${header}]`, table.start);
+  if (headerIdx === -1) throw new Error(`config.toml: missing table [${header}]`);
+  const tableHeaderEnd = content.indexOf("\n", headerIdx);
+  const insertAt = tableHeaderEnd === -1 ? table.end : tableHeaderEnd + 1;
+  const insertion = `${key} = ${value ? "true" : "false"}\n`;
+  return content.slice(0, insertAt) + insertion + content.slice(insertAt);
+}
+
+function upsertStringArrayKeyInTable(
+  content: string,
+  header: string,
+  key: string,
+  values: string[]
+): string {
+  const table = findTableRange(content, header);
+  const slice = content.slice(table.start, table.end);
+  const hasKey = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=`, "m").test(slice);
+
+  if (hasKey) {
+    const kv = findKeyValueRangeInsideTable(content, table, key);
+    const arrayStart = content.indexOf("[", kv.end);
+    if (arrayStart === -1 || arrayStart >= table.end) {
+      throw new Error(`config.toml: ${header}.${key} must be an array`);
+    }
+    const arrayEnd = findBracketedArrayEnd(content, arrayStart);
+    const replacement = renderTomlStringArray(kv.indent, key, values);
+    return content.slice(0, kv.start) + replacement + content.slice(arrayEnd + 1);
+  }
+
+  const headerIdx = content.indexOf(`[${header}]`, table.start);
+  if (headerIdx === -1) throw new Error(`config.toml: missing table [${header}]`);
+  const tableHeaderEnd = content.indexOf("\n", headerIdx);
+  const insertAt = tableHeaderEnd === -1 ? table.end : tableHeaderEnd + 1;
+  const insertion = `${renderTomlStringArray("", key, values)}\n`;
+  return content.slice(0, insertAt) + insertion + content.slice(insertAt);
 }
 
 export function updateProviderAllowedModelIdsInToml(
@@ -166,6 +234,27 @@ export function updateWebToolsSearchProviderInToml(
   const insertAt = tableHeaderEnd === -1 ? table.end : tableHeaderEnd + 1;
   const insertion = `search_provider = "${provider}"\n`;
   return content.slice(0, insertAt) + insertion + content.slice(insertAt);
+}
+
+export function updateLocalAccessInToml(
+  content: string,
+  input: { enabled: boolean; allowedCommands: string[]; allowedDirectories: string[] }
+): string {
+  let next = ensureTableExists(content, "app.local_access");
+  next = upsertBooleanKeyInTable(next, "app.local_access", "enabled", Boolean(input.enabled));
+  next = upsertStringArrayKeyInTable(
+    next,
+    "app.local_access",
+    "allowed_commands",
+    input.allowedCommands
+  );
+  next = upsertStringArrayKeyInTable(
+    next,
+    "app.local_access",
+    "allowed_directories",
+    input.allowedDirectories
+  );
+  return next;
 }
 
 export function writeFileAtomic(filePath: string, content: string) {

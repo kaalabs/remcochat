@@ -19,6 +19,29 @@ recency = "week"
 allowed_domains = []
 blocked_domains = []
 
+# Local access whitelist (optional).
+#
+# When enabled, RemcoChat will block local filesystem access and local command execution
+# unless explicitly allowlisted here.
+#
+# Applies to:
+# - local command execution (currently `modelsdev`)
+# - skills discovery (app.skills.directories)
+# - bash tools upload seed (app.bash_tools.project_root when seed.mode="upload")
+# - data storage paths (DB, attachments, profile avatars) including env overrides
+#
+# In addition, when enabled RemcoChat will expose host-side tools to the model for
+# allowlisted commands/paths (e.g. `localExec`, `obsidian`, `localReadFile`, `localListDir`).
+# These tools are only exposed for requests allowed by the admin policy (localhost or admin token).
+#
+# Notes:
+# - Use `"*"` in an allowlist to allow everything (not recommended).
+# - If enabled, keep `allowed_directories` broad enough for your configured skills dirs and data dirs.
+[app.local_access]
+enabled = false
+allowed_commands = ["modelsdev"]
+allowed_directories = ["."]
+
 # Reasoning / Thinking controls (applies only to models flagged as reasoning-capable by modelsdev).
 # RemcoChat does NOT stream reasoning text to the UI by default.
 [app.reasoning]

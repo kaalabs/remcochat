@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -124,6 +125,13 @@ type WebSearchProviderResponse = {
   enabled: boolean;
   selectedProviderId: string;
   providers: Array<{ id: string; label: string }>;
+};
+
+type LocalAccessResponse = {
+  configured: boolean;
+  enabled: boolean;
+  allowedCommands: string[];
+  allowedDirectories: string[];
 };
 
 type ReadinessPreflightResponse = {
@@ -342,6 +350,16 @@ export function AdminClient() {
   );
   const [webSearchDraft, setWebSearchDraft] = useState<string>("");
 
+  const [localAccessLoading, setLocalAccessLoading] = useState(true);
+  const [localAccessSaving, setLocalAccessSaving] = useState(false);
+  const [localAccessError, setLocalAccessError] = useState<string | null>(null);
+  const [localAccessConfig, setLocalAccessConfig] = useState<LocalAccessResponse | null>(
+    null
+  );
+  const [localAccessEnabledDraft, setLocalAccessEnabledDraft] = useState(false);
+  const [localAccessCommandsDraft, setLocalAccessCommandsDraft] = useState("");
+  const [localAccessDirectoriesDraft, setLocalAccessDirectoriesDraft] = useState("");
+
   const [readinessPreflight, setReadinessPreflight] =
     useState<ReadinessPreflightResponse | null>(null);
   const [llmReadinessByProviderId, setLlmReadinessByProviderId] = useState<
@@ -429,6 +447,19 @@ export function AdminClient() {
     setWebSearchDraft(known ? selected : (data.providers[0]?.id ?? selected));
   }, [t]);
 
+  const loadLocalAccess = useCallback(async () => {
+    const res = await fetch("/api/admin/local-access", { cache: "no-store" });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(json?.error || t("error.admin.local_access_load_failed"));
+    }
+    const data = (await res.json()) as LocalAccessResponse;
+    setLocalAccessConfig(data);
+    setLocalAccessEnabledDraft(Boolean(data.enabled));
+    setLocalAccessCommandsDraft((data.allowedCommands ?? []).join("\n"));
+    setLocalAccessDirectoriesDraft((data.allowedDirectories ?? []).join("\n"));
+  }, [t]);
+
   const loadReadinessPreflight = useCallback(async () => {
     const res = await fetch("/api/admin/readiness/preflight", {
       cache: "no-store",
@@ -483,6 +514,26 @@ export function AdminClient() {
       canceled = true;
     };
   }, [loadWebSearchProvider, t]);
+
+  useEffect(() => {
+    let canceled = false;
+    setLocalAccessLoading(true);
+    setLocalAccessError(null);
+    loadLocalAccess()
+      .catch((err) => {
+        if (canceled) return;
+        setLocalAccessError(
+          err instanceof Error ? err.message : t("error.admin.local_access_load_failed")
+        );
+      })
+      .finally(() => {
+        if (canceled) return;
+        setLocalAccessLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [loadLocalAccess, t]);
 
   useEffect(() => {
     loadReadinessPreflight().catch(() => {});
@@ -851,6 +902,66 @@ export function AdminClient() {
       );
     } finally {
       setWebSearchSaving(false);
+    }
+  };
+
+  const resetLocalAccessDraft = () => {
+    const cfg = localAccessConfig;
+    if (!cfg) return;
+    setLocalAccessEnabledDraft(Boolean(cfg.enabled));
+    setLocalAccessCommandsDraft((cfg.allowedCommands ?? []).join("\n"));
+    setLocalAccessDirectoriesDraft((cfg.allowedDirectories ?? []).join("\n"));
+  };
+
+  const saveLocalAccess = async () => {
+    if (localAccessSaving) return;
+    const cfg = localAccessConfig;
+    if (!cfg) return;
+
+    const splitList = (value: string): string[] => {
+      return String(value ?? "")
+        .split(/[\n,]/g)
+        .map((v) => v.trim())
+        .filter(Boolean);
+    };
+
+    const nextEnabled = Boolean(localAccessEnabledDraft);
+    const nextCommands = splitList(localAccessCommandsDraft);
+    const nextDirs = splitList(localAccessDirectoriesDraft);
+
+    const hasChanges =
+      nextEnabled !== Boolean(cfg.enabled) ||
+      nextCommands.join("\n") !== (cfg.allowedCommands ?? []).join("\n") ||
+      nextDirs.join("\n") !== (cfg.allowedDirectories ?? []).join("\n");
+    if (!hasChanges) return;
+
+    setLocalAccessSaving(true);
+    setLocalAccessError(null);
+    setSaveNotice(null);
+    try {
+      const res = await fetch("/api/admin/local-access", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: nextEnabled,
+          allowedCommands: nextCommands,
+          allowedDirectories: nextDirs,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as
+        | { ok?: boolean; error?: string }
+        | null;
+      if (!res.ok) {
+        throw new Error(json?.error || t("error.admin.local_access_update_failed"));
+      }
+      await loadLocalAccess();
+      setSaveNotice(t("admin.local_access.notice.updated"));
+    } catch (err) {
+      setLocalAccessError(
+        err instanceof Error ? err.message : t("error.admin.local_access_update_failed")
+      );
+    } finally {
+      setLocalAccessSaving(false);
     }
   };
 
@@ -1280,6 +1391,91 @@ export function AdminClient() {
                     </span>
                   </div>
                 ) : null}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("admin.local_access.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {localAccessError ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {localAccessError}
+                  </div>
+                ) : null}
+
+                <div className="text-sm text-muted-foreground">
+                  {t("admin.local_access.description")}
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <div className="space-y-0.5">
+                    <div className="text-sm font-medium">
+                      {t("admin.local_access.enabled.label")}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("admin.local_access.enabled.hint")}
+                    </div>
+                  </div>
+                  <input
+                    checked={localAccessEnabledDraft}
+                    className="size-4 accent-foreground disabled:opacity-50"
+                    disabled={localAccessLoading || localAccessSaving}
+                    onChange={(e) => setLocalAccessEnabledDraft(e.target.checked)}
+                    type="checkbox"
+                  />
+                </div>
+
+                <div className="grid gap-3">
+                  <div className="space-y-2">
+                    <label
+                      className="text-sm font-medium"
+                      htmlFor="admin:local-access-commands"
+                    >
+                      {t("admin.local_access.commands.label")}
+                    </label>
+                    <Textarea
+                      className="min-h-[92px] font-mono text-xs"
+                      disabled={localAccessLoading || localAccessSaving}
+                      id="admin:local-access-commands"
+                      onChange={(e) => setLocalAccessCommandsDraft(e.target.value)}
+                      placeholder={t("admin.local_access.commands.placeholder")}
+                      value={localAccessCommandsDraft}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label
+                      className="text-sm font-medium"
+                      htmlFor="admin:local-access-directories"
+                    >
+                      {t("admin.local_access.directories.label")}
+                    </label>
+                    <Textarea
+                      className="min-h-[92px] font-mono text-xs"
+                      disabled={localAccessLoading || localAccessSaving}
+                      id="admin:local-access-directories"
+                      onChange={(e) => setLocalAccessDirectoriesDraft(e.target.value)}
+                      placeholder={t("admin.local_access.directories.placeholder")}
+                      value={localAccessDirectoriesDraft}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <AdminResetButton
+                    disabled={localAccessLoading || localAccessSaving || !localAccessConfig}
+                    onClick={() => resetLocalAccessDraft()}
+                    testId="admin:local-access-reset"
+                  />
+                  <AdminSaveButton
+                    disabled={localAccessLoading || localAccessSaving || !localAccessConfig}
+                    onClick={() => saveLocalAccess()}
+                    saving={localAccessSaving}
+                    testId="admin:local-access-save"
+                  />
+                </div>
               </CardContent>
             </Card>
 

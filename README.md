@@ -114,6 +114,11 @@ Notes:
 
 This project is intended for trusted machines / LAN. There is no built-in auth.
 
+Optional: enable `app.local_access` in `config.toml` to whitelist which local commands can run
+and which local directories RemcoChat is allowed to read/write/scan.
+When enabled, RemcoChat may also expose host-side tools (e.g. `localExec`, `obsidian`) for
+localhost/admin-token requests.
+
 Bash tools are disabled by default and require:
 - `app.bash_tools.enabled = true` in config
 - `REMCOCHAT_ENABLE_BASH_TOOL=1` at runtime

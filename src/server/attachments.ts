@@ -4,6 +4,7 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import { getDb } from "@/server/db";
 import { getConfig } from "@/server/config";
+import { requireLocalPathAllowed } from "@/server/local-access";
 export { makeAttachmentUrl, parseAttachmentUrl } from "@/lib/attachment-url";
 
 export type StoredAttachment = {
@@ -53,10 +54,19 @@ function rowToStoredAttachment(row: AttachmentRow): StoredAttachment {
   };
 }
 
+let cachedAttachmentsDir: { env: string; dir: string } | null = null;
 function attachmentsDir(): string {
   const fromEnv = String(process.env.REMCOCHAT_ATTACHMENTS_DIR ?? "").trim();
-  if (fromEnv) return path.resolve(fromEnv);
-  return path.join(process.cwd(), "data", "attachments");
+  if (cachedAttachmentsDir && cachedAttachmentsDir.env === fromEnv) return cachedAttachmentsDir.dir;
+  const dir = fromEnv ? path.resolve(fromEnv) : path.join(process.cwd(), "data", "attachments");
+  requireLocalPathAllowed({
+    cfg: getConfig(),
+    localPath: dir,
+    feature: "attachments.storage",
+    operation: "write",
+  });
+  cachedAttachmentsDir = { env: fromEnv, dir };
+  return dir;
 }
 
 function attachmentFilePath(attachmentId: string): string {

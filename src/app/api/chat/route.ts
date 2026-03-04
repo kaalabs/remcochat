@@ -35,6 +35,7 @@ import fs from "node:fs";
 import { createTools } from "@/ai/tools";
 import { createWebTools } from "@/ai/web-tools";
 import { createBashTools, runExplicitBashCommand } from "@/ai/bash-tools";
+import { createLocalAccessTools } from "@/ai/local-access-tools";
 import { createSkillsTools } from "@/ai/skills-tools";
 import { createHueGatewayTools } from "@/ai/hue-gateway-tools";
 import { createOvNlTools } from "@/ai/ov-nl-tools";
@@ -158,26 +159,62 @@ function previousUserMessageText(
   return "";
 }
 
-function extractExplicitBashCommand(text: string): string | null {
+export function extractExplicitBashCommand(text: string): string | null {
   const value = String(text ?? "").trim();
   if (!value) return null;
-  if (!/\brun\b/i.test(value)) return null;
+
+  if (/^\/bash\b/i.test(value)) {
+    const command = value.replace(/^\/bash\b\s*/i, "").trim();
+    return command || null;
+  }
+
+  const bashPrefixed = value.match(/^bash\s*:\s*([\s\S]{1,8000})$/i);
+  if (bashPrefixed?.[1]) return bashPrefixed[1].trim();
+
+  const isQuestionLike =
+    /\?\s*$/.test(value) ||
+    /^(how|what|why|when|where|who|which|can|could|would|should|do|does|did|is|are)\b/i.test(
+      value
+    );
+  if (isQuestionLike) return null;
 
   const inlineCandidates = Array.from(
     value.matchAll(/`([^`\n]{1,4000})`/g),
     (m) => String(m[1] ?? "").trim()
   ).filter(Boolean);
-  if (inlineCandidates.length > 0) {
-    const withWhitespace = inlineCandidates.filter((c) => /\s/.test(c));
-    return (withWhitespace.length > 0
-      ? withWhitespace[withWhitespace.length - 1]
-      : inlineCandidates[inlineCandidates.length - 1])!;
-  }
-
   const fenced = value.match(/```(?:[a-zA-Z0-9_-]+)?\n([\s\S]{1,8000}?)```/);
-  if (fenced?.[1]) return fenced[1].trim();
+  const markdownCommand =
+    inlineCandidates.length > 0
+      ? (() => {
+          const withWhitespace = inlineCandidates.filter((c) => /\s/.test(c));
+          return (withWhitespace.length > 0
+            ? withWhitespace[withWhitespace.length - 1]
+            : inlineCandidates[inlineCandidates.length - 1])!;
+        })()
+      : fenced?.[1]?.trim() ?? null;
 
-  return null;
+  if (!markdownCommand) return null;
+
+  const hasStrongOptIn =
+    /\b(use|call)\s+the\s+bash\s+tool\b/i.test(value) ||
+    /\b(run|execute)\s+(this|the)\s+command\b/i.test(value) ||
+    /\b(run|execute)\b/i.test(value) && /\b(exactly|verbatim|without changes)\b/i.test(value);
+
+  if (!hasStrongOptIn) return null;
+
+  return markdownCommand;
+}
+
+export function shouldAllowDirectBashFastPath(text: string): boolean {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+
+  return (
+    /^\/bash\b/i.test(value) ||
+    /^bash\s*:/i.test(value) ||
+    /\b(run|execute)\s+(this|the)\s+command\b/i.test(value) ||
+    /\b(use|call)\s+the\s+bash\s+tool\b/i.test(value)
+  );
 }
 
 function explicitSkillNameCandidate(text: string): string | null {
@@ -379,6 +416,7 @@ function uiTextContinuationStream(input: {
 function uiMemoryPromptResponse(input: {
   content: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
@@ -409,12 +447,13 @@ function uiMemoryPromptResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiMemoryAnswerResponse(input: {
   answer: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
@@ -445,7 +484,7 @@ function uiMemoryAnswerResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiBashToolResponse(input: {
@@ -584,6 +623,7 @@ function uiSkillsActivateResponse(input: {
 function uiWeatherResponse(input: {
   location: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
@@ -635,12 +675,13 @@ function uiWeatherResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiWeatherForecastResponse(input: {
   location: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
@@ -692,7 +733,7 @@ function uiWeatherForecastResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function toDisplayAgendaToolInput(command: AgendaActionInput) {
@@ -755,6 +796,7 @@ function uiAgendaResponse(input: {
   command: AgendaActionInput;
   viewerTimeZone?: string;
   messageMetadata?: RemcoChatMessageMetadata;
+  headers?: HeadersInit;
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
@@ -807,7 +849,7 @@ function uiAgendaResponse(input: {
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  return createUIMessageStreamResponse({ stream, headers: input.headers });
 }
 
 function uiOvNlResponse(input: {
@@ -998,6 +1040,58 @@ function formatToolErrorsForPrompt(toolErrors: ToolStreamError[]) {
   ].join("\n");
 }
 
+export function shouldFinalizeAfterToolOnlyRun(input: {
+  finishReason: unknown;
+  hasTextDelta: boolean;
+  toolErrors: ToolStreamError[];
+  toolOutputsByName: Map<string, unknown[]>;
+  toolName: string;
+}): { outputs: unknown[] } | null {
+  if (input.hasTextDelta) return null;
+  if (input.toolErrors.length > 0) return null;
+  const reason = typeof input.finishReason === "string" ? input.finishReason : "";
+  if (reason !== "stop" && reason !== "tool-calls") return null;
+  const outputs = input.toolOutputsByName.get(input.toolName) ?? [];
+  if (!Array.isArray(outputs) || outputs.length === 0) return null;
+  return { outputs };
+}
+
+function formatObsidianOutputsForPrompt(outputs: unknown[]) {
+  const items = Array.isArray(outputs) ? outputs : [];
+  const last = items.slice(Math.max(0, items.length - 8));
+  const maxPerStdout = 10_000;
+  const maxPerStderr = 2_000;
+  const lines: string[] = [];
+
+  for (let i = 0; i < last.length; i += 1) {
+    const out = last[i] as {
+      stdout?: unknown;
+      stderr?: unknown;
+      exitCode?: unknown;
+    };
+    const stdout = String(out?.stdout ?? "").slice(0, maxPerStdout);
+    const stderr = String(out?.stderr ?? "").slice(0, maxPerStderr);
+    const exitCode =
+      typeof out?.exitCode === "number" ? out.exitCode : Number(out?.exitCode ?? NaN);
+    const exit = Number.isFinite(exitCode) ? String(exitCode) : "unknown";
+
+    const block = [
+      `Call ${items.length - last.length + i + 1}/${items.length} (exitCode=${exit})`,
+      stdout.trim() ? `stdout:\n${stdout.trim()}` : "",
+      stderr.trim() ? `stderr:\n${stderr.trim()}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    lines.push(block);
+  }
+
+  return lines.join("\n\n---\n\n");
+}
+
+function formatStdoutStderrExitCodeOutputsForPrompt(outputs: unknown[]) {
+  return formatObsidianOutputsForPrompt(outputs);
+}
+
 export async function POST(req: Request) {
   const body = (await req.json()) as ChatRequestBody;
   const isRegenerate = Boolean(body.regenerate);
@@ -1030,6 +1124,7 @@ export async function POST(req: Request) {
   const stopAfterCurrentDateTime = isCurrentDateTimeUserQuery(lastUserText);
   const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
   const explicitBashNoExtraText = /\bdo not add any other text\b/i.test(lastUserText);
+  const explicitBashFastPathOptIn = shouldAllowDirectBashFastPath(lastUserText);
 
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const directMemoryCandidate = parseMemoryAddCommand(lastUserText);
@@ -1129,6 +1224,11 @@ export async function POST(req: Request) {
               createdAt: now,
               turnUserMessageId: lastUserMessageId || undefined,
             },
+            headers: {
+              "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+              "x-remcochat-temporary": "1",
+              "x-remcochat-profile-id": profile.id,
+            },
           });
         }
       }
@@ -1153,6 +1253,11 @@ export async function POST(req: Request) {
             messageMetadata: {
               createdAt: now,
               turnUserMessageId: lastUserMessageId || undefined,
+            },
+            headers: {
+              "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+              "x-remcochat-temporary": "1",
+              "x-remcochat-profile-id": profile.id,
             },
           });
         }
@@ -1198,6 +1303,11 @@ export async function POST(req: Request) {
               createdAt: now,
               turnUserMessageId: lastUserMessageId || undefined,
             },
+            headers: {
+              "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+              "x-remcochat-temporary": "1",
+              "x-remcochat-profile-id": profile.id,
+            },
           });
         }
       }
@@ -1233,7 +1343,12 @@ export async function POST(req: Request) {
         ? `tmp:${body.temporarySessionId.trim()}`
         : "";
 
-    if (explicitBashNoExtraText && explicitBashCommandFromUser && temporaryKey) {
+    if (
+      explicitBashNoExtraText &&
+      explicitBashFastPathOptIn &&
+      explicitBashCommandFromUser &&
+      temporaryKey
+    ) {
       const bashResult = await runExplicitBashCommand({
         request: req,
         sessionKey: temporaryKey,
@@ -1266,6 +1381,10 @@ export async function POST(req: Request) {
       resolved.capabilities.tools && temporaryKey
         ? await createBashTools({ request: req, sessionKey: temporaryKey })
         : { enabled: false, tools: {} };
+
+    const localAccessTools = resolved.capabilities.tools
+      ? createLocalAccessTools({ request: req })
+      : { enabled: false, tools: {} };
 
     const explicitBashCommand = bashTools.enabled
       ? explicitBashCommandFromUser
@@ -1400,9 +1519,7 @@ export async function POST(req: Request) {
     });
     if (ovFastPath) return ovFastPath;
 
-    const forcedToolChoice = explicitBashCommand
-      ? ({ type: "tool", toolName: "bash" } as const)
-      : null;
+    const forcedToolChoice = null;
 
     let system = buildSystemPrompt({
       isTemporary: true,
@@ -1525,6 +1642,8 @@ export async function POST(req: Request) {
       "x-remcochat-chat-instructions-hash": hash8(""),
 	      "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
 	      "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+        "x-remcochat-local-tools-enabled": localAccessTools.enabled ? "1" : "0",
+        "x-remcochat-local-tools": Object.keys(localAccessTools.tools).join(","),
 	      "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
 	      "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
         "x-remcochat-ov-nl-tools-enabled": ovNlTools.enabled ? "1" : "0",
@@ -1598,6 +1717,7 @@ export async function POST(req: Request) {
               tools: {
                 ...chatTools,
                 ...webTools.tools,
+                ...localAccessTools.tools,
                 ...bashTools.tools,
                 ...skillsTools.tools,
                 ...hueGatewayTools.tools,
@@ -1625,7 +1745,7 @@ export async function POST(req: Request) {
       onError: errorTextFromError,
     });
 
-    const shouldInspectForContinuation = shouldAutoContinuePerplexity;
+    const shouldInspectForContinuation = resolved.capabilities.tools || shouldAutoContinuePerplexity;
     if (!shouldInspectForContinuation) {
       return createUIMessageStreamResponse({
         headers,
@@ -1642,29 +1762,150 @@ export async function POST(req: Request) {
       });
     }
 
-    return createUIMessageStreamResponse({
-      headers,
-      stream: createUIMessageStreamWithFatalErrorFallback({
-        stream: createUIMessageStreamWithDeferredContinuation({
-          stream: baseUIStream,
-          collect: (inspectionStream) =>
-            collectUIMessageChunks(inspectionStream, {
-              isWebToolName,
-              captureChunks: false,
-            }),
-          createContinuationStream: async (collected) => {
-            const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
-            const needsPerplexityContinuation =
-              collected.finishReason === "tool-calls" &&
-              !collected.hasUserVisibleOutput &&
-              perplexityOutput != null;
+        return createUIMessageStreamResponse({
+          headers,
+          stream: createUIMessageStreamWithFatalErrorFallback({
+            stream: createUIMessageStreamWithDeferredContinuation({
+              stream: baseUIStream,
+              collect: (inspectionStream) =>
+                collectUIMessageChunks(inspectionStream, {
+                  isWebToolName,
+                  captureChunks: false,
+                  trackToolOutputsByName: ["obsidian", "bash"],
+                }),
+              createContinuationStream: async (collected) => {
+                const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+                const needsPerplexityContinuation =
+                  collected.finishReason === "tool-calls" &&
+                  !collected.hasUserVisibleOutput &&
+                  perplexityOutput != null;
 
-            if (!needsPerplexityContinuation) {
-              if (collected.toolErrors.length === 0) return null;
+                if (!needsPerplexityContinuation) {
+                  const obsidianFinalization = shouldFinalizeAfterToolOnlyRun({
+                    finishReason: collected.finishReason,
+                    hasTextDelta: collected.hasTextDelta,
+                    toolErrors: collected.toolErrors,
+                    toolOutputsByName: collected.toolOutputsByName,
+                    toolName: "obsidian",
+                  });
+                  if (obsidianFinalization) {
+                    const formatted = formatStdoutStderrExitCodeOutputsForPrompt(
+                      obsidianFinalization.outputs
+                    );
+                    const continuationText = [
+                      "You ran the obsidian tool to read the user's daily notes.",
+                      "Do not call any tools now. Write the final answer in plain text.",
+                      "",
+                      lastUserText ? `User request: ${lastUserText}` : "",
+                      "Obsidian outputs (most recent calls):",
+                      formatted,
+                    ]
+                      .filter(Boolean)
+                      .join("\n\n");
 
-              const continuationMessages = modelMessages.concat([
-                {
-                  role: "user" as const,
+                    const continuationMessages = modelMessages.concat([
+                      {
+                        role: "user" as const,
+                        content: [{ type: "text" as const, text: continuationText }],
+                      },
+                    ]);
+
+                    const continued = streamText({
+                      model: resolved!.model,
+                      system,
+                      messages: continuationMessages,
+                      toolChoice: "none",
+                      tools: {
+                        ...chatTools,
+                        ...webTools.tools,
+                        ...localAccessTools.tools,
+                        ...bashTools.tools,
+                        ...skillsTools.tools,
+                        ...hueGatewayTools.tools,
+                        ...ovNlTools.tools,
+                      } as StreamTextToolSet,
+                      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                        ? { temperature: 0 }
+                        : {}),
+                      ...(providerOptions ? { providerOptions } : {}),
+                      stopWhen: [stepCountIs(5)],
+                    });
+
+                    const continuedStream = continued.toUIMessageStream({
+                      generateMessageId: nanoid,
+                      messageMetadata,
+                      sendReasoning: config.reasoning.exposeToClient,
+                      onError: errorTextFromError,
+                    });
+                    return stripUIMessageStream(continuedStream, { dropStart: true });
+                  }
+
+                  if (!explicitBashNoExtraText && !explicitBashCommandFromUser) {
+                    const bashFinalization = shouldFinalizeAfterToolOnlyRun({
+                      finishReason: collected.finishReason,
+                      hasTextDelta: collected.hasTextDelta,
+                      toolErrors: collected.toolErrors,
+                      toolOutputsByName: collected.toolOutputsByName,
+                      toolName: "bash",
+                    });
+                    if (bashFinalization) {
+                      const formatted = formatStdoutStderrExitCodeOutputsForPrompt(
+                        bashFinalization.outputs
+                      );
+                      const continuationText = [
+                        "You ran the bash tool.",
+                        "Do not call any tools now. Write the final answer in plain text.",
+                        "",
+                        lastUserText ? `User request: ${lastUserText}` : "",
+                        "Bash outputs (most recent calls):",
+                        formatted,
+                      ]
+                        .filter(Boolean)
+                        .join("\n\n");
+
+                      const continuationMessages = modelMessages.concat([
+                        {
+                          role: "user" as const,
+                          content: [{ type: "text" as const, text: continuationText }],
+                        },
+                      ]);
+
+                      const continued = streamText({
+                        model: resolved!.model,
+                        system,
+                        messages: continuationMessages,
+                        toolChoice: "none",
+                        tools: {
+                          ...chatTools,
+                          ...webTools.tools,
+                          ...localAccessTools.tools,
+                          ...bashTools.tools,
+                          ...skillsTools.tools,
+                          ...hueGatewayTools.tools,
+                          ...ovNlTools.tools,
+                        } as StreamTextToolSet,
+                        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                          ? { temperature: 0 }
+                          : {}),
+                        ...(providerOptions ? { providerOptions } : {}),
+                        stopWhen: [stepCountIs(5)],
+                      });
+
+                      const continuedStream = continued.toUIMessageStream({
+                        generateMessageId: nanoid,
+                        messageMetadata,
+                        sendReasoning: config.reasoning.exposeToClient,
+                        onError: errorTextFromError,
+                      });
+                      return stripUIMessageStream(continuedStream, { dropStart: true });
+                    }
+                  }
+
+                  if (collected.toolErrors.length === 0) return null;
+
+                  const continuationMessages = modelMessages.concat([
+                    {
+                      role: "user" as const,
                   content: [
                     {
                       type: "text" as const,
@@ -1871,6 +2112,12 @@ export async function POST(req: Request) {
           profileInstructionsRevision: currentProfileRevision,
           chatInstructionsRevision: currentChatRevision,
         },
+        headers: {
+          "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+          "x-remcochat-temporary": "0",
+          "x-remcochat-profile-id": profile.id,
+          "x-remcochat-chat-id": effectiveChat.id,
+        },
       });
     } catch (err) {
       clearPendingMemory(effectiveChat.id);
@@ -1944,6 +2191,12 @@ export async function POST(req: Request) {
             profileInstructionsRevision: currentProfileRevision,
             chatInstructionsRevision: currentChatRevision,
           },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "0",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-chat-id": effectiveChat.id,
+          },
         });
       } catch (err) {
         return uiTextResponse({
@@ -2009,6 +2262,12 @@ export async function POST(req: Request) {
             profileInstructionsRevision: currentProfileRevision,
             chatInstructionsRevision: currentChatRevision,
           },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "0",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-chat-id": effectiveChat.id,
+          },
         });
       } catch (err) {
         return uiTextResponse({
@@ -2073,6 +2332,12 @@ export async function POST(req: Request) {
               profileInstructionsRevision: currentProfileRevision,
               chatInstructionsRevision: currentChatRevision,
             },
+            headers: {
+              "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+              "x-remcochat-temporary": "0",
+              "x-remcochat-profile-id": profile.id,
+              "x-remcochat-chat-id": effectiveChat.id,
+            },
           });
       } catch (err) {
         return uiTextResponse({
@@ -2112,6 +2377,12 @@ export async function POST(req: Request) {
             profileInstructionsRevision: currentProfileRevision,
             chatInstructionsRevision: currentChatRevision,
           },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "0",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-chat-id": effectiveChat.id,
+          },
         });
       }
     }
@@ -2137,6 +2408,12 @@ export async function POST(req: Request) {
             turnUserMessageId: lastUserMessageId || undefined,
             profileInstructionsRevision: currentProfileRevision,
             chatInstructionsRevision: currentChatRevision,
+          },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "0",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-chat-id": effectiveChat.id,
           },
         });
       }
@@ -2176,6 +2453,12 @@ export async function POST(req: Request) {
               profileInstructionsRevision: currentProfileRevision,
               chatInstructionsRevision: currentChatRevision,
             },
+            headers: {
+              "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+              "x-remcochat-temporary": "0",
+              "x-remcochat-profile-id": profile.id,
+              "x-remcochat-chat-id": effectiveChat.id,
+            },
           });
         }
         return uiAgendaResponse({
@@ -2187,6 +2470,12 @@ export async function POST(req: Request) {
             turnUserMessageId: lastUserMessageId || undefined,
             profileInstructionsRevision: currentProfileRevision,
             chatInstructionsRevision: currentChatRevision,
+          },
+          headers: {
+            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+            "x-remcochat-temporary": "0",
+            "x-remcochat-profile-id": profile.id,
+            "x-remcochat-chat-id": effectiveChat.id,
           },
         });
       }
@@ -2266,6 +2555,10 @@ export async function POST(req: Request) {
         request: req,
         sessionKey: `chat:${effectiveChat.id}`,
       })
+    : { enabled: false, tools: {} };
+
+  const localAccessTools = resolved.capabilities.tools
+    ? createLocalAccessTools({ request: req })
     : { enabled: false, tools: {} };
 
 	  const skillsRegistry = getSkillsRegistry();
@@ -2681,9 +2974,7 @@ export async function POST(req: Request) {
 
 	  const forcedToolChoice = forceMemoryAnswerTool
 	    ? ({ type: "tool", toolName: "displayMemoryAnswer" } as const)
-	    : explicitBashCommand
-	      ? ({ type: "tool", toolName: "bash" } as const)
-	      : null;
+	    : null;
     let result: ReturnType<typeof streamText>;
     try {
       result = streamText({
@@ -2715,6 +3006,7 @@ export async function POST(req: Request) {
               tools: {
                 ...chatTools,
                 ...webTools.tools,
+                ...localAccessTools.tools,
                 ...bashTools.tools,
                 ...skillsTools.tools,
                 ...hueGatewayTools.tools,
@@ -2775,6 +3067,8 @@ export async function POST(req: Request) {
       ),
 	    "x-remcochat-web-tools-enabled": webTools.enabled ? "1" : "0",
 	    "x-remcochat-web-tools": Object.keys(webTools.tools).join(","),
+      "x-remcochat-local-tools-enabled": localAccessTools.enabled ? "1" : "0",
+      "x-remcochat-local-tools": Object.keys(localAccessTools.tools).join(","),
 	    "x-remcochat-bash-tools-enabled": bashTools.enabled ? "1" : "0",
 	    "x-remcochat-bash-tools": Object.keys(bashTools.tools).join(","),
       "x-remcochat-ov-nl-tools-enabled": ovNlTools.enabled ? "1" : "0",
@@ -2807,7 +3101,7 @@ export async function POST(req: Request) {
     onError: errorTextFromError,
   });
 
-	  const shouldInspectForContinuation = shouldAutoContinuePerplexity;
+	  const shouldInspectForContinuation = resolved.capabilities.tools || shouldAutoContinuePerplexity;
   if (!shouldInspectForContinuation) {
     return createUIMessageStreamResponse({
       headers,
@@ -2829,24 +3123,145 @@ export async function POST(req: Request) {
     stream: createUIMessageStreamWithFatalErrorFallback({
       stream: createUIMessageStreamWithDeferredContinuation({
         stream: baseUIStream,
-        collect: (inspectionStream) =>
-          collectUIMessageChunks(inspectionStream, {
-            isWebToolName,
-            captureChunks: false,
-          }),
-        createContinuationStream: async (collected) => {
-	        const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
-	        const needsPerplexityContinuation =
-	          collected.finishReason === "tool-calls" &&
+              collect: (inspectionStream) =>
+                collectUIMessageChunks(inspectionStream, {
+                  isWebToolName,
+                  captureChunks: false,
+                  trackToolOutputsByName: ["obsidian", "bash"],
+                }),
+              createContinuationStream: async (collected) => {
+                const perplexityOutput = collected.webToolOutputs.get("perplexity_search");
+                const needsPerplexityContinuation =
+                  collected.finishReason === "tool-calls" &&
 	          !collected.hasUserVisibleOutput &&
 	          perplexityOutput != null;
 
-	        if (!needsPerplexityContinuation) {
-	          if (collected.toolErrors.length === 0) return null;
+                if (!needsPerplexityContinuation) {
+                  const obsidianFinalization = shouldFinalizeAfterToolOnlyRun({
+                    finishReason: collected.finishReason,
+                    hasTextDelta: collected.hasTextDelta,
+                    toolErrors: collected.toolErrors,
+                    toolOutputsByName: collected.toolOutputsByName,
+                    toolName: "obsidian",
+                  });
+                  if (obsidianFinalization) {
+                    const formatted = formatStdoutStderrExitCodeOutputsForPrompt(
+                      obsidianFinalization.outputs
+                    );
+                    const continuationText = [
+                      "You ran the obsidian tool to read the user's daily notes.",
+                      "Do not call any tools now. Write the final answer in plain text.",
+                      "",
+                      lastUserText ? `User request: ${lastUserText}` : "",
+                      "Obsidian outputs (most recent calls):",
+                      formatted,
+                    ]
+                      .filter(Boolean)
+                      .join("\n\n");
 
-          const continuationMessages = modelMessages.concat([
-            {
-              role: "user" as const,
+                    const continuationMessages = modelMessages.concat([
+                      {
+                        role: "user" as const,
+                        content: [{ type: "text" as const, text: continuationText }],
+                      },
+                    ]);
+
+                    const continued = streamText({
+                      model: resolved!.model,
+                      system,
+                      messages: continuationMessages,
+                      toolChoice: "none",
+                      tools: {
+                        ...chatTools,
+                        ...webTools.tools,
+                        ...localAccessTools.tools,
+                        ...bashTools.tools,
+                        ...skillsTools.tools,
+                        ...hueGatewayTools.tools,
+                        ...ovNlTools.tools,
+                      } as StreamTextToolSet,
+                      ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                        ? { temperature: isRegenerate ? 0.9 : 0 }
+                        : {}),
+                      ...(providerOptions ? { providerOptions } : {}),
+                      stopWhen: [stepCountIs(5)],
+                    });
+
+                    const continuedStream = continued.toUIMessageStream({
+                      generateMessageId: nanoid,
+                      messageMetadata,
+                      sendReasoning: config.reasoning.exposeToClient,
+                      onError: errorTextFromError,
+                    });
+                    return stripUIMessageStream(continuedStream, { dropStart: true });
+                  }
+
+                  if (!explicitBashNoExtraText && !explicitBashCommandFromUser) {
+                    const bashFinalization = shouldFinalizeAfterToolOnlyRun({
+                      finishReason: collected.finishReason,
+                      hasTextDelta: collected.hasTextDelta,
+                      toolErrors: collected.toolErrors,
+                      toolOutputsByName: collected.toolOutputsByName,
+                      toolName: "bash",
+                    });
+                    if (bashFinalization) {
+                      const formatted = formatStdoutStderrExitCodeOutputsForPrompt(
+                        bashFinalization.outputs
+                      );
+                      const continuationText = [
+                        "You ran the bash tool.",
+                        "Do not call any tools now. Write the final answer in plain text.",
+                        "",
+                        lastUserText ? `User request: ${lastUserText}` : "",
+                        "Bash outputs (most recent calls):",
+                        formatted,
+                      ]
+                        .filter(Boolean)
+                        .join("\n\n");
+
+                      const continuationMessages = modelMessages.concat([
+                        {
+                          role: "user" as const,
+                          content: [{ type: "text" as const, text: continuationText }],
+                        },
+                      ]);
+
+                      const continued = streamText({
+                        model: resolved!.model,
+                        system,
+                        messages: continuationMessages,
+                        toolChoice: "none",
+                        tools: {
+                          ...chatTools,
+                          ...webTools.tools,
+                          ...localAccessTools.tools,
+                          ...bashTools.tools,
+                          ...skillsTools.tools,
+                          ...hueGatewayTools.tools,
+                          ...ovNlTools.tools,
+                        } as StreamTextToolSet,
+                        ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
+                          ? { temperature: isRegenerate ? 0.9 : 0 }
+                          : {}),
+                        ...(providerOptions ? { providerOptions } : {}),
+                        stopWhen: [stepCountIs(5)],
+                      });
+
+                      const continuedStream = continued.toUIMessageStream({
+                        generateMessageId: nanoid,
+                        messageMetadata,
+                        sendReasoning: config.reasoning.exposeToClient,
+                        onError: errorTextFromError,
+                      });
+                      return stripUIMessageStream(continuedStream, { dropStart: true });
+                    }
+                  }
+
+                  if (collected.toolErrors.length === 0) return null;
+
+                  const continuationMessages = modelMessages.concat([
+                    {
+                      role: "user" as const,
               content: [
                 {
                   type: "text" as const,
