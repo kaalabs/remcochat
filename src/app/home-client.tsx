@@ -132,13 +132,12 @@ import {
 		  ShieldIcon,
 		  DownloadIcon,
       KeyIcon,
-      MenuIcon,
+		  MenuIcon,
 		  MoreVerticalIcon,
 		  PlusIcon,
 		  PencilIcon,
       XIcon,
-		  LockIcon,
-		  LockOpenIcon,
+		  GhostIcon,
 		  RotateCcwIcon,
 		  SettingsIcon,
 		  SlidersHorizontalIcon,
@@ -4228,8 +4227,8 @@ export function HomeClient({
 	                  className={
 	                    "h-9 w-9 px-0 " +
 	                    (isTemporaryChat
-	                      ? "border-destructive/50 text-destructive bg-destructive/5 hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30 dark:border-destructive/50 dark:text-destructive dark:bg-destructive/10 dark:hover:bg-destructive/15 dark:focus-visible:border-destructive dark:focus-visible:ring-destructive/40"
-	                      : "border-ring/50 text-ring bg-transparent hover:bg-muted hover:text-ring focus-visible:border-ring focus-visible:ring-ring/30 dark:border-ring/50 dark:bg-input/30 dark:hover:bg-input/50 dark:hover:text-ring")
+	                      ? "border-emerald-500/60 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 focus-visible:border-emerald-500 focus-visible:ring-emerald-500/40 dark:border-emerald-400/60 dark:text-emerald-300 dark:bg-emerald-400/12 dark:hover:bg-emerald-400/20 dark:focus-visible:border-emerald-400 dark:focus-visible:ring-emerald-400/40"
+	                      : "")
 	                  }
 	                  data-testid="chat:temporary-toggle"
 	                  onClick={() => toggleTemporaryChat()}
@@ -4241,11 +4240,7 @@ export function HomeClient({
 	                  type="button"
 	                  variant="outline"
 	                >
-	                  {isTemporaryChat ? (
-	                    <LockIcon className="size-4" />
-	                  ) : (
-	                    <LockOpenIcon className="size-4" />
-	                  )}
+	                  <GhostIcon className="size-4" />
 	                </Button>
                   <ThemeToggle />
                   {adminEnabled ? (
@@ -5441,12 +5436,7 @@ export function HomeClient({
                 >
 		              <PromptInput
 		                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
-		                className={
-		                  "composer-scale bg-sidebar " +
-		                  (isTemporaryChat
-		                    ? "[&_[data-slot=input-group]]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:border-destructive [&_[data-slot=input-group]]:has-[[data-slot=input-group-control]:focus-visible]:ring-destructive/30"
-		                    : "")
-		                }
+		                className="composer-scale bg-sidebar"
                   convertBlobUrlsToDataUrls={false}
                   maxFileSize={2_000_000}
                   maxFiles={3}
@@ -5600,7 +5590,7 @@ export function HomeClient({
 	                  data-testid="composer:submit"
 	                  disabled={!canSend || !chatRequestBody}
 	                  status={status}
-	                  variant={isTemporaryChat ? "destructive" : "default"}
+	                  variant="default"
 	                />
                 </div>
 
@@ -5652,9 +5642,7 @@ export function HomeClient({
                                     : "")
                                   +
                                   (selected && dim
-                                    ? isTemporaryChat
-                                      ? "bg-destructive/50 hover:bg-destructive/50"
-                                      : "bg-primary/50 hover:bg-primary/50"
+                                    ? "bg-primary/50 hover:bg-primary/50"
                                     : "")
                                   +
                                   // Match the send button's disabled "dim" behavior when canSend is false.
@@ -5672,9 +5660,7 @@ export function HomeClient({
                                 type="button"
                                 variant={
                                   selected
-                                    ? isTemporaryChat
-                                      ? "destructive"
-                                      : "default"
+                                    ? "default"
                                     : "outline"
                                 }
                               >
