@@ -80,3 +80,11 @@ api_key_env = "OPENCODE_API_KEY"
 modelsdev_provider_id = "opencode"
 default_model_id = "kimi-k2.5-free"
 allowed_model_ids = ["kimi-k2.5-free"]
+
+# [providers.gemini]
+# name = "Gemini"
+# base_url = "https://generativelanguage.googleapis.com/v1beta"
+# api_key_env = "GEMINI_API_KEY"
+# modelsdev_provider_id = "google"
+# default_model_id = "gemini-2.5-flash"
+# allowed_model_ids = ["gemini-2.5-flash"]

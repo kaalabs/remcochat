@@ -23,6 +23,14 @@ test("allowedReasoningEfforts returns standard set for anthropic", () => {
   assert.deepEqual(options, ["low", "medium", "high"]);
 });
 
+test("allowedReasoningEfforts returns standard set for google", () => {
+  const options = allowedReasoningEfforts({
+    modelType: "google_generative_ai",
+    providerModelId: "gemini-anything",
+  });
+  assert.deepEqual(options, ["low", "medium", "high"]);
+});
+
 test("allowedReasoningEfforts returns xai chat set for xai", () => {
   const options = allowedReasoningEfforts({
     modelType: "xai",

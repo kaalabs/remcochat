@@ -28,8 +28,6 @@ test("includes explicit web tool guidance when enabled", () => {
   assert.match(prompt, /\bperplexity_search\b/);
   assert.match(prompt, /\bweb_search\b/);
   assert.match(prompt, /\bweb_fetch\b/);
-  assert.match(prompt, /\bgoogle_search\b/);
-  assert.match(prompt, /\burl_context\b/);
   assert.match(prompt, /\bbrave_search\b/);
 });
 

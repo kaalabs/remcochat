@@ -136,7 +136,7 @@ test("anthropic_messages enables thinking without streaming thoughts", () => {
 test("google_generative_ai enables thinking without includeThoughts", () => {
   const providerOptions = createProviderOptions({
     modelType: "google_generative_ai",
-    providerModelId: "gemini-2.5-pro",
+    providerModelId: "gemini-pro",
     capabilities: reasoningCaps,
     webToolsEnabled: false,
     reasoning: reasoningConfig,
@@ -144,8 +144,8 @@ test("google_generative_ai enables thinking without includeThoughts", () => {
   assert.deepEqual(providerOptions, {
     google: {
       thinkingConfig: {
-        thinkingLevel: "medium",
         includeThoughts: false,
+        thinkingBudget: 4096,
       },
     },
   });
@@ -186,7 +186,7 @@ test("vercel_ai_gateway: anthropic/* forwards thinking options", () => {
 test("vercel_ai_gateway: google/* forwards thinkingConfig options", () => {
   const providerOptions = createProviderOptions({
     modelType: "vercel_ai_gateway",
-    providerModelId: "google/gemini-2.5-pro",
+    providerModelId: "google/gemini-pro",
     capabilities: reasoningCaps,
     webToolsEnabled: false,
     reasoning: { ...reasoningConfig, effort: "low" },
@@ -194,8 +194,8 @@ test("vercel_ai_gateway: google/* forwards thinkingConfig options", () => {
   assert.deepEqual(providerOptions, {
     google: {
       thinkingConfig: {
-        thinkingLevel: "low",
         includeThoughts: false,
+        thinkingBudget: 1024,
       },
     },
   });

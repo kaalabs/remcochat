@@ -5,7 +5,6 @@ import { openai as openaiTools } from "@ai-sdk/openai";
 import {
   getAnthropicProviderForProviderId,
   getGatewayProviderForProviderId,
-  getGoogleProviderForProviderId,
   getOpenAIProviderForProviderId,
 } from "@/server/llm-provider";
 import { createExaSearchTool } from "@/ai/exa-search";
@@ -146,12 +145,16 @@ export function createWebTools(input: {
       };
     }
     case "google_generative_ai": {
-      const google = getGoogleProviderForProviderId(input.providerId);
+      // The Google adapter exposes provider-defined tools (google_search, url_context),
+      // but RemcoChat always also supplies function tools. The AI SDK does not support
+      // mixing these for Gemini, so we use local web-search tools here.
+      const searchProvider = web.searchProvider;
       return {
         enabled: true,
         tools: {
-          google_search: google.tools.googleSearch({}),
-          url_context: google.tools.urlContext({}),
+          ...(searchProvider === "brave"
+            ? { brave_search: createBraveSearchTool() }
+            : { exa_search: createExaSearchTool() }),
         },
       };
     }

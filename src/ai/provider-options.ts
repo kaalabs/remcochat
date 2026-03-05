@@ -36,8 +36,11 @@ function reasoningEffortForXaiChat(
   return effort;
 }
 
-function thinkingLevelForGoogle(effort: ReasoningConfig["effort"]) {
-  return effort;
+function thinkingBudgetForGoogle(effort: ReasoningConfig["effort"]) {
+  if (effort === "minimal") return 0;
+  if (effort === "low") return 1024;
+  if (effort === "medium") return 4096;
+  return 16_384;
 }
 
 function thinkingEffortForAnthropic(effort: ReasoningConfig["effort"]) {
@@ -114,13 +117,13 @@ export function createProviderOptions(input: {
       break;
     }
     case "google_generative_ai": {
+      const configuredBudget = Number(input.reasoning.googleThinkingBudget ?? 0);
+      const inferredBudget =
+        configuredBudget > 0 ? Math.floor(configuredBudget) : thinkingBudgetForGoogle(effort);
       appendOptions(out, "google", {
         thinkingConfig: {
-          thinkingLevel: thinkingLevelForGoogle(effort),
           includeThoughts: input.reasoning.exposeToClient,
-          ...(input.reasoning.googleThinkingBudget
-            ? { thinkingBudget: input.reasoning.googleThinkingBudget }
-            : {}),
+          ...(inferredBudget > 0 ? { thinkingBudget: inferredBudget } : {}),
         },
       });
       break;
@@ -145,13 +148,13 @@ export function createProviderOptions(input: {
           effort: thinkingEffortForAnthropic(effort),
         });
       } else if (vendor === "google") {
+        const configuredBudget = Number(input.reasoning.googleThinkingBudget ?? 0);
+        const inferredBudget =
+          configuredBudget > 0 ? Math.floor(configuredBudget) : thinkingBudgetForGoogle(effort);
         appendOptions(out, "google", {
           thinkingConfig: {
-            thinkingLevel: thinkingLevelForGoogle(effort),
             includeThoughts: input.reasoning.exposeToClient,
-            ...(input.reasoning.googleThinkingBudget
-              ? { thinkingBudget: input.reasoning.googleThinkingBudget }
-              : {}),
+            ...(inferredBudget > 0 ? { thinkingBudget: inferredBudget } : {}),
           },
         });
       }

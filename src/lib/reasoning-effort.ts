@@ -39,12 +39,16 @@ export function allowedReasoningEfforts(input: {
     return STANDARD_LEVELS;
   }
   if (modelType === "anthropic_messages") return STANDARD_LEVELS;
-  if (modelType === "google_generative_ai") return STANDARD_LEVELS;
+  if (modelType === "google_generative_ai") {
+    return STANDARD_LEVELS;
+  }
   if (modelType === "vercel_ai_gateway") {
     const vendor = vendorFromModelId(input.providerModelId);
     if (vendor === "openai") return OPENAI_LEVELS;
     if (vendor === "anthropic") return STANDARD_LEVELS;
-    if (vendor === "google") return STANDARD_LEVELS;
+    if (vendor === "google") {
+      return STANDARD_LEVELS;
+    }
     return STANDARD_LEVELS;
   }
   return [];
