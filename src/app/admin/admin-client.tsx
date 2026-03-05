@@ -24,21 +24,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useI18n } from "@/components/i18n-provider";
-import { ReadinessDot, type ReadinessDotState } from "@/components/readiness-dot";
-import { listModelCapabilityBadges, type ModelCapabilities } from "@/lib/models";
+import {
+  ReadinessDot,
+  type ReadinessDotState,
+} from "@/components/readiness-dot";
+import {
+  listModelCapabilityBadges,
+  type ModelCapabilities,
+} from "@/lib/models";
 import { cn } from "@/lib/utils";
 import {
   CheckCircleIcon,
   CheckIcon,
   ChevronDownIcon,
+  Brain,
+  Braces,
+  FileText,
   FilterIcon,
   ListIcon,
   MessageCircleIcon,
+  Thermometer,
   RotateCcwIcon,
   RotateCwIcon,
   SaveIcon,
   ShieldIcon,
   Sparkles,
+  Wrench,
   XIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -142,6 +153,22 @@ type ReadinessPreflightResponse = {
   };
 };
 
+const adminModelCapabilityIcons = {
+  reasoning: Brain,
+  tools: Wrench,
+  temperature: Thermometer,
+  attachments: FileText,
+  structuredOutput: Braces,
+} as const;
+
+const adminModelCapabilityColors = {
+  reasoning: "text-emerald-700 dark:text-emerald-300",
+  tools: "text-blue-700 dark:text-blue-300",
+  temperature: "text-purple-700 dark:text-purple-300",
+  attachments: "text-orange-700 dark:text-orange-300",
+  structuredOutput: "text-cyan-700 dark:text-cyan-300",
+} as const;
+
 function AdminModelPicker(props: {
   value: string;
   onChange: (modelId: string) => void;
@@ -172,15 +199,15 @@ function AdminModelPicker(props: {
         >
           <span className="truncate">
             {displayValue || props.placeholder || t("model.select.title")}
-            {selected?.description ? (
-              <span className="ml-2 text-muted-foreground">{selected.description}</span>
-            ) : null}
           </span>
           <ChevronDownIcon className="size-4 text-muted-foreground" />
         </Button>
       </ModelSelectorTrigger>
 
-      <ModelSelectorContent title={t("model.select.title")}>
+      <ModelSelectorContent
+        className="sm:max-w-sm"
+        title={t("model.select.title")}
+      >
         <ModelSelectorInput placeholder={t("model.select.search")} />
         <ModelSelectorList>
           <ModelSelectorEmpty>{t("model.select.empty")}</ModelSelectorEmpty>
@@ -198,39 +225,55 @@ function AdminModelPicker(props: {
                 <CheckIcon
                   className={cn(
                     "mr-2 size-4",
-                    option.id === props.value ? "opacity-100" : "opacity-0"
+                    option.id === props.value ? "opacity-100" : "opacity-0",
                   )}
                 />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex min-w-0 items-baseline gap-2">
                     <ModelSelectorName>{option.label}</ModelSelectorName>
-                    {option.description ? (
-                      <span className="truncate text-muted-foreground text-xs">
-                        {option.description}
-                      </span>
-                    ) : null}
-                    {option.modelType ? (
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {option.modelType}
-                      </span>
-                    ) : null}
                   </div>
                   {option.capabilities ? (
                     <div className="flex flex-wrap gap-1">
                       {listModelCapabilityBadges(option.capabilities).map(
-                        ({ key, label, enabled }) => (
-                          <Badge
-                            className={cn(
-                              "pointer-events-none px-1.5 py-0 text-[10px]",
-                              enabled ? "" : "opacity-50"
-                            )}
-                            data-enabled={enabled ? "true" : "false"}
-                            key={key}
-                            variant={enabled ? "secondary" : "outline"}
-                          >
-                            {label}
-                          </Badge>
-                        )
+                        ({ key, label, enabled }) => {
+                          const CapabilityIcon =
+                            adminModelCapabilityIcons[
+                              key as keyof typeof adminModelCapabilityIcons
+                            ];
+
+                          return (
+                            <Badge
+                              className={cn(
+                                "pointer-events-none inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
+                                enabled ? "" : "opacity-50",
+                              )}
+                              data-enabled={enabled ? "true" : "false"}
+                              key={key}
+                              variant="outline"
+                              title={label}
+                            >
+                              {enabled && CapabilityIcon ? (
+                                <span
+                                  aria-label={label}
+                                  className="inline-flex items-center justify-center"
+                                >
+                                  <span className="sr-only">{label}</span>
+                                  <CapabilityIcon
+                                    className={cn(
+                                      "size-4",
+                                      enabled
+                                        ? adminModelCapabilityColors[
+                                            key as keyof typeof adminModelCapabilityColors
+                                          ]
+                                        : "text-muted-foreground",
+                                    )}
+                                    strokeWidth={2.5}
+                                  />
+                                </span>
+                              ) : null}
+                            </Badge>
+                          );
+                        },
                       )}
                     </div>
                   ) : null}
@@ -273,7 +316,11 @@ function AdminSaveButton(props: {
       title={label}
       type="button"
     >
-      {props.saving ? <RotateCwIcon className="size-4 animate-spin" /> : <SaveIcon className="size-4" />}
+      {props.saving ? (
+        <RotateCwIcon className="size-4 animate-spin" />
+      ) : (
+        <SaveIcon className="size-4" />
+      )}
     </Button>
   );
 }
@@ -314,17 +361,19 @@ export function AdminClient() {
 
   const [inventoryLoading, setInventoryLoading] = useState(true);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
-  const [inventory, setInventory] = useState<ModelsInventoryResponse | null>(null);
+  const [inventory, setInventory] = useState<ModelsInventoryResponse | null>(
+    null,
+  );
 
   const [modelsSavingByProvider, setModelsSavingByProvider] = useState<
     Record<string, boolean>
   >({});
-  const [defaultModelSavingByProvider, setDefaultModelSavingByProvider] = useState<
-    Record<string, boolean>
-  >({});
+  const [defaultModelSavingByProvider, setDefaultModelSavingByProvider] =
+    useState<Record<string, boolean>>({});
   const [modelsError, setModelsError] = useState<string | null>(null);
 
-  const [routerDraftProviderId, setRouterDraftProviderId] = useState<string>("");
+  const [routerDraftProviderId, setRouterDraftProviderId] =
+    useState<string>("");
   const [routerDraftModelId, setRouterDraftModelId] = useState<string>("");
   const [routerSaving, setRouterSaving] = useState(false);
   const [routerError, setRouterError] = useState<string | null>(null);
@@ -345,29 +394,27 @@ export function AdminClient() {
   const [webSearchLoading, setWebSearchLoading] = useState(true);
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState<string | null>(null);
-  const [webSearchConfig, setWebSearchConfig] = useState<WebSearchProviderResponse | null>(
-    null
-  );
+  const [webSearchConfig, setWebSearchConfig] =
+    useState<WebSearchProviderResponse | null>(null);
   const [webSearchDraft, setWebSearchDraft] = useState<string>("");
 
   const [localAccessLoading, setLocalAccessLoading] = useState(true);
   const [localAccessSaving, setLocalAccessSaving] = useState(false);
   const [localAccessError, setLocalAccessError] = useState<string | null>(null);
-  const [localAccessConfig, setLocalAccessConfig] = useState<LocalAccessResponse | null>(
-    null
-  );
+  const [localAccessConfig, setLocalAccessConfig] =
+    useState<LocalAccessResponse | null>(null);
   const [localAccessEnabledDraft, setLocalAccessEnabledDraft] = useState(false);
   const [localAccessCommandsDraft, setLocalAccessCommandsDraft] = useState("");
-  const [localAccessDirectoriesDraft, setLocalAccessDirectoriesDraft] = useState("");
+  const [localAccessDirectoriesDraft, setLocalAccessDirectoriesDraft] =
+    useState("");
 
   const [readinessPreflight, setReadinessPreflight] =
     useState<ReadinessPreflightResponse | null>(null);
   const [llmReadinessByProviderId, setLlmReadinessByProviderId] = useState<
     Record<string, ReadinessDotState>
   >({});
-  const [webSearchReadinessByProviderId, setWebSearchReadinessByProviderId] = useState<
-    Record<string, ReadinessDotState>
-  >({});
+  const [webSearchReadinessByProviderId, setWebSearchReadinessByProviderId] =
+    useState<Record<string, ReadinessDotState>>({});
   const [skillReadinessByName, setSkillReadinessByName] = useState<
     Record<string, ReadinessDotState>
   >({});
@@ -386,9 +433,13 @@ export function AdminClient() {
 
   const readLanAdminToken = useCallback((): string => {
     if (typeof window === "undefined") return "";
-    const session = window.sessionStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY);
+    const session = window.sessionStorage.getItem(
+      REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY,
+    );
     if (session && session.trim()) return session.trim();
-    const local = window.localStorage.getItem(REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY);
+    const local = window.localStorage.getItem(
+      REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY,
+    );
     if (local && local.trim()) return local.trim();
     return "";
   }, []);
@@ -401,7 +452,9 @@ export function AdminClient() {
   const load = useCallback(async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
     if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       throw new Error(json?.error || t("error.admin.providers_load_failed"));
     }
     const data = (await res.json()) as ProvidersResponse;
@@ -410,35 +463,50 @@ export function AdminClient() {
   }, [t]);
 
   const fetchInventory = useCallback(async () => {
-    const res = await fetch("/api/admin/models-inventory", { cache: "no-store" });
+    const res = await fetch("/api/admin/models-inventory", {
+      cache: "no-store",
+    });
     if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || t("error.admin.models_inventory_load_failed"));
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        json?.error || t("error.admin.models_inventory_load_failed"),
+      );
     }
     return (await res.json()) as ModelsInventoryResponse;
   }, [t]);
 
-  const loadSkills = useCallback(async (options?: { rescan?: boolean }) => {
-    const rescanParam = options?.rescan ? "?rescan=1" : "";
-    const res = await fetch(`/api/skills${rescanParam}`, {
-      cache: "no-store",
-      headers: buildAdminHeaders(),
-    });
-    if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || t("error.admin.skills_load_failed"));
-    }
-    const data = (await res.json()) as SkillsAdminResponse;
-    setSkills(data);
-  }, [buildAdminHeaders, t]);
+  const loadSkills = useCallback(
+    async (options?: { rescan?: boolean }) => {
+      const rescanParam = options?.rescan ? "?rescan=1" : "";
+      const res = await fetch(`/api/skills${rescanParam}`, {
+        cache: "no-store",
+        headers: buildAdminHeaders(),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(json?.error || t("error.admin.skills_load_failed"));
+      }
+      const data = (await res.json()) as SkillsAdminResponse;
+      setSkills(data);
+    },
+    [buildAdminHeaders, t],
+  );
 
   const loadWebSearchProvider = useCallback(async () => {
     const res = await fetch("/api/admin/web-tools/search-provider", {
       cache: "no-store",
     });
     if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(json?.error || t("error.admin.web_search_provider_load_failed"));
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        json?.error || t("error.admin.web_search_provider_load_failed"),
+      );
     }
     const data = (await res.json()) as WebSearchProviderResponse;
     setWebSearchConfig(data);
@@ -450,7 +518,9 @@ export function AdminClient() {
   const loadLocalAccess = useCallback(async () => {
     const res = await fetch("/api/admin/local-access", { cache: "no-store" });
     if (!res.ok) {
-      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
       throw new Error(json?.error || t("error.admin.local_access_load_failed"));
     }
     const data = (await res.json()) as LocalAccessResponse;
@@ -466,7 +536,9 @@ export function AdminClient() {
       headers: buildAdminHeaders(),
     });
     if (!res.ok) return null;
-    const data = (await res.json().catch(() => null)) as ReadinessPreflightResponse | null;
+    const data = (await res
+      .json()
+      .catch(() => null)) as ReadinessPreflightResponse | null;
     if (!data) return null;
     setReadinessPreflight(data);
     return data;
@@ -481,7 +553,9 @@ export function AdminClient() {
       .catch((err) => {
         if (canceled) return;
         setError(
-          err instanceof Error ? err.message : t("error.admin.providers_load_failed")
+          err instanceof Error
+            ? err.message
+            : t("error.admin.providers_load_failed"),
         );
       })
       .finally(() => {
@@ -503,7 +577,7 @@ export function AdminClient() {
         setWebSearchError(
           err instanceof Error
             ? err.message
-            : t("error.admin.web_search_provider_load_failed")
+            : t("error.admin.web_search_provider_load_failed"),
         );
       })
       .finally(() => {
@@ -523,7 +597,9 @@ export function AdminClient() {
       .catch((err) => {
         if (canceled) return;
         setLocalAccessError(
-          err instanceof Error ? err.message : t("error.admin.local_access_load_failed")
+          err instanceof Error
+            ? err.message
+            : t("error.admin.local_access_load_failed"),
         );
       })
       .finally(() => {
@@ -552,7 +628,9 @@ export function AdminClient() {
     } catch (err) {
       if (inventoryRunIdRef.current !== runId) return;
       setInventoryError(
-        err instanceof Error ? err.message : t("error.admin.models_inventory_load_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.models_inventory_load_failed"),
       );
     } finally {
       if (inventoryRunIdRef.current !== runId) return;
@@ -600,7 +678,11 @@ export function AdminClient() {
     loadSkills()
       .catch((err) => {
         if (canceled) return;
-        setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
+        setSkillsError(
+          err instanceof Error
+            ? err.message
+            : t("error.admin.skills_load_failed"),
+        );
       })
       .finally(() => {
         if (canceled) return;
@@ -648,16 +730,19 @@ export function AdminClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: "RESET" }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
         throw new Error(json?.error || t("error.admin.reset_failed"));
       }
       setResetConfirm("");
       setSaveNotice(t("admin.reset.notice.completed"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("error.admin.reset_failed"));
+      setError(
+        err instanceof Error ? err.message : t("error.admin.reset_failed"),
+      );
     } finally {
       setResetSaving(false);
     }
@@ -677,9 +762,10 @@ export function AdminClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerId: activeDraft }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
         throw new Error(json?.error || t("error.admin.switch_provider_failed"));
       }
@@ -687,7 +773,9 @@ export function AdminClient() {
       setSaveNotice(t("admin.providers.notice.updated"));
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : t("error.admin.switch_provider_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.switch_provider_failed"),
       );
     } finally {
       setSaving(false);
@@ -739,7 +827,10 @@ export function AdminClient() {
     if (!inventory) return;
     const provider = inventory.providers.find((p) => p.id === providerId);
     if (!provider) return;
-    setDefaultDraftByProviderId((prev) => ({ ...prev, [providerId]: provider.defaultModelId }));
+    setDefaultDraftByProviderId((prev) => ({
+      ...prev,
+      [providerId]: provider.defaultModelId,
+    }));
   };
 
   const saveProviderDraft = async (providerId: string) => {
@@ -760,17 +851,22 @@ export function AdminClient() {
           allowedModelIds: Array.from(draft),
         }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
-        throw new Error(json?.error || t("error.admin.allowed_models_update_failed"));
+        throw new Error(
+          json?.error || t("error.admin.allowed_models_update_failed"),
+        );
       }
       await refreshInventory();
       setSaveNotice(t("admin.models.notice.allowed_updated", { providerId }));
     } catch (err) {
       setModelsError(
-        err instanceof Error ? err.message : t("error.admin.allowed_models_update_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.allowed_models_update_failed"),
       );
     } finally {
       setModelsSavingByProvider((prev) => ({ ...prev, [providerId]: false }));
@@ -781,21 +877,30 @@ export function AdminClient() {
     if (!inventory) return;
     const provider = inventory.providers.find((p) => p.id === providerId);
     if (!provider) return;
-    const draftDefault = String(defaultDraftByProviderId[providerId] ?? "").trim();
+    const draftDefault = String(
+      defaultDraftByProviderId[providerId] ?? "",
+    ).trim();
     if (!draftDefault) return;
     if (defaultModelSavingByProvider[providerId]) return;
 
     // Changing default may also update the provider allowlist on disk; require allowlist draft to be clean.
-    const allowedDraft = allowedDraftByProviderId[providerId] ?? new Set(provider.allowedModelIds);
-    const hasAllowedChanges = !setsEqual(allowedDraft, new Set(provider.allowedModelIds));
+    const allowedDraft =
+      allowedDraftByProviderId[providerId] ?? new Set(provider.allowedModelIds);
+    const hasAllowedChanges = !setsEqual(
+      allowedDraft,
+      new Set(provider.allowedModelIds),
+    );
     if (hasAllowedChanges) {
       setModelsError(
-        t("admin.models.error.unsaved_allowed_changes", { providerId })
+        t("admin.models.error.unsaved_allowed_changes", { providerId }),
       );
       return;
     }
 
-    setDefaultModelSavingByProvider((prev) => ({ ...prev, [providerId]: true }));
+    setDefaultModelSavingByProvider((prev) => ({
+      ...prev,
+      [providerId]: true,
+    }));
     setModelsError(null);
     setSaveNotice(null);
     try {
@@ -804,26 +909,36 @@ export function AdminClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerId, defaultModelId: draftDefault }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
-        throw new Error(json?.error || t("error.admin.default_model_update_failed"));
+        throw new Error(
+          json?.error || t("error.admin.default_model_update_failed"),
+        );
       }
       await refreshInventory();
       setSaveNotice(t("admin.models.notice.default_updated", { providerId }));
     } catch (err) {
       setModelsError(
-        err instanceof Error ? err.message : t("error.admin.default_model_update_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.default_model_update_failed"),
       );
     } finally {
-      setDefaultModelSavingByProvider((prev) => ({ ...prev, [providerId]: false }));
+      setDefaultModelSavingByProvider((prev) => ({
+        ...prev,
+        [providerId]: false,
+      }));
     }
   };
 
   const saveRouterModel = async () => {
     if (!inventory?.router) return;
-    const providerId = String(routerDraftProviderId || inventory.router.providerId || "").trim();
+    const providerId = String(
+      routerDraftProviderId || inventory.router.providerId || "",
+    ).trim();
     if (!providerId) return;
     if (!routerDraftModelId) return;
     if (routerSaving) return;
@@ -837,17 +952,22 @@ export function AdminClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerId, modelId: routerDraftModelId }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
-        throw new Error(json?.error || t("error.admin.router_model_update_failed"));
+        throw new Error(
+          json?.error || t("error.admin.router_model_update_failed"),
+        );
       }
       await refreshInventory();
       setSaveNotice(t("admin.router.notice.updated"));
     } catch (err) {
       setRouterError(
-        err instanceof Error ? err.message : t("error.admin.router_model_update_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.router_model_update_failed"),
       );
     } finally {
       setRouterSaving(false);
@@ -862,7 +982,11 @@ export function AdminClient() {
       await loadSkills({ rescan: true });
     } catch (err) {
       if (skillsLoadRunIdRef.current !== runId) return;
-      setSkillsError(err instanceof Error ? err.message : t("error.admin.skills_load_failed"));
+      setSkillsError(
+        err instanceof Error
+          ? err.message
+          : t("error.admin.skills_load_failed"),
+      );
     } finally {
       if (skillsLoadRunIdRef.current !== runId) return;
       setSkillsLoading(false);
@@ -882,23 +1006,24 @@ export function AdminClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerId: webSearchDraft }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
         throw new Error(
-          json?.error || t("error.admin.web_search_provider_update_failed")
+          json?.error || t("error.admin.web_search_provider_update_failed"),
         );
       }
       await loadWebSearchProvider();
       setSaveNotice(
-        t("admin.web_search.notice.updated", { provider: webSearchDraft })
+        t("admin.web_search.notice.updated", { provider: webSearchDraft }),
       );
     } catch (err) {
       setWebSearchError(
         err instanceof Error
           ? err.message
-          : t("error.admin.web_search_provider_update_failed")
+          : t("error.admin.web_search_provider_update_failed"),
       );
     } finally {
       setWebSearchSaving(false);
@@ -948,17 +1073,22 @@ export function AdminClient() {
           allowedDirectories: nextDirs,
         }),
       });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
       if (!res.ok) {
-        throw new Error(json?.error || t("error.admin.local_access_update_failed"));
+        throw new Error(
+          json?.error || t("error.admin.local_access_update_failed"),
+        );
       }
       await loadLocalAccess();
       setSaveNotice(t("admin.local_access.notice.updated"));
     } catch (err) {
       setLocalAccessError(
-        err instanceof Error ? err.message : t("error.admin.local_access_update_failed")
+        err instanceof Error
+          ? err.message
+          : t("error.admin.local_access_update_failed"),
       );
     } finally {
       setLocalAccessSaving(false);
@@ -968,19 +1098,22 @@ export function AdminClient() {
   async function runWithConcurrency<T>(
     items: T[],
     concurrency: number,
-    worker: (item: T) => Promise<void>
+    worker: (item: T) => Promise<void>,
   ) {
     const max = Math.max(1, Math.floor(concurrency));
     let idx = 0;
-    const runners = Array.from({ length: Math.min(max, items.length) }, async () => {
-      while (true) {
-        const current = idx;
-        idx += 1;
-        const item = items[current];
-        if (item === undefined) return;
-        await worker(item);
-      }
-    });
+    const runners = Array.from(
+      { length: Math.min(max, items.length) },
+      async () => {
+        while (true) {
+          const current = idx;
+          idx += 1;
+          const item = items[current];
+          if (item === undefined) return;
+          await worker(item);
+        }
+      },
+    );
     await Promise.all(runners);
   }
 
@@ -992,15 +1125,15 @@ export function AdminClient() {
         body: JSON.stringify(body),
       });
       if (!res.ok) return null;
-      return (await res.json().catch(() => null)) as
-        | { status?: string }
-        | null;
+      return (await res.json().catch(() => null)) as { status?: string } | null;
     },
-    [buildAdminHeaders]
+    [buildAdminHeaders],
   );
 
   const startLlmReadiness = useCallback(async () => {
-    const providerIds = (providers?.providers ?? []).map((p) => p.id).filter(Boolean);
+    const providerIds = (providers?.providers ?? [])
+      .map((p) => p.id)
+      .filter(Boolean);
     if (providerIds.length === 0) return;
 
     llmRunIdRef.current += 1;
@@ -1028,9 +1161,13 @@ export function AdminClient() {
       if (llmRunIdRef.current !== runId) return;
       const json = await postReadinessRun({ kind: "llm_provider", providerId });
       const status = String(json?.status ?? "").trim();
-      const nextState: ReadinessDotState = status === "passed" ? "passed" : "failed";
+      const nextState: ReadinessDotState =
+        status === "passed" ? "passed" : "failed";
       if (llmRunIdRef.current !== runId) return;
-      setLlmReadinessByProviderId((prev) => ({ ...prev, [providerId]: nextState }));
+      setLlmReadinessByProviderId((prev) => ({
+        ...prev,
+        [providerId]: nextState,
+      }));
     });
   }, [postReadinessRun, providers]);
 
@@ -1071,7 +1208,10 @@ export function AdminClient() {
 
     await runWithConcurrency(providerIds, 2, async (providerId) => {
       if (webSearchRunIdRef.current !== runId) return;
-      const json = await postReadinessRun({ kind: "web_search_provider", providerId });
+      const json = await postReadinessRun({
+        kind: "web_search_provider",
+        providerId,
+      });
       const status = String(json?.status ?? "").trim();
       const nextState: ReadinessDotState =
         status === "passed"
@@ -1080,79 +1220,90 @@ export function AdminClient() {
             ? "disabled"
             : "failed";
       if (webSearchRunIdRef.current !== runId) return;
-      setWebSearchReadinessByProviderId((prev) => ({ ...prev, [providerId]: nextState }));
+      setWebSearchReadinessByProviderId((prev) => ({
+        ...prev,
+        [providerId]: nextState,
+      }));
     });
   }, [postReadinessRun, webSearchConfig]);
 
-  const startSkillsReadiness = useCallback(async (overridePreflight?: ReadinessPreflightResponse | null) => {
-    if (!skills?.enabled) return;
-    const deps = (skills.skills ?? [])
-      .map((s) => ({
-        name: s.name,
-        detectedTools: Array.isArray(s.detectedTools) ? s.detectedTools : [],
-      }))
-      .filter((s) => s.detectedTools.length > 0);
-    if (deps.length === 0) return;
+  const startSkillsReadiness = useCallback(
+    async (overridePreflight?: ReadinessPreflightResponse | null) => {
+      if (!skills?.enabled) return;
+      const deps = (skills.skills ?? [])
+        .map((s) => ({
+          name: s.name,
+          detectedTools: Array.isArray(s.detectedTools) ? s.detectedTools : [],
+        }))
+        .filter((s) => s.detectedTools.length > 0);
+      if (deps.length === 0) return;
 
-    const pf = overridePreflight ?? readinessPreflight;
-    if (!pf) return;
+      const pf = overridePreflight ?? readinessPreflight;
+      if (!pf) return;
 
-    skillsRunIdRef.current += 1;
-    const runId = skillsRunIdRef.current;
+      skillsRunIdRef.current += 1;
+      const runId = skillsRunIdRef.current;
 
-    const preclassified = new Map<string, ReadinessDotState>();
-    for (const s of deps) {
-      const wantsHue = s.detectedTools.some((t) => t === "hueGateway");
-      const wantsOv = s.detectedTools.some((t) => t === "ovNlGateway");
-      const hue = wantsHue ? pf.tools.hueGateway : "enabled";
-      const ov = wantsOv ? pf.tools.ovNlGateway : "enabled";
+      const preclassified = new Map<string, ReadinessDotState>();
+      for (const s of deps) {
+        const wantsHue = s.detectedTools.some((t) => t === "hueGateway");
+        const wantsOv = s.detectedTools.some((t) => t === "ovNlGateway");
+        const hue = wantsHue ? pf.tools.hueGateway : "enabled";
+        const ov = wantsOv ? pf.tools.ovNlGateway : "enabled";
 
-      if (hue === "blocked" || ov === "blocked") preclassified.set(s.name, "blocked");
-      else if (hue === "disabled" || ov === "disabled") preclassified.set(s.name, "disabled");
-      else preclassified.set(s.name, "untested");
-    }
+        if (hue === "blocked" || ov === "blocked")
+          preclassified.set(s.name, "blocked");
+        else if (hue === "disabled" || ov === "disabled")
+          preclassified.set(s.name, "disabled");
+        else preclassified.set(s.name, "untested");
+      }
 
-    setSkillReadinessByName((prev) => {
-      const next = { ...prev };
-      for (const [name, state] of preclassified.entries()) next[name] = state;
-      return next;
-    });
-
-    const testable = Array.from(preclassified.entries())
-      .filter(([, state]) => state === "untested")
-      .map(([name]) => name);
-    if (testable.length === 0) return;
-
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        if (skillsRunIdRef.current !== runId) return resolve();
-        setSkillReadinessByName((prev) => {
-          const next = { ...prev };
-          for (const name of testable) next[name] = "testing";
-          return next;
-        });
-        resolve();
+      setSkillReadinessByName((prev) => {
+        const next = { ...prev };
+        for (const [name, state] of preclassified.entries()) next[name] = state;
+        return next;
       });
-    });
 
-    await runWithConcurrency(testable, 2, async (skillName) => {
-      if (skillsRunIdRef.current !== runId) return;
-      const json = await postReadinessRun({ kind: "skill", skillName });
-      const status = String(json?.status ?? "").trim();
-      const nextState: ReadinessDotState =
-        status === "passed"
-          ? "passed"
-          : status === "disabled"
-            ? "disabled"
-            : status === "blocked"
-              ? "blocked"
-              : status === "not_applicable"
-                ? "not_applicable"
-                : "failed";
-      if (skillsRunIdRef.current !== runId) return;
-      setSkillReadinessByName((prev) => ({ ...prev, [skillName]: nextState }));
-    });
-  }, [postReadinessRun, readinessPreflight, skills]);
+      const testable = Array.from(preclassified.entries())
+        .filter(([, state]) => state === "untested")
+        .map(([name]) => name);
+      if (testable.length === 0) return;
+
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          if (skillsRunIdRef.current !== runId) return resolve();
+          setSkillReadinessByName((prev) => {
+            const next = { ...prev };
+            for (const name of testable) next[name] = "testing";
+            return next;
+          });
+          resolve();
+        });
+      });
+
+      await runWithConcurrency(testable, 2, async (skillName) => {
+        if (skillsRunIdRef.current !== runId) return;
+        const json = await postReadinessRun({ kind: "skill", skillName });
+        const status = String(json?.status ?? "").trim();
+        const nextState: ReadinessDotState =
+          status === "passed"
+            ? "passed"
+            : status === "disabled"
+              ? "disabled"
+              : status === "blocked"
+                ? "blocked"
+                : status === "not_applicable"
+                  ? "not_applicable"
+                  : "failed";
+        if (skillsRunIdRef.current !== runId) return;
+        setSkillReadinessByName((prev) => ({
+          ...prev,
+          [skillName]: nextState,
+        }));
+      });
+    },
+    [postReadinessRun, readinessPreflight, skills],
+  );
 
   const retestAllReadiness = useCallback(async () => {
     if (readinessRetesting) return;
@@ -1198,7 +1349,7 @@ export function AdminClient() {
     if (!skills?.enabled) return;
     if (!readinessPreflight) return;
     const toolTied = (skills.skills ?? []).some(
-      (s) => Array.isArray(s.detectedTools) && s.detectedTools.length > 0
+      (s) => Array.isArray(s.detectedTools) && s.detectedTools.length > 0,
     );
     if (!toolTied) return;
     skillsAutoStartedRef.current = true;
@@ -1262,7 +1413,8 @@ export function AdminClient() {
               <RotateCwIcon
                 className={cn(
                   "size-4",
-                  (readinessRetesting || inventoryLoading || skillsLoading) && "animate-spin"
+                  (readinessRetesting || inventoryLoading || skillsLoading) &&
+                    "animate-spin",
                 )}
               />
             </Button>
@@ -1324,10 +1476,12 @@ export function AdminClient() {
                       {t("admin.web_search.provider.label")}
                     </label>
                     <Select
-                      disabled={webSearchLoading || webSearchSaving || !webSearchConfig?.enabled}
-                      onValueChange={(value) =>
-                        setWebSearchDraft(value)
+                      disabled={
+                        webSearchLoading ||
+                        webSearchSaving ||
+                        !webSearchConfig?.enabled
                       }
+                      onValueChange={(value) => setWebSearchDraft(value)}
                       value={webSearchDraft}
                     >
                       <SelectTrigger
@@ -1338,17 +1492,19 @@ export function AdminClient() {
                           state={
                             !webSearchConfig?.enabled
                               ? "disabled"
-                              : webSearchReadinessByProviderId[webSearchDraft] ?? "untested"
+                              : (webSearchReadinessByProviderId[
+                                  webSearchDraft
+                                ] ?? "untested")
                           }
                         />
                         <SelectValue>
                           {webSearchLoading
                             ? t("common.loading")
-                            : (webSearchConfig?.providers ?? []).find(
-                                  (p) => p.id === webSearchDraft
-                                )?.label ??
-                                webSearchDraft ??
-                                t("admin.web_search.provider.placeholder")}
+                            : ((webSearchConfig?.providers ?? []).find(
+                                (p) => p.id === webSearchDraft,
+                              )?.label ??
+                              webSearchDraft ??
+                              t("admin.web_search.provider.placeholder"))}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
@@ -1359,7 +1515,8 @@ export function AdminClient() {
                                 state={
                                   !webSearchConfig?.enabled
                                     ? "disabled"
-                                    : webSearchReadinessByProviderId[p.id] ?? "untested"
+                                    : (webSearchReadinessByProviderId[p.id] ??
+                                      "untested")
                                 }
                               />
                               <span>{p.label}</span>
@@ -1387,13 +1544,86 @@ export function AdminClient() {
                   <div className="text-xs text-muted-foreground">
                     {t("admin.web_search.enabled")}:{" "}
                     <span className="font-medium">
-                      {webSearchConfig.enabled ? t("common.yes") : t("common.no")}
+                      {webSearchConfig.enabled
+                        ? t("common.yes")
+                        : t("common.no")}
                     </span>
                   </div>
                 ) : null}
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("admin.providers.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {error ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </div>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <label
+                      className="text-sm font-medium"
+                      htmlFor="admin:provider"
+                    >
+                      {t("admin.providers.active.label")}
+                    </label>
+                    <Select
+                      disabled={loading || saving}
+                      onValueChange={(value) => setActiveDraft(value)}
+                      value={activeDraft}
+                    >
+                      <SelectTrigger
+                        data-testid="admin:provider-select"
+                        id="admin:provider"
+                      >
+                        <ReadinessDot
+                          state={
+                            llmReadinessByProviderId[activeDraft] ?? "untested"
+                          }
+                        />
+                        <SelectValue>
+                          {loading
+                            ? t("common.loading")
+                            : (providerOptions.find((p) => p.id === activeDraft)
+                                ?.name ??
+                              activeDraft ??
+                              t("admin.providers.active.placeholder"))}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providerOptions.map((p) => (
+                          <SelectItem
+                            data-testid={`admin:provider-option:${p.id}`}
+                            key={p.id}
+                            value={p.id}
+                          >
+                            <div className="flex items-center gap-2">
+                              <ReadinessDot
+                                state={
+                                  llmReadinessByProviderId[p.id] ?? "untested"
+                                }
+                              />
+                              <span>{p.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <AdminSaveButton
+                    disabled={!canSave}
+                    onClick={() => save()}
+                    saving={saving}
+                    testId="admin:provider-save"
+                  />
+                </div>
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>{t("admin.local_access.title")}</CardTitle>
@@ -1422,7 +1652,9 @@ export function AdminClient() {
                     checked={localAccessEnabledDraft}
                     className="size-4 accent-foreground disabled:opacity-50"
                     disabled={localAccessLoading || localAccessSaving}
-                    onChange={(e) => setLocalAccessEnabledDraft(e.target.checked)}
+                    onChange={(e) =>
+                      setLocalAccessEnabledDraft(e.target.checked)
+                    }
                     type="checkbox"
                   />
                 </div>
@@ -1439,7 +1671,9 @@ export function AdminClient() {
                       className="min-h-[92px] font-mono text-xs"
                       disabled={localAccessLoading || localAccessSaving}
                       id="admin:local-access-commands"
-                      onChange={(e) => setLocalAccessCommandsDraft(e.target.value)}
+                      onChange={(e) =>
+                        setLocalAccessCommandsDraft(e.target.value)
+                      }
                       placeholder={t("admin.local_access.commands.placeholder")}
                       value={localAccessCommandsDraft}
                     />
@@ -1456,8 +1690,12 @@ export function AdminClient() {
                       className="min-h-[92px] font-mono text-xs"
                       disabled={localAccessLoading || localAccessSaving}
                       id="admin:local-access-directories"
-                      onChange={(e) => setLocalAccessDirectoriesDraft(e.target.value)}
-                      placeholder={t("admin.local_access.directories.placeholder")}
+                      onChange={(e) =>
+                        setLocalAccessDirectoriesDraft(e.target.value)
+                      }
+                      placeholder={t(
+                        "admin.local_access.directories.placeholder",
+                      )}
                       value={localAccessDirectoriesDraft}
                     />
                   </div>
@@ -1465,82 +1703,25 @@ export function AdminClient() {
 
                 <div className="flex justify-end gap-2">
                   <AdminResetButton
-                    disabled={localAccessLoading || localAccessSaving || !localAccessConfig}
+                    disabled={
+                      localAccessLoading ||
+                      localAccessSaving ||
+                      !localAccessConfig
+                    }
                     onClick={() => resetLocalAccessDraft()}
                     testId="admin:local-access-reset"
                   />
                   <AdminSaveButton
-                    disabled={localAccessLoading || localAccessSaving || !localAccessConfig}
+                    disabled={
+                      localAccessLoading ||
+                      localAccessSaving ||
+                      !localAccessConfig
+                    }
                     onClick={() => saveLocalAccess()}
                     saving={localAccessSaving}
                     testId="admin:local-access-save"
                   />
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>{t("admin.providers.title")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {error ? (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {error}
-                  </div>
-                ) : null}
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium" htmlFor="admin:provider">
-                      {t("admin.providers.active.label")}
-                    </label>
-                    <Select
-                      disabled={loading || saving}
-                      onValueChange={(value) => setActiveDraft(value)}
-                      value={activeDraft}
-                    >
-                      <SelectTrigger
-                        data-testid="admin:provider-select"
-                        id="admin:provider"
-                      >
-                        <ReadinessDot
-                          state={llmReadinessByProviderId[activeDraft] ?? "untested"}
-                        />
-                        <SelectValue>
-                          {loading
-                            ? t("common.loading")
-                            : providerOptions.find((p) => p.id === activeDraft)?.name ??
-                              activeDraft ??
-                              t("admin.providers.active.placeholder")}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providerOptions.map((p) => (
-                          <SelectItem
-                            data-testid={`admin:provider-option:${p.id}`}
-                            key={p.id}
-                            value={p.id}
-                          >
-                            <div className="flex items-center gap-2">
-                              <ReadinessDot
-                                state={llmReadinessByProviderId[p.id] ?? "untested"}
-                              />
-                              <span>{p.name}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <AdminSaveButton
-                    disabled={!canSave}
-                    onClick={() => save()}
-                    saving={saving}
-                    testId="admin:provider-save"
-                  />
-                </div>
-
               </CardContent>
             </Card>
 
@@ -1556,8 +1737,13 @@ export function AdminClient() {
                     </div>
                   ) : null}
                   {(() => {
-                    const providerId = routerDraftProviderId || inventory.router?.providerId || "";
-                    const provider = inventory?.providers.find((p) => p.id === providerId);
+                    const providerId =
+                      routerDraftProviderId ||
+                      inventory.router?.providerId ||
+                      "";
+                    const provider = inventory?.providers.find(
+                      (p) => p.id === providerId,
+                    );
                     const options =
                       provider?.models
                         .filter((m) => m.supported)
@@ -1580,19 +1766,28 @@ export function AdminClient() {
                       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                         <div className="space-y-3">
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" htmlFor="admin:router-provider">
+                            <label
+                              className="text-sm font-medium"
+                              htmlFor="admin:router-provider"
+                            >
                               {t("admin.router.provider")}
                             </label>
                             <Select
                               disabled={inventoryLoading || routerSaving}
                               onValueChange={(value) => {
                                 setRouterDraftProviderId(value);
-                                const nextProvider = inventory?.providers.find((p) => p.id === value);
+                                const nextProvider = inventory?.providers.find(
+                                  (p) => p.id === value,
+                                );
                                 const supportedModels =
-                                  nextProvider?.models.filter((m) => m.supported) ?? [];
+                                  nextProvider?.models.filter(
+                                    (m) => m.supported,
+                                  ) ?? [];
                                 const nextModelId =
-                                  supportedModels.find((m) => m.id === nextProvider?.defaultModelId)
-                                    ?.id ??
+                                  supportedModels.find(
+                                    (m) =>
+                                      m.id === nextProvider?.defaultModelId,
+                                  )?.id ??
                                   supportedModels[0]?.id ??
                                   "";
                                 setRouterDraftModelId(nextModelId);
@@ -1601,25 +1796,35 @@ export function AdminClient() {
                             >
                               <SelectTrigger id="admin:router-provider">
                                 <ReadinessDot
-                                  state={llmReadinessByProviderId[providerId] ?? "untested"}
+                                  state={
+                                    llmReadinessByProviderId[providerId] ??
+                                    "untested"
+                                  }
                                 />
-	                                <SelectValue>
-	                                  {inventoryLoading
-	                                    ? t("common.loading")
-	                                    : (inventory?.providers.find((p) => p.id === providerId)?.name ??
-	                                        providerId) ||
-	                                      t("admin.providers.active.placeholder")}
-	                                </SelectValue>
+                                <SelectValue>
+                                  {inventoryLoading
+                                    ? t("common.loading")
+                                    : (inventory?.providers.find(
+                                        (p) => p.id === providerId,
+                                      )?.name ??
+                                        providerId) ||
+                                      t("admin.providers.active.placeholder")}
+                                </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 {(inventory?.providers ?? []).map((p) => (
                                   <SelectItem key={p.id} value={p.id}>
                                     <div className="flex items-center gap-2">
                                       <ReadinessDot
-                                        state={llmReadinessByProviderId[p.id] ?? "untested"}
+                                        state={
+                                          llmReadinessByProviderId[p.id] ??
+                                          "untested"
+                                        }
                                       />
                                       <span>{p.name}</span>
-                                      <span className="font-mono text-muted-foreground">{p.id}</span>
+                                      <span className="font-mono text-muted-foreground">
+                                        {p.id}
+                                      </span>
                                     </div>
                                   </SelectItem>
                                 ))}
@@ -1628,16 +1833,27 @@ export function AdminClient() {
                           </div>
 
                           <div className="space-y-2">
-                            <label className="text-sm font-medium" htmlFor="admin:router-model">
+                            <label
+                              className="text-sm font-medium"
+                              htmlFor="admin:router-model"
+                            >
                               {t("model.label")}
                             </label>
                             <div id="admin:router-model">
                               <AdminModelPicker
-                                disabled={inventoryLoading || routerSaving || options.length === 0}
-                                onChange={(modelId) => setRouterDraftModelId(modelId)}
+                                disabled={
+                                  inventoryLoading ||
+                                  routerSaving ||
+                                  options.length === 0
+                                }
+                                onChange={(modelId) =>
+                                  setRouterDraftModelId(modelId)
+                                }
                                 options={options}
                                 placeholder={
-                                  inventoryLoading ? t("common.loading") : t("model.select.title")
+                                  inventoryLoading
+                                    ? t("common.loading")
+                                    : t("model.select.title")
                                 }
                                 triggerTestId="admin:router-model-select"
                                 value={routerDraftModelId}
@@ -1677,7 +1893,9 @@ export function AdminClient() {
                 ) : null}
 
                 {inventoryLoading ? (
-                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {t("common.loading")}
+                  </div>
                 ) : inventory ? (
                   <div className="space-y-3">
                     <div className="text-xs text-muted-foreground">
@@ -1686,36 +1904,48 @@ export function AdminClient() {
 
                     <div className="space-y-3">
                       {inventory.providers.map((p) => {
-                        const draft = allowedDraftByProviderId[p.id] ?? new Set(p.allowedModelIds);
+                        const draft =
+                          allowedDraftByProviderId[p.id] ??
+                          new Set(p.allowedModelIds);
                         const required = new Set(p.requiredModelIds);
                         const baseline = new Set(p.allowedModelIds);
                         const filter = filtersByProviderId[p.id] ?? {
                           query: "",
                           showAll: false,
                         };
-                        const savingProvider = Boolean(modelsSavingByProvider[p.id]);
+                        const savingProvider = Boolean(
+                          modelsSavingByProvider[p.id],
+                        );
                         const hasChanges = !setsEqual(draft, baseline);
                         const defaultDraft = String(
-                          defaultDraftByProviderId[p.id] ?? p.defaultModelId
+                          defaultDraftByProviderId[p.id] ?? p.defaultModelId,
                         ).trim();
-                        const savingDefault = Boolean(defaultModelSavingByProvider[p.id]);
+                        const savingDefault = Boolean(
+                          defaultModelSavingByProvider[p.id],
+                        );
                         const hasDefaultChange =
-                          defaultDraft.length > 0 && defaultDraft !== p.defaultModelId;
+                          defaultDraft.length > 0 &&
+                          defaultDraft !== p.defaultModelId;
 
                         const query = filter.query.trim().toLowerCase();
-                        const filtered = (filter.showAll
-                          ? p.models
-                          : p.models.filter((m) => draft.has(m.id))
+                        const filtered = (
+                          filter.showAll
+                            ? p.models
+                            : p.models.filter((m) => draft.has(m.id))
                         ).filter((m) => {
                           if (!query) return true;
-                          const hay = `${m.id} ${m.label} ${m.description ?? ""}`.toLowerCase();
+                          const hay =
+                            `${m.id} ${m.label} ${m.description ?? ""}`.toLowerCase();
                           return hay.includes(query);
                         });
 
                         const isActive = providers?.activeProviderId === p.id;
 
                         return (
-                          <details className="rounded-md border px-3 py-2" key={p.id}>
+                          <details
+                            className="rounded-md border px-3 py-2"
+                            key={p.id}
+                          >
                             <summary className="cursor-pointer select-none text-sm font-medium">
                               <span className="mr-2">{p.name}</span>
                               <span className="ml-2 inline-flex items-center rounded-full border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
@@ -1742,8 +1972,12 @@ export function AdminClient() {
                                   </label>
                                   <div id={`admin:default-model:${p.id}`}>
                                     <AdminModelPicker
-                                      disabled={inventoryLoading || savingDefault}
-                                      onChange={(modelId) => setProviderDefaultDraft(p.id, modelId)}
+                                      disabled={
+                                        inventoryLoading || savingDefault
+                                      }
+                                      onChange={(modelId) =>
+                                        setProviderDefaultDraft(p.id, modelId)
+                                      }
                                       options={p.models
                                         .filter((m) => m.supported)
                                         .map((m) => ({
@@ -1753,7 +1987,9 @@ export function AdminClient() {
                                           modelType: m.modelType,
                                           capabilities: m.capabilities,
                                         }))}
-                                      placeholder={t("admin.models.default_model.placeholder")}
+                                      placeholder={t(
+                                        "admin.models.default_model.placeholder",
+                                      )}
                                       triggerTestId={`admin:default-model-select:${p.id}`}
                                       value={defaultDraft}
                                     />
@@ -1763,14 +1999,24 @@ export function AdminClient() {
                                 <div className="flex justify-end gap-2">
                                   <AdminResetButton
                                     compact
-                                    disabled={!hasDefaultChange || savingDefault}
-                                    onClick={() => resetProviderDefaultDraft(p.id)}
+                                    disabled={
+                                      !hasDefaultChange || savingDefault
+                                    }
+                                    onClick={() =>
+                                      resetProviderDefaultDraft(p.id)
+                                    }
                                     testId={`admin:default-model-reset:${p.id}`}
                                   />
                                   <AdminSaveButton
                                     compact
-                                    disabled={!hasDefaultChange || savingDefault || hasChanges}
-                                    onClick={() => saveProviderDefaultDraft(p.id)}
+                                    disabled={
+                                      !hasDefaultChange ||
+                                      savingDefault ||
+                                      hasChanges
+                                    }
+                                    onClick={() =>
+                                      saveProviderDefaultDraft(p.id)
+                                    }
                                     saving={savingDefault}
                                     testId={`admin:default-model-save:${p.id}`}
                                   />
@@ -1779,11 +2025,11 @@ export function AdminClient() {
                                 {hasChanges ? (
                                   <div className="text-xs text-muted-foreground sm:col-span-2">
                                     {t(
-                                      "admin.models.default_model.warning_unsaved_allowed.part1"
+                                      "admin.models.default_model.warning_unsaved_allowed.part1",
                                     )}{" "}
                                     <code>allowed_model_ids</code>{" "}
                                     {t(
-                                      "admin.models.default_model.warning_unsaved_allowed.part2"
+                                      "admin.models.default_model.warning_unsaved_allowed.part2",
                                     )}
                                   </div>
                                 ) : null}
@@ -1801,11 +2047,17 @@ export function AdminClient() {
                                     autoComplete="off"
                                     data-testid={`admin:models-search:${p.id}`}
                                     id={`admin:models-search:${p.id}`}
-                                    onChange={(e) => setProviderQuery(p.id, e.target.value)}
+                                    onChange={(e) =>
+                                      setProviderQuery(p.id, e.target.value)
+                                    }
                                     placeholder={
                                       filter.showAll
-                                        ? t("admin.models.search.placeholder.all")
-                                        : t("admin.models.search.placeholder.allowed")
+                                        ? t(
+                                            "admin.models.search.placeholder.all",
+                                          )
+                                        : t(
+                                            "admin.models.search.placeholder.allowed",
+                                          )
                                     }
                                     value={filter.query}
                                   />
@@ -1862,11 +2114,13 @@ export function AdminClient() {
                                     {filtered.map((m) => {
                                       const checked = draft.has(m.id);
                                       const isRequired = required.has(m.id);
-                                      const isDefault = m.id === p.defaultModelId;
+                                      const isDefault =
+                                        m.id === p.defaultModelId;
                                       const isRouter =
                                         inventory.router?.providerId === p.id &&
                                         inventory.router?.modelId === m.id;
-                                      const disabled = isRequired || !m.supported;
+                                      const disabled =
+                                        isRequired || !m.supported;
 
                                       return (
                                         <div
@@ -1878,20 +2132,26 @@ export function AdminClient() {
                                             checked={checked}
                                             className="mt-1 size-4 accent-foreground disabled:opacity-50"
                                             disabled={disabled}
-                                            onChange={() => toggleAllowedModel(p.id, m.id)}
+                                            onChange={() =>
+                                              toggleAllowedModel(p.id, m.id)
+                                            }
                                             type="checkbox"
                                           />
 
                                           <div className="min-w-0 flex-1 space-y-1">
                                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                                               <div className="min-w-0">
-                                                <div className="truncate text-sm font-medium">{m.label}</div>
+                                                <div className="truncate text-sm font-medium">
+                                                  {m.label}
+                                                </div>
                                               </div>
 
                                               <div className="flex flex-wrap gap-1">
                                                 {!m.supported ? (
                                                   <Badge variant="outline">
-                                                    {t("admin.models.badge.unsupported")}
+                                                    {t(
+                                                      "admin.models.badge.unsupported",
+                                                    )}
                                                   </Badge>
                                                 ) : null}
                                                 {isDefault ? (
@@ -1899,7 +2159,9 @@ export function AdminClient() {
                                                     className="border-amber-500/30 bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
                                                     variant="outline"
                                                   >
-                                                    {t("admin.models.badge.default")}
+                                                    {t(
+                                                      "admin.models.badge.default",
+                                                    )}
                                                   </Badge>
                                                 ) : null}
                                                 {isRouter ? (
@@ -1907,24 +2169,65 @@ export function AdminClient() {
                                                     className="border-amber-500/30 bg-amber-500/15 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
                                                     variant="outline"
                                                   >
-                                                    {t("admin.models.badge.router")}
+                                                    {t(
+                                                      "admin.models.badge.router",
+                                                    )}
                                                   </Badge>
                                                 ) : null}
                                               </div>
                                             </div>
 
                                             <div className="flex flex-wrap gap-1">
-                                              {listModelCapabilityBadges(m.capabilities).map(
-                                                ({ key, label, enabled }) => (
-                                                  <Badge
-                                                    className={enabled ? "" : "opacity-50"}
-                                                    data-enabled={enabled ? "true" : "false"}
-                                                    key={key}
-                                                    variant={enabled ? "secondary" : "outline"}
-                                                  >
-                                                    {label}
-                                                  </Badge>
-                                                )
+                                              {listModelCapabilityBadges(
+                                                m.capabilities,
+                                              ).map(
+                                                ({ key, label, enabled }) => {
+                                                  const CapabilityIcon =
+                                                    adminModelCapabilityIcons[
+                                                      key as keyof typeof adminModelCapabilityIcons
+                                                    ];
+                                                  return (
+                                                    <Badge
+                                                      className={cn(
+                                                        "inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
+                                                        enabled
+                                                          ? ""
+                                                          : "opacity-50",
+                                                      )}
+                                                      data-enabled={
+                                                        enabled
+                                                          ? "true"
+                                                          : "false"
+                                                      }
+                                                      key={key}
+                                                      variant={"outline"}
+                                                      title={label}
+                                                    >
+                                                      {enabled &&
+                                                      CapabilityIcon ? (
+                                                        <span
+                                                          aria-label={label}
+                                                          className="inline-flex items-center justify-center"
+                                                        >
+                                                          <span className="sr-only">
+                                                            {label}
+                                                          </span>
+                                                          <CapabilityIcon
+                                                            className={cn(
+                                                              "size-4",
+                                                              enabled
+                                                                ? adminModelCapabilityColors[
+                                                                    key as keyof typeof adminModelCapabilityColors
+                                                                  ]
+                                                                : "text-muted-foreground",
+                                                            )}
+                                                            strokeWidth={2.5}
+                                                          />
+                                                        </span>
+                                                      ) : null}
+                                                    </Badge>
+                                                  );
+                                                },
                                               )}
                                             </div>
                                           </div>
@@ -1939,7 +2242,6 @@ export function AdminClient() {
                         );
                       })}
                     </div>
-
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">
@@ -1963,24 +2265,29 @@ export function AdminClient() {
                 {skillsSummary ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
-	                      <Badge
-	                        className={
-	                          skillsSummary.enabled
-	                            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-	                            : "border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
-	                        }
-	                        variant="outline"
-	                      >
-	                        {skillsSummary.enabled ? "Actief" : t("common.disabled")}
-	                      </Badge>
-                      <Badge variant="outline">
-                        {t("admin.skills.summary.discovered")}: {skillsSummary.discovered}
+                      <Badge
+                        className={
+                          skillsSummary.enabled
+                            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                            : "border-red-500/30 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                        }
+                        variant="outline"
+                      >
+                        {skillsSummary.enabled
+                          ? "Actief"
+                          : t("common.disabled")}
                       </Badge>
                       <Badge variant="outline">
-                        {t("admin.skills.summary.invalid")}: {skillsSummary.invalid}
+                        {t("admin.skills.summary.discovered")}:{" "}
+                        {skillsSummary.discovered}
                       </Badge>
                       <Badge variant="outline">
-                        {t("admin.skills.summary.collisions")}: {skillsSummary.collisions}
+                        {t("admin.skills.summary.invalid")}:{" "}
+                        {skillsSummary.invalid}
+                      </Badge>
+                      <Badge variant="outline">
+                        {t("admin.skills.summary.collisions")}:{" "}
+                        {skillsSummary.collisions}
                       </Badge>
                     </div>
 
@@ -2014,17 +2321,23 @@ export function AdminClient() {
                               >
                                 {r.exists ? (
                                   <CheckCircleIcon
-                                    aria-label={t("admin.skills.scan_root.exists_aria")}
+                                    aria-label={t(
+                                      "admin.skills.scan_root.exists_aria",
+                                    )}
                                     className="mr-1 inline-block size-3 align-[-2px] text-emerald-600 dark:text-emerald-400"
                                   />
                                 ) : (
                                   <XCircleIcon
-                                    aria-label={t("admin.skills.scan_root.missing_aria")}
+                                    aria-label={t(
+                                      "admin.skills.scan_root.missing_aria",
+                                    )}
                                     className="mr-1 inline-block size-3 align-[-2px] text-red-600 dark:text-red-400"
                                   />
                                 )}
                                 <Sparkles
-                                  aria-label={t("admin.skills.scan_root.skills_available_aria")}
+                                  aria-label={t(
+                                    "admin.skills.scan_root.skills_available_aria",
+                                  )}
                                   className="mr-1 inline-block size-3 align-[-2px] text-muted-foreground"
                                 />
                                 <span className="mr-2 text-muted-foreground">
@@ -2046,9 +2359,14 @@ export function AdminClient() {
                         </div>
                         <div className="space-y-2">
                           {(skills?.invalid ?? []).map((inv, idx) => (
-                            <div key={`${idx}-${inv.skillMdPath}`} className="space-y-1">
+                            <div
+                              key={`${idx}-${inv.skillMdPath}`}
+                              className="space-y-1"
+                            >
                               <div className="font-mono">{inv.skillMdPath}</div>
-                              <div className="text-muted-foreground">{inv.error}</div>
+                              <div className="text-muted-foreground">
+                                {inv.error}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -2066,7 +2384,9 @@ export function AdminClient() {
                               <div className="font-mono">{c.name}</div>
                               <div className="text-muted-foreground">
                                 {t("admin.skills.collisions.winner")}:{" "}
-                                <span className="font-mono">{c.winner.sourceDir}</span>
+                                <span className="font-mono">
+                                  {c.winner.sourceDir}
+                                </span>
                               </div>
                               <div className="text-muted-foreground">
                                 {t("admin.skills.collisions.losers")}:{" "}
@@ -2090,10 +2410,12 @@ export function AdminClient() {
                             ? s.detectedTools
                             : [];
                           const isToolTied = detectedTools.length > 0;
-                          const readinessState = skillReadinessByName[s.name] ?? "untested";
+                          const readinessState =
+                            skillReadinessByName[s.name] ?? "untested";
                           const showReadinessDot =
                             isToolTied && readinessState !== "not_applicable";
-                          const activatedCount = skillsSummary.activatedCounts[s.name] ?? 0;
+                          const activatedCount =
+                            skillsSummary.activatedCounts[s.name] ?? 0;
                           return (
                             <div key={s.name} className="px-3 py-2">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2102,21 +2424,28 @@ export function AdminClient() {
                                     {showReadinessDot ? (
                                       <ReadinessDot state={readinessState} />
                                     ) : null}
-                                    <div className="truncate font-mono text-sm">{s.name}</div>
+                                    <div className="truncate font-mono text-sm">
+                                      {s.name}
+                                    </div>
                                   </div>
                                   {s.sourceDir ? (
                                     <div className="mt-0.5 text-xs text-muted-foreground">
                                       {t("admin.skills.skill.root")}:{" "}
-                                      <span className="font-mono break-all">{s.sourceDir}</span>
+                                      <span className="font-mono break-all">
+                                        {s.sourceDir}
+                                      </span>
                                     </div>
                                   ) : null}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-2">
                                   {skills?.usage ? (
                                     <Badge
-                                      title={t("admin.skills.activation.activated_other", {
-                                        count: activatedCount,
-                                      })}
+                                      title={t(
+                                        "admin.skills.activation.activated_other",
+                                        {
+                                          count: activatedCount,
+                                        },
+                                      )}
                                       variant="secondary"
                                     >
                                       <MessageCircleIcon className="size-3.5" />
@@ -2142,7 +2471,9 @@ export function AdminClient() {
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">
-                    {skillsLoading ? t("admin.skills.loading") : t("admin.skills.none")}
+                    {skillsLoading
+                      ? t("admin.skills.loading")
+                      : t("admin.skills.none")}
                   </div>
                 )}
               </CardContent>
@@ -2150,7 +2481,9 @@ export function AdminClient() {
 
             <Card className="border-destructive/40">
               <CardHeader>
-                <CardTitle className="text-destructive">{t("admin.danger.title")}</CardTitle>
+                <CardTitle className="text-destructive">
+                  {t("admin.danger.title")}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="text-sm text-muted-foreground">
@@ -2182,7 +2515,9 @@ export function AdminClient() {
                     type="button"
                     variant="destructive"
                   >
-                    {resetSaving ? t("common.resetting_ellipsis") : t("admin.danger.reset")}
+                    {resetSaving
+                      ? t("common.resetting_ellipsis")
+                      : t("admin.danger.reset")}
                   </Button>
                 </div>
               </CardContent>
