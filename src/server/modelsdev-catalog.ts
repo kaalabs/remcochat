@@ -24,6 +24,7 @@ export type ModelsDevCatalogModel = {
   modelType: ModelType;
   npm: string;
   capabilities: ModelCapabilities;
+  contextWindow?: number;
   raw: ModelsDevModel;
 };
 
@@ -94,6 +95,7 @@ function buildProviderCatalog(input: {
       modelType,
       npm,
       capabilities: normalizeCapabilities(raw),
+      contextWindow: raw.limit?.context,
       raw,
     };
   }

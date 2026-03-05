@@ -55,6 +55,7 @@ export async function GET() {
             label: model.label,
             description: model.description,
             capabilities: model.capabilities,
+            contextWindow: model.contextWindow,
           };
         }),
       };

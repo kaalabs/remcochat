@@ -14,13 +14,23 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { listModelCapabilityBadges, type ModelOption } from "@/lib/models";
+import {
+  formatContextWindow,
+  listModelCapabilityBadges,
+  type ModelOption,
+} from "@/lib/models";
 import {
   Brain,
   Braces,
   CheckIcon,
   ChevronDownIcon,
+  Layers3,
   FileText,
   Thermometer,
   Wrench,
@@ -144,38 +154,53 @@ export function ModelPicker({
                               key as keyof typeof modelCapabilityIcons
                             ];
                           return (
-                            <Badge
-                              className={cn(
-                                "pointer-events-none inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
-                                enabled ? "" : "opacity-50",
-                              )}
-                              data-enabled={enabled ? "true" : "false"}
-                              data-testid={`model-feature:${option.id}:${key}`}
-                              key={key}
-                              variant="outline"
-                              title={label}
-                            >
-                              {enabled && CapabilityIcon ? (
-                                <span
-                                  aria-label={label}
-                                  className="inline-flex items-center justify-center"
+                            <Tooltip key={key}>
+                              <TooltipTrigger asChild>
+                                <Badge
+                                  className={cn(
+                                    "inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
+                                    enabled ? "" : "opacity-50",
+                                  )}
+                                  data-enabled={enabled ? "true" : "false"}
+                                  data-testid={`model-feature:${option.id}:${key}`}
+                                  key={key}
+                                  variant="outline"
                                 >
-                                  <span className="sr-only">{label}</span>
-                                  <CapabilityIcon
-                                    className={cn(
-                                      "size-4",
-                                      modelCapabilityColors[
-                                        key as keyof typeof modelCapabilityColors
-                                      ],
-                                    )}
-                                    strokeWidth={2.5}
-                                  />
-                                </span>
-                              ) : null}
-                            </Badge>
+                                  {enabled && CapabilityIcon ? (
+                                    <span
+                                      aria-label={label}
+                                      className="inline-flex items-center justify-center"
+                                    >
+                                      <span className="sr-only">{label}</span>
+                                      <CapabilityIcon
+                                        className={cn(
+                                          "size-4",
+                                          modelCapabilityColors[
+                                            key as keyof typeof modelCapabilityColors
+                                          ],
+                                        )}
+                                        strokeWidth={2.5}
+                                      />
+                                    </span>
+                                  ) : null}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{label}</p>
+                              </TooltipContent>
+                            </Tooltip>
                           );
                         },
                       )}
+                      {option.contextWindow ? (
+                        <Badge
+                          className="inline-flex h-5 min-h-5 items-center gap-1 px-2 py-0.5"
+                          variant="outline"
+                        >
+                          <Layers3 className="size-4 text-cyan-700 dark:text-cyan-300" />
+                          {formatContextWindow(option.contextWindow)}
+                        </Badge>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

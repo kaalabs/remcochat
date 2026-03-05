@@ -19,6 +19,7 @@ export type ModelsInventoryModel = {
   modelType: ModelType | null;
   supported: boolean;
   capabilities: ModelCapabilities;
+  contextWindow?: number;
 };
 
 export type ModelsInventoryProvider = {
@@ -106,6 +107,7 @@ export async function buildModelsInventory(): Promise<ModelsInventory> {
           modelType,
           supported: Boolean(modelType),
           capabilities: normalizeCapabilities(raw),
+          contextWindow: raw.limit?.context,
         };
       })
       .sort((a, b) => a.id.localeCompare(b.id));

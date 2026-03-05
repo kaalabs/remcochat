@@ -29,7 +29,13 @@ import {
   type ReadinessDotState,
 } from "@/components/readiness-dot";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   listModelCapabilityBadges,
+  formatContextWindow,
   type ModelCapabilities,
 } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -38,6 +44,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   Brain,
+  Layers3,
   Braces,
   FileText,
   FilterIcon,
@@ -72,6 +79,7 @@ type ProvidersResponse = {
       label: string;
       description?: string;
       capabilities?: ModelCapabilities;
+      contextWindow?: number;
     }>;
   }>;
 };
@@ -98,6 +106,7 @@ type ModelsInventoryResponse = {
       modelType: string | null;
       supported: boolean;
       capabilities: ModelCapabilities;
+      contextWindow?: number;
     }>;
   }>;
 };
@@ -178,6 +187,7 @@ function AdminModelPicker(props: {
     description?: string;
     modelType?: string | null;
     capabilities?: ModelCapabilities;
+    contextWindow?: number;
   }>;
   disabled?: boolean;
   placeholder?: string;
@@ -242,39 +252,54 @@ function AdminModelPicker(props: {
                             ];
 
                           return (
-                            <Badge
-                              className={cn(
-                                "pointer-events-none inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
-                                enabled ? "" : "opacity-50",
-                              )}
-                              data-enabled={enabled ? "true" : "false"}
-                              key={key}
-                              variant="outline"
-                              title={label}
-                            >
-                              {enabled && CapabilityIcon ? (
-                                <span
-                                  aria-label={label}
-                                  className="inline-flex items-center justify-center"
+                            <Tooltip key={key}>
+                              <TooltipTrigger asChild>
+                                <Badge
+                                  className={cn(
+                                    "inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
+                                    enabled ? "" : "opacity-50",
+                                  )}
+                                  data-enabled={enabled ? "true" : "false"}
+                                  key={key}
+                                  variant="outline"
                                 >
-                                  <span className="sr-only">{label}</span>
-                                  <CapabilityIcon
-                                    className={cn(
-                                      "size-4",
-                                      enabled
-                                        ? adminModelCapabilityColors[
-                                            key as keyof typeof adminModelCapabilityColors
-                                          ]
-                                        : "text-muted-foreground",
-                                    )}
-                                    strokeWidth={2.5}
-                                  />
-                                </span>
-                              ) : null}
-                            </Badge>
+                                  {enabled && CapabilityIcon ? (
+                                    <span
+                                      aria-label={label}
+                                      className="inline-flex items-center justify-center"
+                                    >
+                                      <span className="sr-only">{label}</span>
+                                      <CapabilityIcon
+                                        className={cn(
+                                          "size-4",
+                                          enabled
+                                            ? adminModelCapabilityColors[
+                                                key as keyof typeof adminModelCapabilityColors
+                                              ]
+                                            : "text-muted-foreground",
+                                        )}
+                                        strokeWidth={2.5}
+                                      />
+                                    </span>
+                                  ) : null}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{label}</p>
+                              </TooltipContent>
+                            </Tooltip>
                           );
                         },
                       )}
+                      {option.contextWindow ? (
+                        <Badge
+                          className="inline-flex h-5 min-h-5 items-center gap-1 px-2 py-0.5"
+                          variant="outline"
+                        >
+                          <Layers3 className="size-4 text-cyan-700 dark:text-cyan-300" />
+                          {formatContextWindow(option.contextWindow)}
+                        </Badge>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -1753,6 +1778,7 @@ export function AdminClient() {
                           description: m.description,
                           modelType: m.modelType,
                           capabilities: m.capabilities,
+                          contextWindow: m.contextWindow,
                         })) ?? [];
 
                     const canSaveRouter =
@@ -1986,6 +2012,7 @@ export function AdminClient() {
                                           description: m.description,
                                           modelType: m.modelType,
                                           capabilities: m.capabilities,
+                                          contextWindow: m.contextWindow,
                                         }))}
                                       placeholder={t(
                                         "admin.models.default_model.placeholder",
@@ -2187,48 +2214,63 @@ export function AdminClient() {
                                                       key as keyof typeof adminModelCapabilityIcons
                                                     ];
                                                   return (
-                                                    <Badge
-                                                      className={cn(
-                                                        "inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
-                                                        enabled
-                                                          ? ""
-                                                          : "opacity-50",
-                                                      )}
-                                                      data-enabled={
-                                                        enabled
-                                                          ? "true"
-                                                          : "false"
-                                                      }
-                                                      key={key}
-                                                      variant={"outline"}
-                                                      title={label}
-                                                    >
-                                                      {enabled &&
-                                                      CapabilityIcon ? (
-                                                        <span
-                                                          aria-label={label}
-                                                          className="inline-flex items-center justify-center"
+                                                    <Tooltip key={key}>
+                                                      <TooltipTrigger asChild>
+                                                        <Badge
+                                                          className={cn(
+                                                            "inline-flex h-5 min-h-5 w-5 items-center justify-center px-1 py-0 bg-transparent hover:bg-transparent",
+                                                            enabled
+                                                              ? ""
+                                                              : "opacity-50",
+                                                          )}
+                                                          data-enabled={
+                                                            enabled
+                                                              ? "true"
+                                                              : "false"
+                                                          }
+                                                          key={key}
+                                                          variant={"outline"}
                                                         >
-                                                          <span className="sr-only">
-                                                            {label}
-                                                          </span>
-                                                          <CapabilityIcon
-                                                            className={cn(
-                                                              "size-4",
-                                                              enabled
-                                                                ? adminModelCapabilityColors[
-                                                                    key as keyof typeof adminModelCapabilityColors
-                                                                  ]
-                                                                : "text-muted-foreground",
-                                                            )}
-                                                            strokeWidth={2.5}
-                                                          />
-                                                        </span>
-                                                      ) : null}
-                                                    </Badge>
+                                                          {enabled &&
+                                                          CapabilityIcon ? (
+                                                            <span
+                                                              aria-label={label}
+                                                              className="inline-flex items-center justify-center"
+                                                            >
+                                                              <span className="sr-only">
+                                                                {label}
+                                                              </span>
+                                                              <CapabilityIcon
+                                                                className={cn(
+                                                                  "size-4",
+                                                                  enabled
+                                                                    ? adminModelCapabilityColors[
+                                                                        key as keyof typeof adminModelCapabilityColors
+                                                                      ]
+                                                                    : "text-muted-foreground",
+                                                                )}
+                                                                strokeWidth={2.5}
+                                                              />
+                                                            </span>
+                                                          ) : null}
+                                                        </Badge>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                        <p>{label}</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
                                                   );
                                                 },
                                               )}
+                                              {m.contextWindow ? (
+                                                <Badge
+                                                  className="inline-flex h-5 min-h-5 items-center gap-1 px-2 py-0.5"
+                                                  variant="outline"
+                                                >
+                                                  <Layers3 className="size-4 text-cyan-700 dark:text-cyan-300" />
+                                                  {formatContextWindow(m.contextWindow)}
+                                                </Badge>
+                                              ) : null}
                                             </div>
                                           </div>
                                         </div>

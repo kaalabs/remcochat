@@ -32,4 +32,21 @@ export type ModelOption = {
   description?: string;
   type?: string;
   capabilities?: ModelCapabilities;
+  contextWindow?: number;
 };
+
+export function formatContextWindow(contextWindow?: number | null) {
+  const normalized = contextWindow ?? 0;
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return null;
+  }
+
+  const compactFormatter = new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+    compactDisplay: "short",
+  });
+  return compactFormatter
+    .format(normalized)
+    .replace(/mln\.?/i, "M");
+}

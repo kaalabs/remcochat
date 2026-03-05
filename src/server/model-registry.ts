@@ -46,6 +46,7 @@ export async function listActiveModelOptions(): Promise<ModelOption[]> {
       label: model.label,
       description: model.description,
       capabilities: model.capabilities,
+      contextWindow: model.contextWindow,
     };
   });
 }
