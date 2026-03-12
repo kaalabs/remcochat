@@ -232,7 +232,19 @@ async function main() {
       "document.querySelector(\"[data-testid^='model-option:']\") != null",
     ]);
 
-    const reasoningModelId = "gpt-5-nano";
+    const reasoningFeatureTestId = normalizeAgentBrowserString(await runAgentBrowser([
+      "eval",
+      `(() => {
+        const el = document.querySelector(
+          "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='true']"
+        );
+        return el ? el.getAttribute("data-testid") ?? "" : "";
+      })()`,
+    ]).catch(() => ""));
+    const reasoningModelId = modelIdFromModelFeatureTestId(reasoningFeatureTestId);
+    if (!reasoningModelId) {
+      throw new Error("No reasoning-capable model option was found in the picker.");
+    }
     await runAgentBrowser(["wait", `[data-testid='model-option:${reasoningModelId}']`]);
     await runAgentBrowser([
       "find",
@@ -291,7 +303,7 @@ async function main() {
 
     await runAgentBrowser([
       "upload",
-      "input[type='file'][aria-label='Upload files']",
+      "input[type='file'][aria-label='Upload attachments']",
       uploadPath,
     ]);
     await runAgentBrowser([
