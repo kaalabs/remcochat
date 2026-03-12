@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getConfig } from "@/server/config";
 import { logEvent } from "@/server/log";
 import { isLocalhostRequest, isRequestAllowedByAdminPolicy } from "@/server/request-auth";
+import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bundle";
 import type { OvNlClientError } from "@/server/integrations/ov-nl/client";
 import {
   nsArrivals,
@@ -42,10 +43,7 @@ import type {
   OvNlTripSummary,
 } from "@/lib/types";
 
-export type OvNlGatewayToolsResult = {
-  enabled: boolean;
-  tools: Record<string, unknown>;
-};
+export type OvNlGatewayToolsResult = ToolBundle;
 
 const OV_NL_ACTIONS = [
   "stations.search",
@@ -4278,16 +4276,17 @@ async function executeAction(
 
 export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsResult {
   const cfg = getConfig().ovNl;
-  if (!cfg || !cfg.enabled) return { enabled: false, tools: {} };
+  if (!cfg || !cfg.enabled) return createToolBundle({ enabled: false, entries: [] });
 
   if (cfg.access === "localhost" && !isLocalhostRequest(input.request)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
   if (cfg.access === "lan" && !isRequestAllowedByAdminPolicy(input.request)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 
   const ovNlGateway = createTool({
+    strict: true,
     description:
       "Gateway for Dutch rail (NS) live travel information via NS Reisinformatie. Use this for stations, departure/arrival boards, trips between stations, journey details, and disruptions. Do NOT use this for walking/driving directions, general travel planning (flights/hotels/itineraries), or vague location phrases like 'my house'. If the user intent is unclear or required route/station details are missing, ask one concise clarification question instead of calling ovNlGateway.",
     inputSchema: OvNlGatewayToolWireInputSchema,
@@ -4407,10 +4406,21 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
     },
   });
 
-  return {
+  return createToolBundle({
     enabled: true,
-    tools: { ovNlGateway },
-  };
+    entries: [
+      defineToolEntry({
+        name: "ovNlGateway",
+        metadata: {
+          group: "ov",
+          risk: "safe",
+          strict: true,
+          stepVisibility: "explicit-only",
+        },
+        tool: ovNlGateway,
+      }),
+    ],
+  });
 }
 
 export const __test__ = {

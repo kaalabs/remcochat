@@ -74,9 +74,21 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
-import type { UIMessage } from "ai";
-import { DefaultChatTransport } from "ai";
+import {
+  Confirmation,
+  ConfirmationAccepted,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRejected,
+  ConfirmationRequest,
+  ConfirmationTitle,
+} from "@/components/ai-elements/confirmation";
+import {
+  DefaultChatTransport,
+  type UIMessage,
+} from "ai";
 import { useChat } from "@ai-sdk/react";
+import { mergeChatTransportBody } from "@/lib/chat-transport";
 import {
   useCallback,
   useEffect,
@@ -105,6 +117,7 @@ import {
   normalizeReasoningEffort,
   type ReasoningEffortChoice,
 } from "@/lib/reasoning-effort";
+import { shouldAutoSubmitClientInteraction } from "@/lib/chat-auto-submit";
 import { UrlSummaryCard } from "@/components/url-summary-card";
 import { NotesCard } from "@/components/notes-card";
 import { BashToolCard } from "@/components/bash-tool-card";
@@ -234,6 +247,82 @@ function ToolCallLine(props: { type: string; state?: string }) {
       {showSpinner ? <Loader size={14} /> : null}
       {t("tool.calling", { toolName })}
     </div>
+  );
+}
+
+type ApprovalAwareToolPart = {
+  type: string;
+  state: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+  approval?: {
+    id: string;
+    approved?: boolean;
+    reason?: string;
+  };
+};
+
+function ToolApprovalBox(props: {
+  toolName: string;
+  toolPart: ApprovalAwareToolPart;
+  addToolApprovalResponse: (input: {
+    id: string;
+    approved: boolean;
+    reason?: string;
+  }) => PromiseLike<void> | void;
+}) {
+  const { t } = useI18n();
+  const { toolName, toolPart, addToolApprovalResponse } = props;
+
+  return (
+    <Confirmation approval={toolPart.approval as never} state={toolPart.state as never}>
+      <ConfirmationTitle>{t("tool.status.awaiting_approval")}</ConfirmationTitle>
+      <ConfirmationRequest>
+        <div className="text-sm text-muted-foreground">
+          {t("tool.calling", { toolName })}
+        </div>
+      </ConfirmationRequest>
+      <ConfirmationAccepted>
+        <div className="text-sm text-muted-foreground">{t("common.yes")}</div>
+      </ConfirmationAccepted>
+      <ConfirmationRejected>
+        <div className="text-sm text-muted-foreground">{t("common.no")}</div>
+      </ConfirmationRejected>
+      <ConfirmationActions>
+        <ConfirmationAction
+          data-testid={`tool-approval:approve:${toolName}:${toolPart.approval?.id ?? "missing"}`}
+          disabled={!toolPart.approval?.id}
+          onClick={() => {
+            if (!toolPart.approval?.id) return;
+            void Promise.resolve(
+              addToolApprovalResponse({
+                id: toolPart.approval.id,
+                approved: true,
+              }),
+            );
+          }}
+        >
+          {t("common.yes")}
+        </ConfirmationAction>
+        <ConfirmationAction
+          data-testid={`tool-approval:deny:${toolName}:${toolPart.approval?.id ?? "missing"}`}
+          disabled={!toolPart.approval?.id}
+          onClick={() => {
+            if (!toolPart.approval?.id) return;
+            void Promise.resolve(
+              addToolApprovalResponse({
+                id: toolPart.approval.id,
+                approved: false,
+              }),
+            );
+          }}
+          variant="outline"
+        >
+          {t("common.no")}
+        </ConfirmationAction>
+      </ConfirmationActions>
+    </Confirmation>
   );
 }
 
@@ -481,6 +570,9 @@ export function HomeClient({
     return new DefaultChatTransport({
       api: "/api/chat",
       fetch: instrumentedChatFetch,
+      // Approval-triggered resubmits do not carry per-call `body` options, so
+      // the transport must supply the current chat context on every request.
+      body: () => mergeChatTransportBody(chatRequestBodyRef.current, undefined),
       headers: () => {
         const headers: Record<string, string> = {};
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -688,9 +780,15 @@ export function HomeClient({
     stop,
     error,
     regenerate,
+    addToolApprovalResponse,
   } = useChat<UIMessage<RemcoChatMessageMetadata>>({
     id: chatSessionKey,
     transport: chatTransport,
+    // Generic tool-call auto-submit is intentionally disabled. RemcoChat's
+    // current tools are server-owned, so streamText already advances multi-step
+    // tool turns on the server. The client only auto-continues after explicit
+    // human-in-the-loop responses such as approvals.
+    sendAutomaticallyWhen: shouldAutoSubmitClientInteraction,
   });
 
   const showThinking =
@@ -1023,6 +1121,12 @@ export function HomeClient({
   } | null>(null);
 
   const loadedChatIdRef = useRef<string>("");
+  const preloadedChatStateRef = useRef<{
+    profileId: string;
+    chatId: string;
+    messages: UIMessage<RemcoChatMessageMetadata>[];
+    variantsByUserMessageId: Record<string, UIMessage<RemcoChatMessageMetadata>[]>;
+  } | null>(null);
 
   const chatRequestBody = useMemo(() => {
     if (!activeProfile) return null;
@@ -1056,6 +1160,9 @@ export function HomeClient({
     selectedModel,
     temporarySessionId,
   ]);
+
+  const chatRequestBodyRef = useRef<Record<string, unknown> | null>(null);
+  chatRequestBodyRef.current = chatRequestBody as Record<string, unknown> | null;
 
   const refreshChatsNonceRef = useRef(0);
   const refreshChats = useCallback(async (input: {
@@ -1363,6 +1470,23 @@ export function HomeClient({
 
 	    const data = (await res.json()) as { chat?: Chat; error?: string };
 	    if (!res.ok || !data.chat) return;
+
+    const emptyMessages: UIMessage<RemcoChatMessageMetadata>[] = [];
+    const emptyVariants: Record<string, UIMessage<RemcoChatMessageMetadata>[]> = {};
+    preloadedChatStateRef.current = {
+      profileId,
+      chatId: data.chat.id,
+      messages: emptyMessages,
+      variantsByUserMessageId: emptyVariants,
+    };
+    setMessages(emptyMessages);
+    setVariantsByUserMessageId(emptyVariants);
+    syncRef.current = {
+      profileId,
+      chatId: data.chat.id,
+      signature: signatureForChatState(emptyMessages, emptyVariants),
+    };
+    loadedChatIdRef.current = data.chat.id;
 
     setChats((prev) => {
       const without = prev.filter((c) => c.id !== data.chat!.id);
@@ -2105,6 +2229,28 @@ export function HomeClient({
     if (!activeChatId) return;
     if (isTemporaryChat) return;
 
+    const preloaded = preloadedChatStateRef.current;
+    if (
+      preloaded &&
+      preloaded.profileId === activeProfile.id &&
+      preloaded.chatId === activeChatId
+    ) {
+      setMessages(preloaded.messages);
+      setVariantsByUserMessageId(preloaded.variantsByUserMessageId);
+      syncRef.current = {
+        profileId: activeProfile.id,
+        chatId: activeChatId,
+        signature: signatureForChatState(
+          preloaded.messages,
+          preloaded.variantsByUserMessageId,
+        ),
+      };
+      loadedChatIdRef.current = activeChatId;
+      preloadedChatStateRef.current = null;
+      queueScrollTranscriptToBottom("instant");
+      return;
+    }
+
     let aborted = false;
     stop();
 
@@ -2393,7 +2539,7 @@ export function HomeClient({
       // After a fork, the latest user message often has no assistant response yet.
       // `regenerate()` without a messageId will generate the assistant response for the last message.
       scrollTranscriptToBottom("smooth");
-      regenerate({ body: chatRequestBody }).catch(() => {});
+      regenerate().catch(() => {});
       return;
     }
 
@@ -2437,7 +2583,6 @@ export function HomeClient({
     regenerate({
       messageId: assistant.id,
       body: {
-        ...chatRequestBody,
         regenerate: true,
         regenerateMessageId: assistant.id,
       },
@@ -2915,8 +3060,7 @@ export function HomeClient({
         {
           text: decision === "confirm" ? "Confirm memory" : "Cancel memory",
           metadata: { createdAt: new Date().toISOString() },
-        },
-        { body: chatRequestBody }
+        }
       );
     },
     [activeProfile, chatRequestBody, sendMessage, status]
@@ -2934,8 +3078,7 @@ export function HomeClient({
         {
           text: `Open list "${list.name}"${ownerSuffix}.`,
           metadata: { createdAt: new Date().toISOString() },
-        },
-        { body: chatRequestBody }
+        }
       );
     },
     [chatRequestBody, sendMessage, status]
@@ -4844,6 +4987,7 @@ export function HomeClient({
                             }
 
                             if (part.type === "tool-bash") {
+                              const toolPart = part as ApprovalAwareToolPart;
                               const input = part.input as { command?: unknown } | undefined;
                               const command =
                                 typeof input?.command === "string" ? input.command : "";
@@ -4907,6 +5051,30 @@ export function HomeClient({
                                     </div>
                                   );
                                 }
+                                case "approval-requested":
+                                case "approval-responded":
+                                case "output-denied":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <BashToolCard
+                                        command={command}
+                                        errorText={
+                                          part.state === "output-denied"
+                                            ? t("tool.status.denied")
+                                            : undefined
+                                        }
+                                        kind="bash"
+                                        result={{ stdout: "", stderr: "", exitCode: -1 }}
+                                        state={part.state === "output-denied" ? "error" : "running"}
+                                      />
+                                      <ToolApprovalBox
+                                        addToolApprovalResponse={addToolApprovalResponse}
+                                        toolName="bash"
+                                        toolPart={toolPart}
+                                      />
+                                    </div>
+                                  );
                                 case "output-error":
                                   return (
                                     <div className="space-y-2" key={`${id}-${index}`}>
@@ -4986,6 +5154,7 @@ export function HomeClient({
                             }
 
                             if (part.type === "tool-writeFile") {
+                              const toolPart = part as ApprovalAwareToolPart;
                               const input = part.input as
                                 | { path?: unknown; content?: unknown }
                                 | undefined;
@@ -5031,6 +5200,30 @@ export function HomeClient({
                                     </div>
                                   );
                                 }
+                                case "approval-requested":
+                                case "approval-responded":
+                                case "output-denied":
+                                  return (
+                                    <div className="space-y-2" key={`${id}-${index}`}>
+                                      <ToolCallLine state={part.state} type={part.type} />
+                                      <BashToolCard
+                                        contentLength={content.length}
+                                        errorText={
+                                          part.state === "output-denied"
+                                            ? t("tool.status.denied")
+                                            : undefined
+                                        }
+                                        kind="writeFile"
+                                        path={filePath}
+                                        state={part.state === "output-denied" ? "error" : "running"}
+                                      />
+                                      <ToolApprovalBox
+                                        addToolApprovalResponse={addToolApprovalResponse}
+                                        toolName="writeFile"
+                                        toolPart={toolPart}
+                                      />
+                                    </div>
+                                  );
                                 case "output-error":
                                   return (
                                     <div className="space-y-2" key={`${id}-${index}`}>
@@ -5267,6 +5460,11 @@ export function HomeClient({
                                 input?: unknown;
                                 output?: unknown;
                                 errorText?: string;
+                                approval?: {
+                                  id: string;
+                                  approved?: boolean;
+                                  reason?: string;
+                                };
                               };
                               const toolName = toolNameFromPartType(toolPart.type);
 
@@ -5279,6 +5477,11 @@ export function HomeClient({
                                   />
                                   <ToolContent>
                                     <ToolInput input={toolPart.input} />
+                                    <ToolApprovalBox
+                                      addToolApprovalResponse={addToolApprovalResponse}
+                                      toolName={toolName}
+                                      toolPart={toolPart}
+                                    />
                                     <ToolOutput
                                       errorText={toolPart.errorText ?? ""}
                                       output={toolPart.output}
@@ -5413,7 +5616,7 @@ export function HomeClient({
                       onClick={() => {
                         if (!chatRequestBody) return;
                         scrollTranscriptToBottom("smooth");
-                        regenerate({ body: chatRequestBody }).catch(() => {});
+                        regenerate().catch(() => {});
                       }}
                       type="button"
                     >
@@ -5517,9 +5720,6 @@ export function HomeClient({
                         text: String(text ?? ""),
                         ...(uploadedParts.length > 0 ? { files: uploadedParts } : {}),
                         metadata: { createdAt: new Date().toISOString() },
-                      },
-                      {
-                        body: chatRequestBody,
                       }
                     ).catch(() => {});
                     queueScrollTranscriptToBottom("smooth");

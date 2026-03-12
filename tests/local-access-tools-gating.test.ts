@@ -120,3 +120,37 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(Object.prototype.hasOwnProperty.call(res.tools, "obsidian"), false);
 });
 
+test("local execution tools carry approval metadata", () => {
+  process.env.REMCOCHAT_CONFIG_PATH = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.local_access]
+enabled = true
+allowed_commands = ["obsidian"]
+allowed_directories = ["."]
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  _resetConfigCacheForTests();
+
+  const req = new Request("http://localhost/api/chat", {
+    headers: { host: "localhost" },
+  });
+  const res = createLocalAccessTools({ request: req });
+
+  assert.equal(res.metadataByName.localExec?.needsApproval, true);
+  assert.equal(res.metadataByName.obsidian?.needsApproval, true);
+  assert.equal(res.metadataByName.localReadFile?.needsApproval, undefined);
+  assert.equal(res.metadataByName.localExec?.executionOwner, "server");
+  assert.equal(res.metadataByName.obsidian?.executionOwner, "server");
+  assert.equal(res.metadataByName.localReadFile?.executionOwner, "server");
+});

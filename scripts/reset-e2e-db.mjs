@@ -12,6 +12,7 @@ const configPath = process.env.REMCOCHAT_CONFIG_PATH
 const exampleConfigPath = path.join(process.cwd(), "config.toml.example");
 const enableVercelSandboxBash = process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
 const enableDockerSandboxdBash = process.env.REMCOCHAT_E2E_ENABLE_DOCKER_SANDBOXD === "1";
+const enableLocalAccess = process.env.REMCOCHAT_E2E_ENABLE_LOCAL_ACCESS === "1";
 const enableOvNl = process.env.REMCOCHAT_E2E_ENABLE_OV_NL === "1";
 const dockerSandboxdUrl = String(
   process.env.REMCOCHAT_E2E_DOCKER_SANDBOXD_URL ?? "http://127.0.0.1:8080"
@@ -180,6 +181,19 @@ try {
       let out = block;
       out = out.replace(/\benabled\s*=\s*false\b/, "enabled = true");
       out = out.replace(/\baccess\s*=\s*"[^"]+"/, 'access = "localhost"');
+      return out;
+    });
+  }
+
+  if (enableLocalAccess) {
+    configText = configText.replace(/\[app\.local_access\][\s\S]*?(?=\n\[|$)/, (block) => {
+      let out = block;
+      out = out.replace(/\benabled\s*=\s*false\b/, "enabled = true");
+      out = out.replace(
+        /\ballowed_commands\s*=\s*\[[^\]]*\]/,
+        'allowed_commands = ["node", "obsidian", "modelsdev"]'
+      );
+      out = out.replace(/\ballowed_directories\s*=\s*\[[^\]]*\]/, 'allowed_directories = ["."]');
       return out;
     });
   }

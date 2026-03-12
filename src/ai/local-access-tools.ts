@@ -1,5 +1,4 @@
-import { tool as createTool } from "ai";
-import { z } from "zod";
+import { jsonSchema, tool as createTool } from "ai";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs/promises";
@@ -7,13 +6,18 @@ import path from "node:path";
 import { getConfig } from "@/server/config";
 import { isRequestAllowedByAdminPolicy } from "@/server/request-auth";
 import { requireLocalCommandAllowed, requireLocalPathAllowed } from "@/server/local-access";
+import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bundle";
 
 const execFileAsync = promisify(execFile);
 
-export type LocalAccessToolsResult = {
-  enabled: boolean;
-  tools: Record<string, unknown>;
-};
+export type LocalAccessToolsResult = ToolBundle;
+
+function createStrictTool(config: any) {
+  return createTool({
+    strict: true,
+    ...config,
+  });
+}
 
 function normalizeList(values: string[]): string[] {
   const out: string[] = [];
@@ -59,38 +63,61 @@ function readUtf8PrefixWithLimit(input: {
 export function createLocalAccessTools(input: { request: Request }): LocalAccessToolsResult {
   const config = getConfig();
   const policy = config.localAccess;
-  if (!policy?.enabled) return { enabled: false, tools: {} };
+  if (!policy?.enabled) return createToolBundle({ enabled: false, entries: [] });
 
   // Host execution is high-risk: require admin policy (localhost OR admin token).
   if (!isRequestAllowedByAdminPolicy(input.request)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 
   const allowedCommands = normalizeList(policy.allowedCommands);
   const allowedDirectories = normalizeList(policy.allowedDirectories);
 
   if (allowedCommands.length === 0 && allowedDirectories.length === 0) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 
-  const tools: Record<string, unknown> = {};
+  const entries = [];
 
   if (allowedCommands.length > 0) {
-    tools.localExec = createTool({
+    entries.push(
+        defineToolEntry({
+          name: "localExec",
+          metadata: {
+            group: "host-exec",
+            risk: "approval",
+            needsApproval: true,
+            strict: true,
+            stepVisibility: "explicit-only",
+          },
+          tool: createStrictTool({
       description:
         "Execute a local (host) command via execFile. Only allowlisted commands are permitted. This does NOT run in the sandbox.",
-      inputSchema: z.object({
-        cmd: z.string().describe("Command name or absolute path (must be allowlisted)."),
-        args: z.array(z.string()).optional().describe("Arguments (no shell)."),
-        timeoutMs: z
-          .number()
-          .int()
-          .min(250)
-          .max(120_000)
-          .optional()
-          .describe("Optional timeout override (ms)."),
+      inputSchema: jsonSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          cmd: {
+            type: "string",
+            description: "Command name or absolute path (must be allowlisted).",
+          },
+          args: {
+            type: "array",
+            description: "Arguments (no shell).",
+            items: { type: "string" },
+            default: [],
+          },
+          timeoutMs: {
+            type: "integer",
+            description: "Timeout override (ms).",
+            minimum: 250,
+            maximum: 120000,
+            default: 20000,
+          },
+        },
+        required: ["cmd", "args", "timeoutMs"],
       }),
-      execute: async ({ cmd, args, timeoutMs }) => {
+      execute: async ({ cmd, args, timeoutMs }: any) => {
         const command = String(cmd ?? "").trim();
         const argv = Array.isArray(args) ? args : [];
         const safeArgs = argv.slice(0, 64).map((a) => String(a ?? "").slice(0, 8_192));
@@ -132,29 +159,53 @@ export function createLocalAccessTools(input: { request: Request }): LocalAccess
           };
         }
       },
-    });
+      needsApproval: true,
+    }),
+      }),
+    );
 
     if (allowedCommands.includes("obsidian") || allowedCommands.includes("*")) {
-      tools.obsidian = createTool({
+      entries.push(
+        defineToolEntry({
+          name: "obsidian",
+          metadata: {
+            group: "host-exec",
+            risk: "approval",
+            needsApproval: true,
+            strict: true,
+            stepVisibility: "explicit-only",
+          },
+          tool: createStrictTool({
         description:
           "Run the Obsidian CLI against a running Obsidian instance on this host. Requires Obsidian to be open. Example: args=['daily:read'].",
-        inputSchema: z.object({
-          args: z.array(z.string()).describe("Arguments to pass to the `obsidian` CLI."),
-          timeoutMs: z
-            .number()
-            .int()
-            .min(250)
-            .max(120_000)
-            .optional()
-            .describe("Optional timeout override (ms)."),
+        inputSchema: jsonSchema({
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            args: {
+              type: "array",
+              description: "Arguments to pass to the `obsidian` CLI.",
+              items: { type: "string" },
+            },
+            timeoutMs: {
+              type: "integer",
+              description: "Timeout override (ms).",
+              minimum: 250,
+              maximum: 120000,
+              default: 20000,
+            },
+          },
+          required: ["args", "timeoutMs"],
         }),
-        execute: async ({ args, timeoutMs }) => {
+        execute: async ({ args, timeoutMs }: any) => {
           requireLocalCommandAllowed({
             cfg: config,
             command: "obsidian",
             feature: "tool.obsidian",
           });
-          const safeArgs = (args ?? []).slice(0, 64).map((a) => String(a ?? "").slice(0, 8_192));
+          const safeArgs = (args ?? [])
+            .slice(0, 64)
+            .map((a: any) => String(a ?? "").slice(0, 8_192));
           try {
             const res = await execFileAsync("obsidian", safeArgs, {
               timeout: Math.max(250, Math.floor(timeoutMs ?? 20_000)),
@@ -186,25 +237,45 @@ export function createLocalAccessTools(input: { request: Request }): LocalAccess
             };
           }
         },
-      });
+        needsApproval: true,
+      }),
+        }),
+      );
     }
   }
 
   if (allowedDirectories.length > 0) {
-    tools.localReadFile = createTool({
+    entries.push(
+      defineToolEntry({
+        name: "localReadFile",
+        metadata: {
+          group: "host-read",
+          risk: "safe",
+          strict: true,
+          stepVisibility: "explicit-only",
+        },
+        tool: createStrictTool({
       description:
         "Read a UTF-8 text file from the local (host) filesystem. Path must be inside allowlisted directories.",
-      inputSchema: z.object({
-        path: z.string().describe("Absolute or relative path on the host."),
-        maxBytes: z
-          .number()
-          .int()
-          .min(1_000)
-          .max(20_000_000)
-          .optional()
-          .describe("Maximum bytes to read (prefix)."),
+      inputSchema: jsonSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: {
+            type: "string",
+            description: "Absolute or relative path on the host.",
+          },
+          maxBytes: {
+            type: "integer",
+            description: "Maximum bytes to read (prefix).",
+            minimum: 1000,
+            maximum: 20000000,
+            default: 200000,
+          },
+        },
+        required: ["path", "maxBytes"],
       }),
-      execute: async ({ path: filePath, maxBytes }) => {
+      execute: async ({ path: filePath, maxBytes }: any) => {
         const p = String(filePath ?? "").trim();
         requireLocalPathAllowed({
           cfg: config,
@@ -221,16 +292,40 @@ export function createLocalAccessTools(input: { request: Request }): LocalAccess
             : "";
         return { content: read.text + suffix, truncated: read.truncated };
       },
-    });
+    }),
+      }),
+    );
 
-    tools.localListDir = createTool({
+    entries.push(
+      defineToolEntry({
+        name: "localListDir",
+        metadata: {
+          group: "host-read",
+          risk: "safe",
+          strict: true,
+          stepVisibility: "explicit-only",
+        },
+        tool: createStrictTool({
       description:
         "List a local (host) directory. Path must be inside allowlisted directories.",
-      inputSchema: z.object({
-        path: z.string().describe("Directory path on the host."),
-        maxEntries: z.number().int().min(1).max(500).optional(),
+      inputSchema: jsonSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: {
+            type: "string",
+            description: "Directory path on the host.",
+          },
+          maxEntries: {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            default: 200,
+          },
+        },
+        required: ["path", "maxEntries"],
       }),
-      execute: async ({ path: dirPath, maxEntries }) => {
+      execute: async ({ path: dirPath, maxEntries }: any) => {
         const p = String(dirPath ?? "").trim();
         requireLocalPathAllowed({
           cfg: config,
@@ -252,9 +347,10 @@ export function createLocalAccessTools(input: { request: Request }): LocalAccess
           truncated: entries.length > limit,
         };
       },
-    });
+    }),
+      }),
+    );
   }
 
-  return { enabled: Object.keys(tools).length > 0, tools };
+  return createToolBundle({ enabled: entries.length > 0, entries });
 }
-

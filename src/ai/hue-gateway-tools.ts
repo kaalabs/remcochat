@@ -5,11 +5,9 @@ import { getConfig } from "@/server/config";
 import { isLocalhostRequest, isRequestAllowedByAdminPolicy } from "@/server/request-auth";
 import { postHueGatewayV2Action } from "@/server/integrations/hue-gateway/v2/client";
 import { createHueGatewayDeterministicIds } from "@/server/integrations/hue-gateway/v2/keys";
+import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bundle";
 
-export type HueGatewayToolsResult = {
-  enabled: boolean;
-  tools: Record<string, unknown>;
-};
+export type HueGatewayToolsResult = ToolBundle;
 
 const HueGatewayToolActionSchema = z.enum([
   "inventory.snapshot",
@@ -389,17 +387,18 @@ export function createHueGatewayTools(input: {
   turnUserMessageId?: string;
 }): HueGatewayToolsResult {
   const cfg = getConfig().hueGateway;
-  if (!cfg || !cfg.enabled) return { enabled: false, tools: {} };
-  if (!input.skillRelevant) return { enabled: false, tools: {} };
+  if (!cfg || !cfg.enabled) return createToolBundle({ enabled: false, entries: [] });
+  if (!input.skillRelevant) return createToolBundle({ enabled: false, entries: [] });
 
   if (cfg.access === "localhost" && !isLocalhostRequest(input.request)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
   if (cfg.access === "lan" && !isRequestAllowedByAdminPolicy(input.request)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 
   const hueGateway = createTool({
+    strict: true,
     description:
       "Execute a Hue Gateway API v2 action via POST /v2/actions with deterministic correlation/idempotency keys and safe defaults (match/verify).",
     inputSchema: HueGatewayToolWireInputSchema,
@@ -556,5 +555,19 @@ export function createHueGatewayTools(input: {
     },
   });
 
-  return { enabled: true, tools: { hueGateway } };
+  return createToolBundle({
+    enabled: true,
+    entries: [
+      defineToolEntry({
+        name: "hueGateway",
+        metadata: {
+          group: "hue",
+          risk: "safe",
+          strict: true,
+          stepVisibility: "explicit-only",
+        },
+        tool: hueGateway,
+      }),
+    ],
+  });
 }

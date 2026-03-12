@@ -4,6 +4,11 @@ import type {
 } from "@vercel/sandbox";
 import type { Sandbox as BashToolSandbox } from "bash-tool";
 import { createDockerSandboxClient } from "@/ai/docker-sandbox-client";
+import {
+  createToolBundle,
+  defineToolEntry,
+  type ToolBundle,
+} from "@/ai/tool-bundle";
 import type { RemcoChatConfig } from "@/server/config";
 import { getConfig } from "@/server/config";
 import { requireLocalPathAllowed } from "@/server/local-access";
@@ -38,10 +43,25 @@ async function loadVercelSandbox() {
   return await cachedVercelSandboxModule;
 }
 
-export type BashToolsResult = {
-  enabled: boolean;
-  tools: Record<string, unknown>;
-};
+function createStrictTool(config: any) {
+  return createTool({
+    strict: true,
+    ...config,
+  });
+}
+
+function withToolOverrides<T extends Record<string, unknown>>(
+  tool: T | undefined,
+  overrides: Partial<T>,
+): T | undefined {
+  if (!tool) return undefined;
+  return {
+    ...tool,
+    ...overrides,
+  };
+}
+
+export type BashToolsResult = ToolBundle;
 
 export type ExplicitBashCommandResult = {
   enabled: boolean;
@@ -898,14 +918,15 @@ function createStreamingBashTool(input: {
   description: string;
 }) {
   const { sessionKey, cfg, destination, description } = input;
-  return createTool({
+  return createStrictTool({
     description,
     inputSchema: z.object({
       command: z.string().describe("The bash command to execute"),
-    }),
+    }).strict(),
+    needsApproval: true,
     execute: async function* (
-      { command: originalCommand },
-      options,
+      { command: originalCommand }: any,
+      options: any,
     ): AsyncGenerator<{
       stdout: string;
       stderr: string;
@@ -1083,7 +1104,7 @@ function createSandboxUrlTool(input: {
   cfg: NonNullable<RemcoChatConfig["bashTools"]>;
 }) {
   const { sessionKey, cfg } = input;
-  return createTool({
+  return createStrictTool({
     description:
       cfg.provider === "docker"
         ? "Get a URL for a port exposed from the current sandbox."
@@ -1094,10 +1115,9 @@ function createSandboxUrlTool(input: {
         .int()
         .min(1)
         .max(65535)
-        .describe("Port number that the sandbox service is listening on.")
-        .default(3000),
-    }),
-    execute: async ({ port }) => {
+        .describe("Port number that the sandbox service is listening on. Pass 3000 unless the service uses a different exposed port."),
+    }).strict(),
+    execute: async ({ port }: any) => {
       const entry = await getOrCreateSandboxEntry(sessionKey, cfg);
       if (entry.provider === "docker") {
         const resolved = await entry.dockerClient!.getPortUrl(
@@ -1139,10 +1159,10 @@ export async function createBashTools(input: {
   sessionKey: string;
 }): Promise<BashToolsResult> {
   const cfg = getConfig().bashTools;
-  if (!cfg || !cfg.enabled) return { enabled: false, tools: {} };
-  if (!bashToolsKillSwitchEnabled()) return { enabled: false, tools: {} };
+  if (!cfg || !cfg.enabled) return createToolBundle({ enabled: false, entries: [] });
+  if (!bashToolsKillSwitchEnabled()) return createToolBundle({ enabled: false, entries: [] });
   if (!isRequestAllowedByAccessPolicy(input.request, cfg)) {
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 
   if (cfg.provider === "docker") {
@@ -1155,7 +1175,7 @@ export async function createBashTools(input: {
           `[bash-tools] Docker sandbox disabled (sandboxd unhealthy): ${health.message}`,
         );
       }
-      return { enabled: false, tools: {} };
+      return createToolBundle({ enabled: false, entries: [] });
     }
   }
 
@@ -1207,16 +1227,72 @@ export async function createBashTools(input: {
       cfg,
     });
 
-    return {
+    const readFileTool = withToolOverrides(
+      tools.readFile as Record<string, unknown> | undefined,
+      { strict: true },
+    );
+    const writeFileTool = withToolOverrides(
+      tools.writeFile as Record<string, unknown> | undefined,
+      { strict: true, needsApproval: true },
+    );
+
+    return createToolBundle({
       enabled: true,
-      tools: { ...tools, bash: streamingBash, sandboxUrl },
-    };
+      entries: [
+        ...(readFileTool
+          ? [
+              defineToolEntry({
+                name: "readFile",
+                metadata: {
+                  group: "sandbox",
+                  risk: "safe",
+                  strict: true,
+                },
+                tool: readFileTool,
+              }),
+            ]
+          : []),
+        ...(writeFileTool
+          ? [
+              defineToolEntry({
+                name: "writeFile",
+              metadata: {
+                group: "sandbox",
+                risk: "approval",
+                needsApproval: true,
+                strict: true,
+              },
+                tool: writeFileTool,
+              }),
+            ]
+          : []),
+        defineToolEntry({
+          name: "bash",
+          metadata: {
+            group: "sandbox",
+            risk: "approval",
+            needsApproval: true,
+            strict: true,
+          },
+          tool: streamingBash,
+        }),
+        defineToolEntry({
+          name: "sandboxUrl",
+          metadata: {
+            group: "sandbox",
+            risk: "safe",
+            strict: true,
+          },
+          tool: sandboxUrl,
+        }),
+      ],
+    });
   } catch (err) {
     console.error(
       `[bash-tools] Failed to initialize bash tools for session ${input.sessionKey}:`,
       err,
     );
-    return { enabled: false, tools: {} };
+    return createToolBundle({ enabled: false, entries: [] });
   }
 }
 

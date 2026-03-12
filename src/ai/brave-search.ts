@@ -126,6 +126,7 @@ async function runBraveSearch(input: {
 
 export function createBraveSearchTool() {
   return createTool({
+    strict: true,
     description:
       "Search the web with Brave Search and return compact, citation-friendly web results.",
     inputSchema: z.object({
@@ -158,7 +159,7 @@ export function createBraveSearchTool() {
         .max(8)
         .optional()
         .describe("Optional search language code (for example: en, nl)."),
-    }),
+    }).strict(),
     execute: async ({
       query,
       num_results,

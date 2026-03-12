@@ -34,11 +34,17 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { createTools } from "@/ai/tools";
 import { createWebTools } from "@/ai/web-tools";
-import { createBashTools, runExplicitBashCommand } from "@/ai/bash-tools";
+import { createBashTools } from "@/ai/bash-tools";
 import { createLocalAccessTools } from "@/ai/local-access-tools";
 import { createSkillsTools } from "@/ai/skills-tools";
 import { createHueGatewayTools } from "@/ai/hue-gateway-tools";
 import { createOvNlTools } from "@/ai/ov-nl-tools";
+import {
+  createToolBundle,
+  listToolNamesByExecutionOwner,
+  type ToolBundle,
+} from "@/ai/tool-bundle";
+import { buildToolLoopController } from "@/ai/tool-loop";
 import { buildSystemPrompt } from "@/ai/system-prompt";
 import { createProviderOptionsForWebTools } from "@/ai/provider-options";
 import { formatPerplexitySearchResultsForPrompt } from "@/ai/perplexity";
@@ -57,7 +63,12 @@ import {
 import { WEATHER_HOURLY_FORECAST_HOURS } from "@/lib/weather-constants";
 import { stripWebToolPartsFromMessages } from "@/server/message-sanitize";
 import { replaceAttachmentPartsWithExtractedText } from "@/server/attachment-prompt";
-import { OV_NL_ROUTER_MIN_CONFIDENCE, routeIntent, type IntentRoute } from "@/server/intent-router";
+import { routeIntent, type IntentRoute } from "@/server/intent-router";
+import {
+  resolveToolSurfaceDecision,
+  routeToolSurface,
+  type ToolSurfaceRoute,
+} from "@/server/tool-surface-router";
 import { routeAgendaCommand } from "@/server/agenda-intent";
 import { parseMemoryAddCommand, parseMemorizeDecision } from "@/server/memory-commands";
 import { getConfig } from "@/server/config";
@@ -96,6 +107,33 @@ export const maxDuration = 30;
 
 const REMCOCHAT_API_VERSION = "instruction-frame-v1";
 type StreamTextToolSet = NonNullable<Parameters<typeof streamText>[0]["tools"]>;
+
+function createDisabledToolBundle(): ToolBundle {
+  return createToolBundle({ enabled: false, entries: [] });
+}
+
+function assertServerOwnedToolLoopBundle(bundle: ToolBundle) {
+  const clientOwnedTools = listToolNamesByExecutionOwner(bundle, "client");
+  if (clientOwnedTools.length === 0) return;
+  throw new Error(
+    `Client-owned tools are not supported in RemcoChat's server-owned tool loop: ${clientOwnedTools.join(", ")}`,
+  );
+}
+
+async function routeToolSurfaceSafely(input: {
+  text: string;
+  context?: {
+    lastAssistantText?: string;
+    lastToolName?: string;
+  };
+}): Promise<ToolSurfaceRoute | null> {
+  try {
+    return await routeToolSurface(input);
+  } catch (err) {
+    console.error("Tool-surface router failed", err);
+    return { surface: "none", confidence: 0 };
+  }
+}
 
 type ChatRequestBody = {
   messages: UIMessage<RemcoChatMessageMetadata>[];
@@ -1123,8 +1161,6 @@ export async function POST(req: Request) {
   const stopAfterTimezones = isTimezonesUserQuery(lastUserText);
   const stopAfterCurrentDateTime = isCurrentDateTimeUserQuery(lastUserText);
   const explicitBashCommandFromUser = extractExplicitBashCommand(lastUserText);
-  const explicitBashNoExtraText = /\bdo not add any other text\b/i.test(lastUserText);
-  const explicitBashFastPathOptIn = shouldAllowDirectBashFastPath(lastUserText);
 
   const memorizeDecision = parseMemorizeDecision(lastUserText);
   const directMemoryCandidate = parseMemoryAddCommand(lastUserText);
@@ -1336,55 +1372,21 @@ export async function POST(req: Request) {
           modelType: resolved.modelType,
           providerModelId: resolved.providerModelId,
         })
-      : { enabled: false, tools: {} };
+      : createDisabledToolBundle();
 
     const temporaryKey =
       typeof body.temporarySessionId === "string" && body.temporarySessionId.trim()
         ? `tmp:${body.temporarySessionId.trim()}`
         : "";
 
-    if (
-      explicitBashNoExtraText &&
-      explicitBashFastPathOptIn &&
-      explicitBashCommandFromUser &&
-      temporaryKey
-    ) {
-      const bashResult = await runExplicitBashCommand({
-        request: req,
-        sessionKey: temporaryKey,
-        command: explicitBashCommandFromUser,
-      });
-      if (bashResult.enabled) {
-        return uiBashToolResponse({
-          headers: {
-            "x-remcochat-api-version": REMCOCHAT_API_VERSION,
-            "x-remcochat-temporary": "1",
-            "x-remcochat-profile-id": profile.id,
-            "x-remcochat-bash-tools-enabled": "1",
-            "x-remcochat-bash-tools": "bash",
-          },
-          command: explicitBashCommandFromUser,
-          result: {
-            stdout: bashResult.stdout,
-            stderr: bashResult.stderr,
-            exitCode: bashResult.exitCode,
-          },
-          messageMetadata: {
-            createdAt: now,
-            turnUserMessageId: lastUserMessageId || undefined,
-          },
-        });
-      }
-    }
-
     const bashTools =
       resolved.capabilities.tools && temporaryKey
         ? await createBashTools({ request: req, sessionKey: temporaryKey })
-        : { enabled: false, tools: {} };
+        : createDisabledToolBundle();
 
     const localAccessTools = resolved.capabilities.tools
       ? createLocalAccessTools({ request: req })
-      : { enabled: false, tools: {} };
+      : createDisabledToolBundle();
 
     const explicitBashCommand = bashTools.enabled
       ? explicitBashCommandFromUser
@@ -1519,8 +1521,6 @@ export async function POST(req: Request) {
     });
     if (ovFastPath) return ovFastPath;
 
-    const forcedToolChoice = null;
-
     let system = buildSystemPrompt({
       isTemporary: true,
       chatInstructions: "",
@@ -1593,15 +1593,15 @@ export async function POST(req: Request) {
       });
     }
 
-	    const chatTools = createTools({
-	      profileId: profile.id,
-	      isTemporary: true,
-	      memoryEnabled: false,
-	      viewerTimeZone,
-	      toolContext: { lastUserText, previousUserText },
-	      model: resolved.capabilities.tools ? resolved.model : undefined,
-	      supportsTemperature: resolved.capabilities.temperature,
-	    });
+    const chatTools = createTools({
+      profileId: profile.id,
+      isTemporary: true,
+      memoryEnabled: false,
+      viewerTimeZone,
+      toolContext: { lastUserText, previousUserText },
+      model: resolved.capabilities.tools ? resolved.model : undefined,
+      supportsTemperature: resolved.capabilities.temperature,
+    });
     const maxSteps = bashTools.enabled ? 20 : webTools.enabled ? 12 : 5;
     const providerOptions = createProviderOptionsForWebTools({
       modelType: resolved.modelType,
@@ -1610,11 +1610,46 @@ export async function POST(req: Request) {
       capabilities: resolved.capabilities,
       reasoning: reasoningSelection.effectiveReasoning,
     });
+    const routedToolSurface = resolved.capabilities.tools
+      ? await routeToolSurfaceSafely({ text: lastUserText, context: routerContext })
+      : null;
+    const initialToolSurface = resolveToolSurfaceDecision({
+      routedToolSurface,
+      routedIntent,
+      lastUserText,
+      forceOvNlTool: forceOvNlGatewayTool,
+      hueSkillRelevant,
+    });
+    const toolLoop = resolved.capabilities.tools
+      ? buildToolLoopController({
+          bundles: [
+            chatTools,
+            webTools,
+            localAccessTools,
+            bashTools,
+            skillsTools,
+            hueGatewayTools,
+            ovNlTools,
+          ],
+          maxSteps,
+          explicitBashCommand,
+          explicitSkillActivationOnly,
+          forceToolName: null,
+          stopAfterCurrentDateTime,
+          stopAfterTimezones,
+          routedToolSurface: initialToolSurface,
+          baseSystem: system,
+        })
+      : null;
+    if (toolLoop) {
+      assertServerOwnedToolLoopBundle(toolLoop.bundle);
+    }
+    const streamTools = toolLoop?.bundle.tools as StreamTextToolSet | undefined;
 
-	    const headers = {
-	      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
-	      "x-remcochat-temporary": "1",
-	      "x-remcochat-profile-id": profile.id,
+    const headers = {
+      "x-remcochat-api-version": REMCOCHAT_API_VERSION,
+      "x-remcochat-temporary": "1",
+      "x-remcochat-profile-id": profile.id,
       "x-remcochat-provider-id": resolved.providerId,
       "x-remcochat-model-type": resolved.modelType,
       "x-remcochat-provider-model-id": resolved.providerModelId,
@@ -1688,41 +1723,19 @@ export async function POST(req: Request) {
     try {
       result = streamText({
         model: resolved!.model,
-        system,
+        system: toolLoop?.initialSystem ?? system,
         messages: modelMessages,
         ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
           ? { temperature: 0 }
           : {}),
         ...(providerOptions ? { providerOptions } : {}),
-        ...(resolved!.capabilities.tools
+        ...(resolved!.capabilities.tools && streamTools && toolLoop
           ? {
-              ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-              stopWhen: [
-                hasToolCall("displayWeather"),
-                hasToolCall("displayWeatherForecast"),
-                ...(stopAfterCurrentDateTime
-                  ? [hasToolCall("displayCurrentDateTime")]
-                  : []),
-                ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-                hasToolCall("displayNotes"),
-                hasToolCall("displayMemoryPrompt"),
-                hasToolCall("displayMemoryAnswer"),
-                hasToolCall("displayList"),
-                hasToolCall("displayListsOverview"),
-                hasToolCall("displayAgenda"),
-                hasToolCall("displayUrlSummary"),
-                hasToolCall("summarizeURL"),
-                stepCountIs(maxSteps),
-              ],
-              tools: {
-                ...chatTools,
-                ...webTools.tools,
-                ...localAccessTools.tools,
-                ...bashTools.tools,
-                ...skillsTools.tools,
-                ...hueGatewayTools.tools,
-                ...ovNlTools.tools,
-              } as StreamTextToolSet,
+              ...(toolLoop.toolChoice ? { toolChoice: toolLoop.toolChoice } : {}),
+              stopWhen: toolLoop.stopWhen,
+              prepareStep: toolLoop.prepareStep,
+              experimental_repairToolCall: toolLoop.experimental_repairToolCall,
+              tools: streamTools,
             }
           : { stopWhen: [stepCountIs(5)] }),
       });
@@ -1815,15 +1828,6 @@ export async function POST(req: Request) {
                       system,
                       messages: continuationMessages,
                       toolChoice: "none",
-                      tools: {
-                        ...chatTools,
-                        ...webTools.tools,
-                        ...localAccessTools.tools,
-                        ...bashTools.tools,
-                        ...skillsTools.tools,
-                        ...hueGatewayTools.tools,
-                        ...ovNlTools.tools,
-                      } as StreamTextToolSet,
                       ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                         ? { temperature: 0 }
                         : {}),
@@ -1840,7 +1844,7 @@ export async function POST(req: Request) {
                     return stripUIMessageStream(continuedStream, { dropStart: true });
                   }
 
-                  if (!explicitBashNoExtraText && !explicitBashCommandFromUser) {
+                  if (!explicitBashCommandFromUser) {
                     const bashFinalization = shouldFinalizeAfterToolOnlyRun({
                       finishReason: collected.finishReason,
                       hasTextDelta: collected.hasTextDelta,
@@ -1875,15 +1879,6 @@ export async function POST(req: Request) {
                         system,
                         messages: continuationMessages,
                         toolChoice: "none",
-                        tools: {
-                          ...chatTools,
-                          ...webTools.tools,
-                          ...localAccessTools.tools,
-                          ...bashTools.tools,
-                          ...skillsTools.tools,
-                          ...hueGatewayTools.tools,
-                          ...ovNlTools.tools,
-                        } as StreamTextToolSet,
                         ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                           ? { temperature: 0 }
                           : {}),
@@ -1920,14 +1915,6 @@ export async function POST(req: Request) {
                 system,
                 messages: continuationMessages,
                 toolChoice: "none",
-                tools: {
-                  ...chatTools,
-                  ...webTools.tools,
-                  ...bashTools.tools,
-                  ...skillsTools.tools,
-                  ...hueGatewayTools.tools,
-                  ...ovNlTools.tools,
-                } as StreamTextToolSet,
                 ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                   ? { temperature: 0 }
                   : {}),
@@ -1976,44 +1963,16 @@ export async function POST(req: Request) {
               },
             ]);
 
-            const tools = {
-              ...chatTools,
-              ...webTools.tools,
-              ...bashTools.tools,
-            } as StreamTextToolSet;
-            delete tools.perplexity_search;
-
             const continued = streamText({
               model: resolved!.model,
               system,
               messages: continuationMessages,
+              toolChoice: "none",
               ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                 ? { temperature: 0 }
                 : {}),
               ...(providerOptions ? { providerOptions } : {}),
-              ...(resolved!.capabilities.tools
-                ? {
-                    ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-                    stopWhen: [
-                      hasToolCall("displayWeather"),
-                      hasToolCall("displayWeatherForecast"),
-                      ...(stopAfterCurrentDateTime
-                        ? [hasToolCall("displayCurrentDateTime")]
-                        : []),
-                      ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-                      hasToolCall("displayNotes"),
-                      hasToolCall("displayMemoryPrompt"),
-                      hasToolCall("displayMemoryAnswer"),
-                      hasToolCall("displayList"),
-                      hasToolCall("displayListsOverview"),
-                      hasToolCall("displayAgenda"),
-                      hasToolCall("displayUrlSummary"),
-                      hasToolCall("summarizeURL"),
-                      stepCountIs(maxSteps),
-                    ],
-                    tools,
-                  }
-                : { stopWhen: [stepCountIs(5)] }),
+              stopWhen: [stepCountIs(5)],
             });
 
             const continuedStream = continued.toUIMessageStream({
@@ -2548,18 +2507,18 @@ export async function POST(req: Request) {
         modelType: resolved.modelType,
         providerModelId: resolved.providerModelId,
       })
-    : { enabled: false, tools: {} };
+    : createDisabledToolBundle();
 
   const bashTools = resolved.capabilities.tools
     ? await createBashTools({
         request: req,
         sessionKey: `chat:${effectiveChat.id}`,
       })
-    : { enabled: false, tools: {} };
+    : createDisabledToolBundle();
 
   const localAccessTools = resolved.capabilities.tools
     ? createLocalAccessTools({ request: req })
-    : { enabled: false, tools: {} };
+    : createDisabledToolBundle();
 
 	  const skillsRegistry = getSkillsRegistry();
 	  const ovNlTools = createOvNlTools({
@@ -2972,46 +2931,61 @@ export async function POST(req: Request) {
     });
   };
 
-	  const forcedToolChoice = forceMemoryAnswerTool
-	    ? ({ type: "tool", toolName: "displayMemoryAnswer" } as const)
-	    : null;
-    let result: ReturnType<typeof streamText>;
+  const forcedToolChoice = forceMemoryAnswerTool
+    ? ({ type: "tool", toolName: "displayMemoryAnswer" } as const)
+    : null;
+  const routedToolSurface = resolved.capabilities.tools
+    ? await routeToolSurfaceSafely({ text: lastUserText, context: routerContext })
+    : null;
+  const initialToolSurface = resolveToolSurfaceDecision({
+    routedToolSurface,
+    routedIntent,
+    lastUserText,
+    forceOvNlTool: forceOvNlGatewayTool,
+    hueSkillRelevant,
+  });
+  const toolLoop = resolved.capabilities.tools
+    ? buildToolLoopController({
+        bundles: [
+          chatTools,
+          webTools,
+          localAccessTools,
+          bashTools,
+          skillsTools,
+          hueGatewayTools,
+          ovNlTools,
+        ],
+        maxSteps,
+        explicitBashCommand,
+        explicitSkillActivationOnly,
+        forceToolName: forcedToolChoice?.toolName ?? null,
+        stopAfterCurrentDateTime,
+        stopAfterTimezones,
+        routedToolSurface: initialToolSurface,
+        baseSystem: system,
+      })
+    : null;
+  if (toolLoop) {
+    assertServerOwnedToolLoopBundle(toolLoop.bundle);
+  }
+  const streamTools = toolLoop?.bundle.tools as StreamTextToolSet | undefined;
+  let result: ReturnType<typeof streamText>;
     try {
       result = streamText({
         model: resolved!.model,
-        system,
+        system: toolLoop?.initialSystem ?? system,
         messages: modelMessages,
         ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
           ? { temperature: isRegenerate ? 0.9 : 0 }
           : {}),
         ...(providerOptions ? { providerOptions } : {}),
-        ...(resolved!.capabilities.tools
+        ...(resolved!.capabilities.tools && streamTools && toolLoop
           ? {
-              ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-              stopWhen: [
-                hasToolCall("displayWeather"),
-                hasToolCall("displayWeatherForecast"),
-                ...(stopAfterCurrentDateTime
-                  ? [hasToolCall("displayCurrentDateTime")]
-                  : []),
-                ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-                hasToolCall("displayNotes"),
-                hasToolCall("displayMemoryPrompt"),
-                hasToolCall("displayMemoryAnswer"),
-                hasToolCall("displayList"),
-                hasToolCall("displayListsOverview"),
-                hasToolCall("displayAgenda"),
-                stepCountIs(maxSteps),
-              ],
-              tools: {
-                ...chatTools,
-                ...webTools.tools,
-                ...localAccessTools.tools,
-                ...bashTools.tools,
-                ...skillsTools.tools,
-                ...hueGatewayTools.tools,
-                ...ovNlTools.tools,
-              } as StreamTextToolSet,
+              ...(toolLoop.toolChoice ? { toolChoice: toolLoop.toolChoice } : {}),
+              stopWhen: toolLoop.stopWhen,
+              prepareStep: toolLoop.prepareStep,
+              experimental_repairToolCall: toolLoop.experimental_repairToolCall,
+              tools: streamTools,
             }
           : { stopWhen: [stepCountIs(5)] }),
       });
@@ -3171,15 +3145,6 @@ export async function POST(req: Request) {
                       system,
                       messages: continuationMessages,
                       toolChoice: "none",
-                      tools: {
-                        ...chatTools,
-                        ...webTools.tools,
-                        ...localAccessTools.tools,
-                        ...bashTools.tools,
-                        ...skillsTools.tools,
-                        ...hueGatewayTools.tools,
-                        ...ovNlTools.tools,
-                      } as StreamTextToolSet,
                       ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                         ? { temperature: isRegenerate ? 0.9 : 0 }
                         : {}),
@@ -3196,7 +3161,7 @@ export async function POST(req: Request) {
                     return stripUIMessageStream(continuedStream, { dropStart: true });
                   }
 
-                  if (!explicitBashNoExtraText && !explicitBashCommandFromUser) {
+                  if (!explicitBashCommandFromUser) {
                     const bashFinalization = shouldFinalizeAfterToolOnlyRun({
                       finishReason: collected.finishReason,
                       hasTextDelta: collected.hasTextDelta,
@@ -3231,15 +3196,6 @@ export async function POST(req: Request) {
                         system,
                         messages: continuationMessages,
                         toolChoice: "none",
-                        tools: {
-                          ...chatTools,
-                          ...webTools.tools,
-                          ...localAccessTools.tools,
-                          ...bashTools.tools,
-                          ...skillsTools.tools,
-                          ...hueGatewayTools.tools,
-                          ...ovNlTools.tools,
-                        } as StreamTextToolSet,
                         ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
                           ? { temperature: isRegenerate ? 0.9 : 0 }
                           : {}),
@@ -3276,14 +3232,6 @@ export async function POST(req: Request) {
             system,
             messages: continuationMessages,
             toolChoice: "none",
-		            tools: {
-		              ...chatTools,
-		              ...webTools.tools,
-		              ...bashTools.tools,
-		              ...skillsTools.tools,
-		              ...hueGatewayTools.tools,
-                  ...ovNlTools.tools,
-		            } as StreamTextToolSet,
             ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
               ? { temperature: isRegenerate ? 0.9 : 0 }
               : {}),
@@ -3332,46 +3280,16 @@ export async function POST(req: Request) {
           },
         ]);
 
-	        const tools = {
-	          ...chatTools,
-	          ...webTools.tools,
-	          ...bashTools.tools,
-            ...skillsTools.tools,
-            ...hueGatewayTools.tools,
-            ...ovNlTools.tools,
-	        } as StreamTextToolSet;
-	        delete tools.perplexity_search;
-
         const continued = streamText({
           model: resolved!.model,
           system,
           messages: continuationMessages,
+          toolChoice: "none",
           ...(resolved!.capabilities.temperature && !resolved!.capabilities.reasoning
             ? { temperature: isRegenerate ? 0.9 : 0 }
             : {}),
           ...(providerOptions ? { providerOptions } : {}),
-          ...(resolved!.capabilities.tools
-            ? {
-                ...(forcedToolChoice ? { toolChoice: forcedToolChoice } : {}),
-                stopWhen: [
-                  hasToolCall("displayWeather"),
-                  hasToolCall("displayWeatherForecast"),
-                  ...(stopAfterCurrentDateTime
-                    ? [hasToolCall("displayCurrentDateTime")]
-                    : []),
-                  ...(stopAfterTimezones ? [hasToolCall("displayTimezones")] : []),
-                  hasToolCall("displayNotes"),
-                  hasToolCall("displayMemoryAnswer"),
-                  hasToolCall("displayList"),
-                  hasToolCall("displayListsOverview"),
-                  hasToolCall("displayAgenda"),
-                  hasToolCall("displayUrlSummary"),
-                  hasToolCall("summarizeURL"),
-                  stepCountIs(maxSteps),
-                ],
-                tools,
-              }
-            : { stopWhen: [stepCountIs(5)] }),
+          stopWhen: [stepCountIs(5)],
         });
 
         const continuedStream = continued.toUIMessageStream({

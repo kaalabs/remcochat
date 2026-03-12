@@ -8,11 +8,16 @@ import { recordActivatedSkillName } from "@/server/chats";
 import { logEvent } from "@/server/log";
 import { getSkillsRegistry } from "@/server/skills/runtime";
 import { parseSkillMd } from "@/server/skills/skill-md";
+import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bundle";
 
-export type SkillsToolsResult = {
-  enabled: boolean;
-  tools: Record<string, unknown>;
-};
+export type SkillsToolsResult = ToolBundle;
+
+function createStrictTool(config: any) {
+  return createTool({
+    strict: true,
+    ...config,
+  });
+}
 
 function readUtf8WithSoftByteLimit(input: {
   filePath: string;
@@ -117,19 +122,19 @@ export function createSkillsTools(input: {
   enabled: boolean;
   chatId?: string;
 }): SkillsToolsResult {
-  if (!input.enabled) return { enabled: false, tools: {} };
+  if (!input.enabled) return createToolBundle({ enabled: false, entries: [] });
 
   const cfg = getConfig();
   const maxSkillMdBytes = cfg.skills?.maxSkillMdBytes ?? 200_000;
   const maxResourceBytes = cfg.skills?.maxResourceBytes ?? 2_000_000;
   const maxFrontmatterOverreadBytes = 128_000;
 
-  const skillsActivate = createTool({
+  const skillsActivate = createStrictTool({
     description: "Activate a named skill by loading its SKILL.md instructions.",
     inputSchema: z.object({
       name: z.string().describe("Skill name to activate."),
     }),
-    execute: async ({ name }) => {
+    execute: async ({ name }: any) => {
       try {
       const registry = getSkillsRegistry();
       if (!registry) throw new Error("Skills are disabled.");
@@ -186,14 +191,14 @@ export function createSkillsTools(input: {
     },
   });
 
-  const skillsReadResource = createTool({
+  const skillsReadResource = createStrictTool({
     description:
       "Read a file from within a skill directory using a relative path from the skill root.",
     inputSchema: z.object({
       name: z.string().describe("Skill name."),
       path: z.string().describe("Relative path from the skill root."),
     }),
-    execute: async ({ name, path: relativePath }) => {
+    execute: async ({ name, path: relativePath }: any) => {
       try {
       const registry = getSkillsRegistry();
       if (!registry) throw new Error("Skills are disabled.");
@@ -247,11 +252,28 @@ export function createSkillsTools(input: {
     },
   });
 
-  return {
+  return createToolBundle({
     enabled: true,
-    tools: {
-      skillsActivate,
-      skillsReadResource,
-    },
-  };
+    entries: [
+      defineToolEntry({
+        name: "skillsActivate",
+        metadata: {
+          group: "skills",
+          risk: "safe",
+          strict: true,
+        },
+        tool: skillsActivate,
+      }),
+      defineToolEntry({
+        name: "skillsReadResource",
+        metadata: {
+          group: "skills",
+          risk: "safe",
+          strict: true,
+          stepVisibility: "followup-only",
+        },
+        tool: skillsReadResource,
+      }),
+    ],
+  });
 }

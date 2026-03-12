@@ -81,6 +81,66 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.deepEqual(result.tools, {});
 });
 
+test("bash write tools carry approval metadata", async () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.bash_tools]
+enabled = true
+access = "localhost"
+
+[app.bash_tools.seed]
+mode = "git"
+git_url = "https://example.com/repo.git"
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  process.env.REMCOCHAT_ENABLE_BASH_TOOL = "1";
+
+  const result = await createBashTools({
+    request: new Request("http://localhost/api/chat", {
+      headers: { host: "localhost" },
+    }),
+    sessionKey: "test:approval-metadata",
+  });
+
+  if (!result.enabled) {
+    assert.deepEqual(result.tools, {});
+    return;
+  }
+
+  assert.equal(result.metadataByName.bash?.needsApproval, true);
+  assert.equal(result.metadataByName.writeFile?.needsApproval, true);
+  assert.equal(result.metadataByName.readFile?.needsApproval, undefined);
+  assert.equal(result.metadataByName.bash?.executionOwner, "server");
+  assert.equal(result.metadataByName.writeFile?.executionOwner, "server");
+  assert.equal(result.metadataByName.readFile?.executionOwner, "server");
+});
+
+test("sandboxUrl schema keeps port explicitly required for provider compatibility", () => {
+  const source = fs.readFileSync(
+    path.join(process.cwd(), "src", "ai", "bash-tools.ts"),
+    "utf8",
+  );
+  const sandboxUrlSection = source.slice(
+    source.indexOf("function createSandboxUrlTool"),
+    source.indexOf("export async function createBashTools"),
+  );
+
+  assert.match(sandboxUrlSection, /port:\s*z\s*\.\s*number\(\)/);
+  assert.doesNotMatch(sandboxUrlSection, /\.default\(3000\)/);
+});
+
 test("does not expose bash tools for lan access without admin token", async () => {
   const configPath = writeTempConfigToml(`
 version = 2

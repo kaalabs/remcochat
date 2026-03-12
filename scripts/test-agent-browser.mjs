@@ -21,6 +21,14 @@ const ARTIFACT_DIR =
 const ENABLE_VERCEL_SANDBOX_BASH =
   process.env.REMCOCHAT_E2E_ENABLE_VERCEL_SANDBOX === "1";
 
+const CHECKPOINT_FILES = {
+  home: "01-home.png",
+  reasoning: "02-reasoning-buttons.png",
+  renamed: "03-renamed.png",
+  attachment: "04-after-attachment.png",
+  autoRun: "05-non-sensitive-tool-auto-run.png",
+};
+
 function writeTempUploadFile(contents) {
   const filePath = path.join(
     os.tmpdir(),
@@ -38,6 +46,89 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function ensurePortIsFree(port, tracker) {
+  try {
+    const { stdout } = await execFileAsync("bash", ["-lc", `lsof -ti tcp:${port} || true`], {
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+    });
+    const pids = String(stdout ?? "")
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    for (const pid of pids) {
+      tracker.appendLog(`Killing stale process on port ${port}: ${pid}`);
+      try {
+        process.kill(Number(pid), "SIGKILL");
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore cleanup failures
+  }
+}
+
+function createArtifactTracker() {
+  fs.rmSync(ARTIFACT_DIR, { recursive: true, force: true });
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+
+  const logPath = path.join(ARTIFACT_DIR, "run.log");
+  const manifestPath = path.join(ARTIFACT_DIR, "manifest.json");
+  const manifest = {
+    suite: "agent-browser",
+    baseUrl: BASE_URL,
+    artifactDir: ARTIFACT_DIR,
+    generatedAt: new Date().toISOString(),
+    checkpoints: [],
+    commands: [],
+  };
+
+  const appendLog = (line) => {
+    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${line}\n`, "utf8");
+  };
+
+  const recordCommand = (command) => {
+    manifest.commands.push(command);
+    appendLog(`command ${command}`);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  };
+
+  const recordCheckpoint = (name, filename) => {
+    const filePath = path.join(ARTIFACT_DIR, filename);
+    manifest.checkpoints.push({
+      name,
+      file: filePath,
+      recordedAt: new Date().toISOString(),
+    });
+    appendLog(`checkpoint ${name} -> ${filePath}`);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    return filePath;
+  };
+
+  const assertArtifactsExist = () => {
+    const requiredPaths = [
+      logPath,
+      manifestPath,
+      ...Object.values(CHECKPOINT_FILES).map((filename) => path.join(ARTIFACT_DIR, filename)),
+    ];
+    for (const filePath of requiredPaths) {
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing required artifact: ${filePath}`);
+      }
+    }
+  };
+
+  return {
+    appendLog,
+    assertArtifactsExist,
+    logPath,
+    manifestPath,
+    recordCheckpoint,
+    recordCommand,
+  };
+}
+
 async function waitForHttpOk(url, timeoutMs) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
@@ -52,7 +143,8 @@ async function waitForHttpOk(url, timeoutMs) {
   throw new Error(`Timed out waiting for server: ${url}`);
 }
 
-async function runAgentBrowser(args) {
+async function runAgentBrowser(args, tracker) {
+  tracker.recordCommand(`agent-browser --session ${SESSION} ${args.join(" ")}`);
   let lastErr;
   for (let attempt = 1; attempt <= 10; attempt++) {
     try {
@@ -77,9 +169,9 @@ async function runAgentBrowser(args) {
   throw lastErr;
 }
 
-async function closeAgentBrowser() {
+async function closeAgentBrowser(tracker) {
   try {
-    await runAgentBrowser(["close"]);
+    await runAgentBrowser(["close"], tracker);
   } catch {
     // ignore
   }
@@ -126,27 +218,91 @@ function normalizeAgentBrowserString(value) {
   return raw;
 }
 
-async function main() {
-  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
-  const startedAt = Date.now();
-  console.log(`[agent-browser] Starting smoke test against ${BASE_URL}`);
+async function captureCheckpoint(tracker, name, filename) {
+  const screenshotPath = tracker.recordCheckpoint(name, filename);
+  await runAgentBrowser(["screenshot", screenshotPath], tracker);
+}
 
-  await closeAgentBrowser();
+async function startNewChat(tracker) {
+  await runAgentBrowser(
+    [
+      "wait",
+      "--fn",
+      `(() => {
+        const button = document.querySelector("[data-testid='sidebar:new-chat']");
+        return Boolean(button) && !(button instanceof HTMLButtonElement && button.disabled);
+      })()`,
+    ],
+    tracker
+  );
+  await runAgentBrowser(["find", "first", "[data-testid='sidebar:new-chat']", "click"], tracker);
+  await runAgentBrowser(["wait", "--fn", "document.querySelector(\"[data-testid='composer:textarea']\") != null"], tracker);
+  await runAgentBrowser(["wait", "750"], tracker);
+}
+
+async function submitPrompt(text, tracker) {
+  await runAgentBrowser(
+    ["find", "first", "[data-testid='composer:textarea']", "fill", text],
+    tracker
+  );
+  await runAgentBrowser(
+    [
+      "wait",
+      "--fn",
+      `(() => {
+        const button = document.querySelector("[data-testid='composer:submit']");
+        return Boolean(button) && !(button instanceof HTMLButtonElement && button.disabled);
+      })()`,
+    ],
+    tracker
+  );
+  await runAgentBrowser(["find", "first", "[data-testid='composer:submit']", "click"], tracker);
+}
+
+async function assertSingleCurrentDateTimeCard(tracker) {
+  await runAgentBrowser(["wait", "2000"], tracker);
+  const countRaw = await runAgentBrowser(
+    [
+      "eval",
+      `document.querySelectorAll("[data-testid='tool:displayCurrentDateTime']").length`,
+    ],
+    tracker,
+  );
+  const count = Number(normalizeAgentBrowserString(countRaw));
+  if (!Number.isFinite(count) || count !== 1) {
+    throw new Error(`Expected exactly one displayCurrentDateTime card, got: ${countRaw}`);
+  }
+  tracker.appendLog("Verified exactly one displayCurrentDateTime card");
+}
+
+async function main() {
+  const tracker = createArtifactTracker();
+  const startedAt = Date.now();
+  tracker.appendLog(`Starting smoke test against ${BASE_URL}`);
+  tracker.appendLog(`DB_PATH=${path.resolve(DB_PATH)}`);
+  tracker.appendLog(`CONFIG_PATH=${path.resolve(CONFIG_PATH)}`);
+  tracker.appendLog(`ARTIFACT_DIR=${path.resolve(ARTIFACT_DIR)}`);
+
+  await closeAgentBrowser(tracker);
+  await ensurePortIsFree(PORT, tracker);
 
   const serverEnv = {
     ...process.env,
     REMCOCHAT_DB_PATH: DB_PATH,
     REMCOCHAT_CONFIG_PATH: CONFIG_PATH,
     REMCOCHAT_ENABLE_ADMIN: "1",
+    REMCOCHAT_E2E_ENABLE_LOCAL_ACCESS: "1",
     ...(ENABLE_VERCEL_SANDBOX_BASH ? { REMCOCHAT_ENABLE_BASH_TOOL: "1" } : {}),
   };
 
+  tracker.recordCommand("node scripts/reset-e2e-db.mjs");
   await execFileAsync("node", ["scripts/reset-e2e-db.mjs"], {
     env: serverEnv,
     timeout: 120_000,
     maxBuffer: 10 * 1024 * 1024,
   });
 
+  tracker.recordCommand(`${npmBin()} run build`);
   await execFileAsync(npmBin(), ["run", "build"], {
     env: serverEnv,
     timeout: 10 * 60_000,
@@ -167,166 +323,143 @@ async function main() {
   try {
     await waitForHttpOk(`${BASE_URL}/admin`, 90_000);
 
-    await runAgentBrowser(["set", "viewport", "1280", "800"]);
+    await runAgentBrowser(["set", "viewport", "1280", "800"], tracker);
 
-    await runAgentBrowser(["open", `${BASE_URL}/`]);
-    await runAgentBrowser(["wait", "--text", "RemcoChat"]);
-    await runAgentBrowser([
-      "screenshot",
-      path.join(ARTIFACT_DIR, "01-home.png"),
-    ]);
+    await runAgentBrowser(["open", `${BASE_URL}/`], tracker);
+    await runAgentBrowser(["wait", "--text", "RemcoChat"], tracker);
+    await captureCheckpoint(tracker, "home", CHECKPOINT_FILES.home);
 
-    // Reasoning segmented buttons:
-    // - must be hidden for non-reasoning models
-    // - must be visible for reasoning-capable models
-    await runAgentBrowser([
-      "find",
-      "first",
-      "[data-testid='model:picker-trigger']",
-      "click",
-    ]);
-    await runAgentBrowser([
-      "wait",
-      "--fn",
-      "document.querySelector(\"[data-testid^='model-option:']\") != null",
-    ]);
-
-    const nonReasoningFeatureTestId = normalizeAgentBrowserString(await runAgentBrowser([
-      "eval",
-      `(() => {
-        const el = document.querySelector(
-          "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='false']"
-        );
-        return el ? el.getAttribute("data-testid") ?? "" : "";
-      })()`,
-    ]).catch(() => ""));
-    const nonReasoningModelId = modelIdFromModelFeatureTestId(
-      nonReasoningFeatureTestId
+    await runAgentBrowser(
+      ["find", "first", "[data-testid='model:picker-trigger']", "click"],
+      tracker
     );
+    await runAgentBrowser(
+      ["wait", "--fn", "document.querySelector(\"[data-testid^='model-option:']\") != null"],
+      tracker
+    );
+
+    const nonReasoningFeatureTestId = normalizeAgentBrowserString(
+      await runAgentBrowser(
+        [
+          "eval",
+          `(() => {
+            const el = document.querySelector(
+              "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='false']"
+            );
+            return el ? el.getAttribute("data-testid") ?? "" : "";
+          })()`,
+        ],
+        tracker
+      ).catch(() => "")
+    );
+    const nonReasoningModelId = modelIdFromModelFeatureTestId(nonReasoningFeatureTestId);
     if (nonReasoningModelId) {
-      await runAgentBrowser([
-        "find",
-        "first",
-        `[data-testid='model-option:${nonReasoningModelId}']`,
-        "click",
-      ]);
-      await runAgentBrowser([
-        "wait",
-        "--fn",
-        "document.querySelector(\"[data-testid='reasoning-option:auto']\") == null",
-      ]);
+      await runAgentBrowser(
+        ["find", "first", `[data-testid='model-option:${nonReasoningModelId}']`, "click"],
+        tracker
+      );
+      await runAgentBrowser(
+        ["wait", "--fn", "document.querySelector(\"[data-testid='reasoning-option:auto']\") == null"],
+        tracker
+      );
     } else {
-      // No non-reasoning models in the catalog; close the picker.
-      await runAgentBrowser(["press", "Escape"]);
+      await runAgentBrowser(["press", "Escape"], tracker);
     }
 
-    await runAgentBrowser([
-      "find",
-      "first",
-      "[data-testid='model:picker-trigger']",
-      "click",
-    ]);
-    await runAgentBrowser([
-      "wait",
-      "--fn",
-      "document.querySelector(\"[data-testid^='model-option:']\") != null",
-    ]);
+    await runAgentBrowser(
+      ["find", "first", "[data-testid='model:picker-trigger']", "click"],
+      tracker
+    );
+    await runAgentBrowser(
+      ["wait", "--fn", "document.querySelector(\"[data-testid^='model-option:']\") != null"],
+      tracker
+    );
 
-    const reasoningFeatureTestId = normalizeAgentBrowserString(await runAgentBrowser([
-      "eval",
-      `(() => {
-        const el = document.querySelector(
-          "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='true']"
-        );
-        return el ? el.getAttribute("data-testid") ?? "" : "";
-      })()`,
-    ]).catch(() => ""));
+    const reasoningFeatureTestId = normalizeAgentBrowserString(
+      await runAgentBrowser(
+        [
+          "eval",
+          `(() => {
+            const el = document.querySelector(
+              "[data-testid^='model-feature:'][data-testid$=':reasoning'][data-enabled='true']"
+            );
+            return el ? el.getAttribute("data-testid") ?? "" : "";
+          })()`,
+        ],
+        tracker
+      ).catch(() => "")
+    );
     const reasoningModelId = modelIdFromModelFeatureTestId(reasoningFeatureTestId);
     if (!reasoningModelId) {
       throw new Error("No reasoning-capable model option was found in the picker.");
     }
-    await runAgentBrowser(["wait", `[data-testid='model-option:${reasoningModelId}']`]);
-    await runAgentBrowser([
-      "find",
-      "first",
-      `[data-testid='model-option:${reasoningModelId}']`,
-      "click",
-    ]);
-    await runAgentBrowser([
-      "wait",
-      "--fn",
-      "document.querySelector(\"[data-testid='reasoning-option:auto']\") != null",
-    ]);
-    await runAgentBrowser([
-      "find",
-      "first",
-      "[data-testid='reasoning-option:high']",
-      "click",
-    ]);
-    const highSelected = await runAgentBrowser([
-      "get",
-      "attr",
-      "[data-testid='reasoning-option:high']",
-      "data-selected",
-    ]);
+    await runAgentBrowser(
+      ["wait", `[data-testid='model-option:${reasoningModelId}']`],
+      tracker
+    );
+    await runAgentBrowser(
+      ["find", "first", `[data-testid='model-option:${reasoningModelId}']`, "click"],
+      tracker
+    );
+    await runAgentBrowser(
+      ["wait", "--fn", "document.querySelector(\"[data-testid='reasoning-option:auto']\") != null"],
+      tracker
+    );
+    await runAgentBrowser(
+      ["find", "first", "[data-testid='reasoning-option:high']", "click"],
+      tracker
+    );
+    const highSelected = await runAgentBrowser(
+      ["get", "attr", "[data-testid='reasoning-option:high']", "data-selected"],
+      tracker
+    );
     if (String(highSelected).trim() !== "true") {
       throw new Error(
         `Expected reasoning-option:high to be selected (data-selected=true), got: ${highSelected}`
       );
     }
 
-    await runAgentBrowser([
-      "screenshot",
-      path.join(ARTIFACT_DIR, "01-reasoning-buttons.png"),
-    ]);
-    await runAgentBrowser(["find", "first", "[data-testid='sidebar:new-chat']", "click"]);
-    await runAgentBrowser(["find", "first", "[data-testid^='sidebar:chat-menu:']", "click"]);
-    await runAgentBrowser(["find", "text", "Rename", "click"]);
-    await runAgentBrowser(["wait", "--text", "Rename chat"]);
-    await runAgentBrowser([
-      "find",
-      "first",
-      "[data-testid='chat:rename-input']",
-      "fill",
-      "Agent renamed chat",
-    ]);
-    await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"]);
-    await runAgentBrowser(["wait", "--text", "Agent renamed chat"]);
-    await runAgentBrowser([
-      "screenshot",
-      path.join(ARTIFACT_DIR, "02-renamed.png"),
-    ]);
+    await captureCheckpoint(tracker, "reasoning-buttons", CHECKPOINT_FILES.reasoning);
+    await startNewChat(tracker);
+    await runAgentBrowser(
+      ["find", "first", "[data-testid^='sidebar:chat-menu:']", "click"],
+      tracker
+    );
+    await runAgentBrowser(
+      ["find", "first", "[data-testid^='chat-action:rename:']", "click"],
+      tracker
+    );
+    await runAgentBrowser(["wait", "--text", "Rename chat"], tracker);
+    await runAgentBrowser(
+      ["find", "first", "[data-testid='chat:rename-input']", "fill", "Agent renamed chat"],
+      tracker
+    );
+    await runAgentBrowser(["find", "first", "[data-testid='chat:rename-save']", "click"], tracker);
+    await runAgentBrowser(["wait", "--text", "Agent renamed chat"], tracker);
+    await captureCheckpoint(tracker, "renamed-chat", CHECKPOINT_FILES.renamed);
 
     const token = `REMCOCHAT_AGENT_BROWSER_ATTACHMENT_OK_${Date.now()}`;
     const fileContents = `TOKEN=${token}\n`;
     const uploadPath = writeTempUploadFile(fileContents);
 
-    await runAgentBrowser([
-      "upload",
-      "input[type='file'][aria-label='Upload attachments']",
-      uploadPath,
-    ]);
-    await runAgentBrowser([
-      "find",
-      "first",
-      "[data-testid='composer:textarea']",
-      "fill",
+    await runAgentBrowser(
+      ["upload", "input[type='file'][aria-label='Upload attachments']", uploadPath],
+      tracker
+    );
+    await submitPrompt(
       "Read the attached document. Reply with the token value after TOKEN= exactly, and nothing else.",
-    ]);
-    await runAgentBrowser(["find", "first", "[data-testid='composer:submit']", "click"]);
+      tracker
+    );
 
-    await runAgentBrowser([
-      "wait",
-      "--fn",
-      "document.querySelector(\"[data-testid^='attachment:download:']\") != null",
-    ]);
+    await runAgentBrowser(
+      ["wait", "--fn", "document.querySelector(\"[data-testid^='attachment:download:']\") != null"],
+      tracker
+    );
 
-    const href = await runAgentBrowser([
-      "get",
-      "attr",
-      "[data-testid^='attachment:download:']",
-      "href",
-    ]);
+    const href = await runAgentBrowser(
+      ["get", "attr", "[data-testid^='attachment:download:']", "href"],
+      tracker
+    );
     if (!href) {
       throw new Error("Missing attachment download link.");
     }
@@ -340,41 +473,44 @@ async function main() {
     if (downloaded !== fileContents) {
       throw new Error("Downloaded attachment did not match uploaded contents.");
     }
+    await captureCheckpoint(tracker, "attachment", CHECKPOINT_FILES.attachment);
+
+    await startNewChat(tracker);
+    await submitPrompt("What is the current date and time in Europe/Amsterdam?", tracker);
+    await runAgentBrowser(
+      ["wait", "--fn", "document.querySelector(\"[data-testid='tool:displayCurrentDateTime']\") != null"],
+      tracker
+    );
+    await assertSingleCurrentDateTimeCard(tracker);
+    await captureCheckpoint(tracker, "non-sensitive-tool-auto-run", CHECKPOINT_FILES.autoRun);
 
     if (ENABLE_VERCEL_SANDBOX_BASH) {
-      await runAgentBrowser(["find", "first", "[data-testid='model:picker-trigger']", "click"]);
-      await runAgentBrowser([
-        "find",
-        "first",
-        "[data-testid='model-option:anthropic/claude-opus-4.5']",
-        "click",
-      ]);
-
-      await runAgentBrowser([
-        "find",
-        "first",
-        "[data-testid='composer:textarea']",
-        "fill",
-        "Run: `python -c \"print('REMCOCHAT_PY_E2E_OK')\"`",
-      ]);
-      await runAgentBrowser(["find", "first", "[data-testid='composer:submit']", "click"]);
-      await runAgentBrowser([
-        "wait",
-        "--fn",
-        "document.querySelector(\"[data-testid='tool:bash']\") != null",
-      ]);
-      await runAgentBrowser(["wait", "--text", "REMCOCHAT_PY_E2E_OK"]);
+      await startNewChat(tracker);
+      await runAgentBrowser(
+        ["find", "first", "[data-testid='model:picker-trigger']", "click"],
+        tracker
+      );
+      await runAgentBrowser(
+        ["find", "first", "[data-testid='model-option:anthropic/claude-opus-4.5']", "click"],
+        tracker
+      );
+      await submitPrompt(
+        "Voer een hello-world Python-programma uit dat exact REMCOCHAT_PY_E2E_OK print en verder niets.",
+        tracker
+      );
+      await runAgentBrowser(
+        ["wait", "--fn", "document.querySelector(\"[data-testid='tool:bash']\") != null"],
+        tracker
+      );
+      await runAgentBrowser(["wait", "--text", "REMCOCHAT_PY_E2E_OK"], tracker);
     }
 
-    await runAgentBrowser([
-      "screenshot",
-      path.join(ARTIFACT_DIR, "03-after-attachment.png"),
-    ]);
-    console.log(
-      `[agent-browser] PASS in ${((Date.now() - startedAt) / 1000).toFixed(1)}s; artifacts in ${ARTIFACT_DIR}`
-    );
+    tracker.assertArtifactsExist();
+    const elapsedSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+    tracker.appendLog(`PASS in ${elapsedSeconds}s`);
+    console.log(`[agent-browser] PASS in ${elapsedSeconds}s; artifacts in ${ARTIFACT_DIR}`);
   } finally {
-    await closeAgentBrowser();
+    await closeAgentBrowser(tracker);
 
     if (!serverExited) {
       await stopSpawnedServer(server);

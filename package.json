@@ -11,6 +11,7 @@
     "sandboxd:dev": "node --import tsx sandboxd/src/index.ts",
     "test:agent-browser": "node scripts/test-agent-browser.mjs",
     "test:agent-browser-docker-sandboxd": "node scripts/test-agent-browser-docker-sandboxd.mjs",
+    "test:release-gate": "node scripts/test-release-gate.mjs",
     "test:e2e": "playwright test",
     "test:unit": "tsx --test tests/**/*.test.ts"
   },
@@ -23,6 +24,7 @@
     "@ai-sdk/provider": "^3.0.8",
     "@ai-sdk/react": "^3.0.118",
     "@ai-sdk/xai": "^3.0.67",
+    "@exalabs/ai-sdk": "^1.0.5",
     "@iarna/toml": "^2.2.5",
     "@mozilla/readability": "^0.6.0",
     "@radix-ui/react-collapsible": "^1.1.12",
