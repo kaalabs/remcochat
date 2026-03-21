@@ -21,6 +21,10 @@ test("xaiReasoningEffortSupport marks grok-3-mini as supported", () => {
   assert.equal(xaiReasoningEffortSupport("grok-3-mini"), "supported");
 });
 
+test("xaiReasoningEffortSupport marks grok-code-fast-1 as unsupported", () => {
+  assert.equal(xaiReasoningEffortSupport("grok-code-fast-1"), "unsupported");
+});
+
 test("xaiReasoningEffortSupport keeps unknown models as unknown", () => {
   assert.equal(
     xaiReasoningEffortSupport("grok-future-ultra-1"),

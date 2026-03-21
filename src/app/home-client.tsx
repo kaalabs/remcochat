@@ -23,6 +23,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -116,6 +121,11 @@ import { ConversationScrollButton } from "@/components/ai-elements/conversation"
 	import type { CurrentDateTimeToolOutput } from "@/ai/current-date-time";
 	import type { TimezonesToolOutput } from "@/ai/timezones";
 	import type { UrlSummaryToolOutput } from "@/ai/url-summary";
+import {
+  parseErrorMessage,
+  parseProvidersResponse,
+  type ProvidersResponse,
+} from "@/lib/providers-response";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { ProfileAvatarPositioner } from "@/components/profile-avatar-positioner";
 import {
@@ -493,34 +503,36 @@ export function HomeClient({
     });
   }, [lanAdminAccessEnabled, instrumentedChatFetch, readLanAdminToken]);
 
-  type ProvidersResponse = {
-    defaultProviderId: string;
-    activeProviderId: string;
-    webToolsEnabled: boolean;
-    providers: Array<{
-      id: string;
-      name: string;
-      defaultModelId: string;
-      models: ModelOption[];
-    }>;
-  };
-
   const [providersConfig, setProvidersConfig] =
     useState<ProvidersResponse | null>(null);
+  const [providersLoadError, setProvidersLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let canceled = false;
     fetch("/api/providers")
-      .then((res) => res.json())
-      .then((data: ProvidersResponse) => {
+      .then(async (res) => {
+        const data = (await res.json().catch(() => null)) as unknown;
         if (canceled) return;
-        setProvidersConfig(data);
+        const parsed = parseProvidersResponse(data);
+        if (!res.ok || !parsed) {
+          setProvidersConfig(null);
+          setProvidersLoadError(
+            parseErrorMessage(data) ?? t("error.admin.providers_load_failed")
+          );
+          return;
+        }
+        setProvidersConfig(parsed);
+        setProvidersLoadError(null);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (canceled) return;
+        setProvidersConfig(null);
+        setProvidersLoadError(t("error.admin.providers_load_failed"));
+      });
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("remcochat:profileId");
@@ -558,15 +570,16 @@ export function HomeClient({
   }, [activeProfile, setUiLanguage, uiLanguage]);
 
   const activeProvider = useMemo(() => {
-    if (!providersConfig) return null;
+    const providers = providersConfig?.providers;
+    if (!providers || providers.length === 0) return null;
     return (
-      providersConfig.providers.find(
+      providers.find(
         (p) => p.id === providersConfig.activeProviderId
       ) ??
-      providersConfig.providers.find(
+      providers.find(
         (p) => p.id === providersConfig.defaultProviderId
       ) ??
-      providersConfig.providers[0] ??
+      providers[0] ??
       null
     );
   }, [providersConfig]);
@@ -4260,7 +4273,22 @@ export function HomeClient({
 	            </div>
 	          </header>
 
-          <StickToBottom
+            {providersLoadError ? (
+              <div className="px-[max(1rem,env(safe-area-inset-left,0px))] pt-3 pr-[max(1rem,env(safe-area-inset-right,0px))] sm:px-[max(1.375rem,env(safe-area-inset-left,0px))] md:px-[max(1.75rem,env(safe-area-inset-left,0px))]">
+                <div className={chatColumnMaxWidthClass}>
+                  <Alert
+                    className="border-destructive/50"
+                    data-testid="providers:load-error"
+                    variant="destructive"
+                  >
+                    <AlertTitle>{t("error.admin.providers_load_failed")}</AlertTitle>
+                    <AlertDescription>{providersLoadError}</AlertDescription>
+                  </Alert>
+                </div>
+              </div>
+            ) : null}
+	
+	          <StickToBottom
             className="relative min-h-0 flex-1 overflow-hidden"
             contextRef={stickToBottomContextRef}
             data-testid="chat:transcript"

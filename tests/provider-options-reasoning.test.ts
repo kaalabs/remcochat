@@ -105,6 +105,17 @@ test("xai omits reasoningEffort for unsupported models", () => {
   assert.equal(providerOptions, undefined);
 });
 
+test("xai omits reasoningEffort for grok-code-fast-1", () => {
+  const providerOptions = createProviderOptions({
+    modelType: "xai",
+    providerModelId: "grok-code-fast-1",
+    capabilities: reasoningCaps,
+    webToolsEnabled: false,
+    reasoning: reasoningConfig,
+  });
+  assert.equal(providerOptions, undefined);
+});
+
 test("xai omits reasoningEffort for unknown models", () => {
   const providerOptions = createProviderOptions({
     modelType: "xai",
