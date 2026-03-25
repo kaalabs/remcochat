@@ -2043,6 +2043,9 @@ export function AdminClient() {
                           >
                             <summary className="cursor-pointer select-none text-sm font-medium">
                               <span className="mr-2">{p.name}</span>
+                              <span className="text-xs font-normal text-muted-foreground">
+                                <code>{p.id}</code>
+                              </span>
                               <span className="ml-2 inline-flex items-center rounded-full border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                                 {draft.size} / {p.models.length}
                               </span>

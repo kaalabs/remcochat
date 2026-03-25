@@ -113,6 +113,9 @@ export function formatLlmCallErrorForUser(
 
   const statusHint = statusCode ? ` (${statusCode})` : "";
   const detail = message ?? asNonEmptyString((err as { message?: unknown })?.message) ?? null;
+  if (statusCode === null && !url && detail) {
+    return detail;
+  }
   const urlHint = url ? `\nURL: ${url}` : "";
   const detailHint = detail ? `\n\n${detail}` : "";
   return `${providerLabel} request failed${statusHint}.${urlHint}${detailHint}`;

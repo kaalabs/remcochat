@@ -31,6 +31,7 @@ function trimStationSegment(value: string): string {
   const stopIdx = out.search(STATION_SEGMENT_STOP_RE);
   if (stopIdx > 0) out = out.slice(0, stopIdx).trim();
   out = out.replace(/^[("'`]+/, "").replace(/[)"'`]+$/, "");
+  out = out.replace(/^station\s+/i, "");
   out = out.replace(/[.,;:!?]+$/, "");
   out = out.replace(/\s+/g, " ").trim();
   return out;

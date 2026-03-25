@@ -144,6 +144,17 @@ test("anthropic_messages enables thinking without streaming thoughts", () => {
   });
 });
 
+test("anthropic_messages gateway shim omits Anthropic reasoning options", () => {
+  const providerOptions = createProviderOptions({
+    modelType: "anthropic_messages",
+    providerModelId: "anthropic/claude-haiku-4.5",
+    capabilities: reasoningCaps,
+    webToolsEnabled: false,
+    reasoning: reasoningConfig,
+  });
+  assert.equal(providerOptions, undefined);
+});
+
 test("google_generative_ai enables thinking without includeThoughts", () => {
   const providerOptions = createProviderOptions({
     modelType: "google_generative_ai",

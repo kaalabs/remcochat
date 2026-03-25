@@ -38,3 +38,11 @@ test("formats generic provider error with status and url", () => {
   assert.match(text, /URL: https:\/\/example\.com\/v1\/responses/);
   assert.match(text, /Internal server error/);
 });
+
+test("passes through local non-provider errors unchanged", () => {
+  const err = new Error("List error: List not found.");
+
+  const text = formatLlmCallErrorForUser(err, { providerId: "example" });
+
+  assert.equal(text, "List error: List not found.");
+});

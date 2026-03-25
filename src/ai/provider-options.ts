@@ -18,6 +18,14 @@ function vendorFromProviderModelId(providerModelId: string) {
   return id.split("/")[0]?.toLowerCase() ?? "";
 }
 
+function isGatewayRoutedAnthropicModel(input: {
+  modelType: ModelType;
+  providerModelId: string;
+}) {
+  const vendor = vendorFromProviderModelId(input.providerModelId);
+  return vendor === "anthropic" && input.modelType === "anthropic_messages";
+}
+
 function reasoningEffortForOpenAI(effort: ReasoningConfig["effort"]) {
   // OpenAI supports: none|minimal|low|medium|high|xhigh. We intentionally keep the
   // RemcoChat config surface small and map directly.
@@ -102,6 +110,9 @@ export function createProviderOptions(input: {
       break;
     }
     case "anthropic_messages": {
+      if (isGatewayRoutedAnthropicModel(input)) {
+        break;
+      }
       appendOptions(out, "anthropic", {
         // Enable thinking; expose reasoning only when explicitly enabled.
         sendReasoning: input.reasoning.exposeToClient,

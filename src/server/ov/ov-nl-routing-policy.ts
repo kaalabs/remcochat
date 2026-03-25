@@ -11,25 +11,18 @@ export type OvNlRoutingPolicy = {
 
 function isSkillForced(input: {
   explicitSkillName?: string | null;
-  activatedSkillNames?: string[];
 }): boolean {
   const explicit = String(input.explicitSkillName ?? "").trim();
   if (explicit && explicit === OV_NL_SKILL_NAME) return true;
-
-  const activated = Array.isArray(input.activatedSkillNames)
-    ? input.activatedSkillNames.map((name) => String(name ?? "").trim()).filter(Boolean)
-    : [];
-  return activated.includes(OV_NL_SKILL_NAME);
+  return false;
 }
 
 export function computeOvNlRoutingPolicy(input: {
   routedIntent: IntentRoute | null;
   explicitSkillName?: string | null;
-  activatedSkillNames?: string[];
 }): OvNlRoutingPolicy {
   const skillForced = isSkillForced({
     explicitSkillName: input.explicitSkillName,
-    activatedSkillNames: input.activatedSkillNames,
   });
 
   const routerConfidence =

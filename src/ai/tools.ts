@@ -724,31 +724,36 @@ export function createTools(input: {
       },
     }),
     execute: async (inputData: any) => {
-      return runListAction(input.profileId, {
-        action: inputData.action,
-        listId: typeof inputData.list_id === "string" ? inputData.list_id : "",
-        listName: typeof inputData.list_name === "string" ? inputData.list_name : "",
-        listKind:
-          inputData.list_kind === "todo" || inputData.list_kind === "grocery"
-            ? inputData.list_kind
-            : undefined,
-        listOwner: typeof inputData.list_owner === "string" ? inputData.list_owner : "",
-        items: Array.isArray(inputData.items)
-          ? inputData.items.filter(
-              (value: unknown): value is string =>
-                typeof value === "string" && value.trim().length > 0,
-            )
-          : [],
-        itemIds: Array.isArray(inputData.item_ids)
-          ? inputData.item_ids.filter(
-              (value: unknown): value is string =>
-                typeof value === "string" && value.trim().length > 0,
-            )
-          : [],
-        newName: typeof inputData.new_name === "string" ? inputData.new_name : "",
-        targetProfile:
-          typeof inputData.target_profile === "string" ? inputData.target_profile : "",
-      });
+      try {
+        return runListAction(input.profileId, {
+          action: inputData.action,
+          listId: typeof inputData.list_id === "string" ? inputData.list_id : "",
+          listName: typeof inputData.list_name === "string" ? inputData.list_name : "",
+          listKind:
+            inputData.list_kind === "todo" || inputData.list_kind === "grocery"
+              ? inputData.list_kind
+              : undefined,
+          listOwner: typeof inputData.list_owner === "string" ? inputData.list_owner : "",
+          items: Array.isArray(inputData.items)
+            ? inputData.items.filter(
+                (value: unknown): value is string =>
+                  typeof value === "string" && value.trim().length > 0,
+              )
+            : [],
+          itemIds: Array.isArray(inputData.item_ids)
+            ? inputData.item_ids.filter(
+                (value: unknown): value is string =>
+                  typeof value === "string" && value.trim().length > 0,
+              )
+            : [],
+          newName: typeof inputData.new_name === "string" ? inputData.new_name : "",
+          targetProfile:
+            typeof inputData.target_profile === "string" ? inputData.target_profile : "",
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown list error.";
+        throw new Error(`List error: ${message}`);
+      }
     },
   });
   const displayListsOverview = createStrictTool({
@@ -782,39 +787,89 @@ export function createTools(input: {
             time: "09:30",
             duration_minutes: 30,
             timezone: "Europe/Amsterdam",
+            item_id: null,
+            match: null,
+            patch: null,
+            target_profile: null,
+            range: null,
+            include_overlaps: null,
           },
         },
         {
           input: {
             action: "update",
+            description: null,
+            date: null,
+            time: null,
+            duration_minutes: null,
+            timezone: null,
+            item_id: null,
             match: {
               description: "Dentist appointment",
               date: "2026-03-16",
+              time: null,
             },
             patch: {
+              description: null,
+              date: null,
               time: "10:00",
+              duration_minutes: null,
+              timezone: null,
             },
+            target_profile: null,
+            range: null,
+            include_overlaps: null,
           },
         },
         {
           input: {
             action: "delete",
+            description: null,
+            date: null,
+            time: null,
+            duration_minutes: null,
+            timezone: null,
             item_id: "agenda_123",
+            match: null,
+            patch: null,
+            target_profile: null,
+            range: null,
+            include_overlaps: null,
           },
         },
         {
           input: {
             action: "share",
+            description: null,
+            date: null,
+            time: null,
+            duration_minutes: null,
+            timezone: null,
             item_id: "agenda_123",
+            match: null,
+            patch: null,
             target_profile: "Work",
+            range: null,
+            include_overlaps: null,
           },
         },
         {
           input: {
             action: "list",
+            description: null,
+            date: null,
+            time: null,
+            duration_minutes: null,
+            timezone: null,
+            item_id: null,
+            match: null,
+            patch: null,
+            target_profile: null,
             range: {
               kind: "next_n_days",
               days: 7,
+              timezone: null,
+              week_start: null,
             },
             include_overlaps: true,
           },
@@ -1007,6 +1062,13 @@ export function createTools(input: {
                 date: "2026-03-16",
                 time: "09:30",
                 duration_minutes: 30,
+                timezone: null,
+                item_id: null,
+                match: null,
+                patch: null,
+                target_profile: null,
+                range: null,
+                include_overlaps: null,
               },
             },
           ],

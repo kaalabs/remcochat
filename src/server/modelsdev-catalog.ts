@@ -12,7 +12,7 @@ import {
   modelsdevProviderShow,
   modelsdevTimeoutMs,
   normalizeCapabilities,
-  requireModelTypeFromNpm,
+  requireModelTypeForProviderModel,
   requireModelsDevProviderNpm,
 } from "@/server/modelsdev";
 
@@ -86,7 +86,11 @@ function buildProviderCatalog(input: {
       modelId
     );
     const npm = String(raw.provider?.npm ?? providerNpm).trim() || providerNpm;
-    const modelType = requireModelTypeFromNpm(npm);
+    const modelType = requireModelTypeForProviderModel({
+      providerId: input.provider.id,
+      modelId,
+      npm,
+    });
     models[modelId] = {
       id: modelId,
       label: String(raw.name ?? modelId),

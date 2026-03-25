@@ -36,6 +36,17 @@ test("extractRouteFromText trims trailing date/time hints from station segments"
   });
 });
 
+test("extractRouteFromText strips leading 'station' from route segments", () => {
+  const route = extractRouteFromText(
+    "ik wil vanmiddag met de trein van station almere muziekwijk naar station groningen. geef me treinopties."
+  );
+
+  assert.deepEqual(route, {
+    from: "almere muziekwijk",
+    to: "groningen",
+  });
+});
+
 test("inferDirectnessFromText distinguishes strict vs preferred direct wording", () => {
   assert.equal(inferDirectnessFromText("ik wil directe treinopties"), "strict");
   assert.equal(inferDirectnessFromText("ik wil liefst direct reizen"), "preferred");

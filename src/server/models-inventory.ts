@@ -4,11 +4,12 @@ import type { ModelType } from "@/server/config";
 import {
   descriptionFromModelId,
   getModelsdevVersion,
+  isSupportedProviderModel,
   modelsdevProviderShowCached,
   modelsdevTimeoutMs,
   normalizeCapabilities,
   requireModelsDevProviderNpm,
-  tryModelTypeFromNpm,
+  tryModelTypeForProviderModel,
 } from "@/server/modelsdev";
 
 export type ModelsInventoryModel = {
@@ -98,14 +99,26 @@ export async function buildModelsInventory(): Promise<ModelsInventory> {
     const models: ModelsInventoryModel[] = Object.entries(modelsdev.models)
       .map(([modelId, raw]) => {
         const npm = String(raw.provider?.npm ?? providerNpm).trim() || null;
-        const modelType = npm ? tryModelTypeFromNpm(npm) : null;
+        const modelType = npm
+          ? tryModelTypeForProviderModel({
+              providerId: provider.id,
+              modelId,
+              npm,
+            })
+          : null;
         return {
           id: modelId,
           label: String(raw.name ?? modelId),
           description: npm ? descriptionFromModelId(modelId, npm) : undefined,
           npm,
           modelType,
-          supported: Boolean(modelType),
+          supported:
+            npm != null &&
+            isSupportedProviderModel({
+              providerId: provider.id,
+              modelId,
+              npm,
+            }),
           capabilities: normalizeCapabilities(raw),
           contextWindow: raw.limit?.context,
         };

@@ -45,24 +45,25 @@ try {
   const extra = [
     "",
     "[providers.e2e_alt]",
-    'name = "E2E OpenCode (default)"',
-    'base_url = "https://opencode.ai/zen/v1"',
-    'api_key_env = "OPENCODE_API_KEY"',
-    'modelsdev_provider_id = "opencode"',
-    'default_model_id = "gpt-5.2-codex"',
+    'name = "E2E OpenAI (default)"',
+    'base_url = "https://api.openai.com/v1"',
+    'api_key_env = "OPENAI_API_KEY"',
+    'modelsdev_provider_id = "openai"',
+    'default_model_id = "gpt-5.2"',
     "allowed_model_ids = [",
+    '  "gpt-4.1-mini",',
     '  "gpt-5.2",',
     '  "gpt-5.2-codex",',
     "]",
     "",
     "[providers.e2e_compat]",
-    'name = "E2E OpenCode (chat/completions)"',
-    'base_url = "https://opencode.ai/zen/v1"',
-    'api_key_env = "OPENCODE_API_KEY"',
-    'modelsdev_provider_id = "opencode"',
-    'default_model_id = "big-pickle"',
+    'name = "E2E OpenAI (chat/completions)"',
+    'base_url = "https://api.openai.com/v1"',
+    'api_key_env = "OPENAI_API_KEY"',
+    'modelsdev_provider_id = "openai"',
+    'default_model_id = "gpt-4.1-mini"',
     "allowed_model_ids = [",
-    '  "big-pickle",',
+    '  "gpt-4.1-mini",',
     "]",
     "",
     "[providers.e2e_vercel]",
@@ -101,16 +102,22 @@ try {
   // E2E tests pick deterministic, tool-capable models.
   configText = configText.replace(/\[providers\.opencode\][\s\S]*?(?=\n\[|$)/, (block) => {
     let out = block;
-    out = out.replace(/\bdefault_model_id\s*=\s*\"[^\"]+\"/, 'default_model_id = "gpt-5.2"');
+    out = out.replace(/\bname\s*=\s*\"[^\"]+\"/, 'name = "E2E Anthropic via Vercel Gateway"');
+    out = out.replace(
+      /\bbase_url\s*=\s*\"[^\"]+\"/,
+      'base_url = "https://ai-gateway.vercel.sh/v3/ai"'
+    );
+    out = out.replace(/\bapi_key_env\s*=\s*\"[^\"]+\"/, 'api_key_env = "VERCEL_AI_GATEWAY_API_KEY"');
+    out = out.replace(/\bmodelsdev_provider_id\s*=\s*\"[^\"]+\"/, 'modelsdev_provider_id = "vercel"');
+    out = out.replace(
+      /\bdefault_model_id\s*=\s*\"[^\"]+\"/,
+      'default_model_id = "anthropic/claude-haiku-4.5"'
+    );
     out = out.replace(
       /\ballowed_model_ids\s*=\s*\[[\s\S]*?\]\s*/m,
       [
         "allowed_model_ids = [",
-        '  "gpt-5.2",',
-        '  "gpt-5.2-codex",',
-        '  "claude-3-5-haiku",',
-        '  "claude-sonnet-4-5",',
-        '  "big-pickle",',
+        '  "anthropic/claude-haiku-4.5",',
         "]",
         "",
       ].join("\n")

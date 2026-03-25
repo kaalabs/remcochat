@@ -7,6 +7,12 @@ import { requireLocalCommandAllowed } from "@/server/local-access";
 
 const execFileAsync = promisify(execFile);
 
+const STABLE_PROVIDER_MODEL_IDS: Record<string, readonly string[]> = {
+  e2e_alt: ["gpt-4.1-mini", "gpt-5.2", "gpt-5.2-codex", "gpt-5-nano"],
+  e2e_compat: ["gpt-4.1-mini"],
+  opencode: ["anthropic/claude-haiku-4.5"],
+};
+
 const providerShowCache = new Map<
   string,
   { loadedAt: number; value: ModelsDevProviderShowResponse } | { loadedAt: number; promise: Promise<ModelsDevProviderShowResponse> }
@@ -151,10 +157,54 @@ export function tryModelTypeFromNpm(npm: string): ModelType | null {
   }
 }
 
+export function tryModelTypeForProviderModel(input: {
+  providerId: string;
+  modelId: string;
+  npm: string;
+}): ModelType | null {
+  const providerId = String(input.providerId ?? "").trim();
+  if (providerId === "e2e_compat") {
+    return "openai_compatible";
+  }
+  if (
+    providerId === "opencode" &&
+    String(input.modelId ?? "").trim().toLowerCase().startsWith("anthropic/")
+  ) {
+    return "anthropic_messages";
+  }
+  return tryModelTypeFromNpm(input.npm);
+}
+
+export function isSupportedProviderModel(input: {
+  providerId: string;
+  modelId: string;
+  npm: string;
+}): boolean {
+  const modelType = tryModelTypeForProviderModel(input);
+  if (!modelType) return false;
+
+  const stableModelIds = STABLE_PROVIDER_MODEL_IDS[String(input.providerId ?? "").trim()];
+  if (!stableModelIds) return true;
+
+  return stableModelIds.includes(String(input.modelId ?? "").trim());
+}
+
 export function requireModelTypeFromNpm(npm: string): ModelType {
   const t = tryModelTypeFromNpm(npm);
   if (!t) {
     throw new Error(`Unsupported model adapter npm: ${npm}`);
+  }
+  return t;
+}
+
+export function requireModelTypeForProviderModel(input: {
+  providerId: string;
+  modelId: string;
+  npm: string;
+}): ModelType {
+  const t = tryModelTypeForProviderModel(input);
+  if (!t) {
+    throw new Error(`Unsupported model adapter npm: ${input.npm}`);
   }
   return t;
 }

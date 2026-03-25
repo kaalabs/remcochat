@@ -1,5 +1,4 @@
-import { tool as createTool } from "ai";
-import { z } from "zod";
+import { jsonSchema, tool as createTool } from "ai";
 import { getConfig } from "@/server/config";
 
 type BraveWebResult = {
@@ -15,6 +14,22 @@ type BraveWebSearchResponse = {
     results?: BraveWebResult[];
   };
 };
+
+function createStrictTool(config: any) {
+  return createTool({
+    strict: true,
+    ...config,
+  });
+}
+
+function createStrictObjectJsonSchema(properties: Record<string, unknown>) {
+  return jsonSchema({
+    type: "object",
+    additionalProperties: false,
+    properties: properties as any,
+    required: Object.keys(properties),
+  });
+}
 
 function getBraveApiKey() {
   const key = String(
@@ -125,41 +140,53 @@ async function runBraveSearch(input: {
 }
 
 export function createBraveSearchTool() {
-  return createTool({
-    strict: true,
+  return createStrictTool({
     description:
       "Search the web with Brave Search and return compact, citation-friendly web results.",
-    inputSchema: z.object({
-      query: z.string().describe("The search query."),
-      num_results: z
-        .number()
-        .int()
-        .min(1)
-        .max(20)
-        .optional()
-        .describe("Number of results to return."),
-      freshness: z.enum(["day", "week", "month", "year"]).optional(),
-      include_domains: z
-        .array(z.string())
-        .optional()
-        .describe("Restrict results to these domains."),
-      exclude_domains: z
-        .array(z.string())
-        .optional()
-        .describe("Exclude results from these domains."),
-      country: z
-        .string()
-        .min(2)
-        .max(8)
-        .optional()
-        .describe("Optional country code for localization (for example: US, NL)."),
-      search_lang: z
-        .string()
-        .min(2)
-        .max(8)
-        .optional()
-        .describe("Optional search language code (for example: en, nl)."),
-    }).strict(),
+    inputSchema: createStrictObjectJsonSchema({
+      query: {
+        type: "string",
+        description: "The search query.",
+      },
+      num_results: {
+        type: ["integer", "null"],
+        minimum: 1,
+        maximum: 20,
+        default: null,
+        description: "Number of results to return.",
+      },
+      freshness: {
+        type: ["string", "null"],
+        enum: ["day", "week", "month", "year", null],
+        default: null,
+      },
+      include_domains: {
+        type: ["array", "null"],
+        items: { type: "string" },
+        default: null,
+        description: "Restrict results to these domains.",
+      },
+      exclude_domains: {
+        type: ["array", "null"],
+        items: { type: "string" },
+        default: null,
+        description: "Exclude results from these domains.",
+      },
+      country: {
+        type: ["string", "null"],
+        minLength: 2,
+        maxLength: 8,
+        default: null,
+        description: "Optional country code for localization (for example: US, NL).",
+      },
+      search_lang: {
+        type: ["string", "null"],
+        minLength: 2,
+        maxLength: 8,
+        default: null,
+        description: "Optional search language code (for example: en, nl).",
+      },
+    }),
     execute: async ({
       query,
       num_results,
@@ -168,7 +195,7 @@ export function createBraveSearchTool() {
       exclude_domains,
       country,
       search_lang,
-    }) => {
+    }: any) => {
       const config = getConfig().webTools;
       const maxResults = config?.maxResults ?? 8;
       const count = Math.max(1, Math.min(20, Math.floor(num_results ?? maxResults)));
@@ -179,17 +206,17 @@ export function createBraveSearchTool() {
       const fallbackExclude =
         config && config.blockedDomains.length > 0 ? config.blockedDomains : undefined;
 
-      const includeDomainsRaw = include_domains ?? fallbackInclude;
+      const includeDomainsRaw = Array.isArray(include_domains)
+        ? include_domains.filter((value: unknown): value is string => typeof value === "string")
+        : fallbackInclude;
       const excludeDomainsRaw = includeDomainsRaw
         ? undefined
-        : exclude_domains ?? fallbackExclude;
+        : Array.isArray(exclude_domains)
+          ? exclude_domains.filter((value: unknown): value is string => typeof value === "string")
+          : fallbackExclude;
 
-      const includeDomains = includeDomainsRaw
-        ?.map((d) => normalizeDomain(d))
-        .filter(Boolean);
-      const excludeDomains = excludeDomainsRaw
-        ?.map((d) => normalizeDomain(d))
-        .filter(Boolean);
+      const includeDomains = includeDomainsRaw?.map((domain) => normalizeDomain(domain)).filter(Boolean);
+      const excludeDomains = excludeDomainsRaw?.map((domain) => normalizeDomain(domain)).filter(Boolean);
 
       const response = await runBraveSearch({
         query,

@@ -781,6 +781,25 @@ export function HomeClient({
     window.localStorage.setItem(lastUsedModelKey(activeProfile.id), effectiveModelId);
   }, [activeProfile, effectiveModelId, isAllowedModel, lastUsedModelKey]);
 
+  const preferredNewChatModelId = useCallback(
+    (profileId: string) => {
+      if (!profileId) return "";
+      const stored = window.localStorage.getItem(lastUsedModelKey(profileId)) ?? "";
+      if (isAllowedModel(stored)) return stored;
+      if (activeProfile?.id === profileId && isAllowedModel(effectiveModelId)) {
+        return effectiveModelId;
+      }
+      return profileDefaultModelId;
+    },
+    [
+      activeProfile?.id,
+      effectiveModelId,
+      isAllowedModel,
+      lastUsedModelKey,
+      profileDefaultModelId,
+    ]
+  );
+
   const chatSessionKey = isTemporaryChat
     ? `temp:${temporarySessionId}`
     : activeChat?.id || "no-chat";
@@ -1188,19 +1207,21 @@ export function HomeClient({
     const res = await fetch(`/api/chats?profileId=${input.profileId}`);
     const data = (await res.json()) as { chats?: Chat[]; error?: string };
 
-	    let nextChats = data.chats ?? [];
-	    const hasUnarchived = nextChats.some((c) => !c.archivedAt);
-	    if (input.ensureAtLeastOne && !hasUnarchived) {
-	      const createRes = await fetch("/api/chats", {
-	        method: "POST",
-	        headers: { "Content-Type": "application/json" },
-	        body: JSON.stringify({
-	          profileId: input.profileId,
-	        }),
-	      });
-	      const created = (await createRes.json()) as { chat?: Chat };
-	      if (createRes.ok && created.chat) {
-	        let seededChat = created.chat;
+    let nextChats = data.chats ?? [];
+    const hasUnarchived = nextChats.some((c) => !c.archivedAt);
+    if (input.ensureAtLeastOne && !hasUnarchived) {
+      const modelId = preferredNewChatModelId(input.profileId);
+      const createRes = await fetch("/api/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId: input.profileId,
+          ...(modelId ? { modelId } : {}),
+        }),
+      });
+      const created = (await createRes.json()) as { chat?: Chat };
+      if (createRes.ok && created.chat) {
+        let seededChat = created.chat;
 
         const seedFolderId = String(input.seedFolderId ?? "").trim();
         if (seedFolderId) {
@@ -1246,8 +1267,8 @@ export function HomeClient({
         ? storedChatId
         : firstUnarchivedChatId || storedChatId || nextChats[0]?.id || "";
 
-	    setActiveChatId(nextActiveChatId);
-	  }, []);
+    setActiveChatId(nextActiveChatId);
+  }, [preferredNewChatModelId]);
 
   const refreshFoldersNonceRef = useRef(0);
   const refreshFolders = useCallback(async (profileId: string) => {
@@ -1469,20 +1490,22 @@ export function HomeClient({
   const createChat = useCallback(async () => {
     const profileId = activeProfile?.id ?? "";
     if (!profileId) return;
+    const modelId = preferredNewChatModelId(profileId);
 
-	    if (status !== "ready") stop();
-	    setIsTemporaryChat(false);
+    if (status !== "ready") stop();
+    setIsTemporaryChat(false);
 
-	    const res = await fetch("/api/chats", {
-	      method: "POST",
-	      headers: { "Content-Type": "application/json" },
-	      body: JSON.stringify({
-	        profileId,
-	      }),
-	    });
+    const res = await fetch("/api/chats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId,
+        ...(modelId ? { modelId } : {}),
+      }),
+    });
 
-	    const data = (await res.json()) as { chat?: Chat; error?: string };
-	    if (!res.ok || !data.chat) return;
+    const data = (await res.json()) as { chat?: Chat; error?: string };
+    if (!res.ok || !data.chat) return;
 
     const emptyMessages: UIMessage<RemcoChatMessageMetadata>[] = [];
     const emptyVariants: Record<string, UIMessage<RemcoChatMessageMetadata>[]> = {};
@@ -1508,11 +1531,12 @@ export function HomeClient({
       return next;
     });
     setActiveChatId(data.chat.id);
-	  }, [
-	    activeProfile?.id,
-	    status,
-	    stop,
-	  ]);
+  }, [
+    activeProfile?.id,
+    preferredNewChatModelId,
+    status,
+    stop,
+  ]);
 
   const archiveChatById = useCallback(
     async (chatId: string) => {
@@ -4162,6 +4186,7 @@ export function HomeClient({
                       <ProfileAvatar
                         name={activeProfile.name}
                         position={activeProfile.avatar?.position ?? null}
+                        showInitial={false}
                         sizePx={40}
                         src={getProfileAvatarSrc(activeProfile)}
                       />
@@ -4182,6 +4207,7 @@ export function HomeClient({
                         <ProfileAvatar
                           name={p.name}
                           position={p.avatar?.position ?? null}
+                          showInitial={false}
                           sizePx={28}
                           src={getProfileAvatarSrc(p)}
                         />
@@ -4383,8 +4409,8 @@ export function HomeClient({
 	                  className={
 	                    "h-9 w-9 px-0 " +
 	                    (isTemporaryChat
-	                      ? "border-emerald-500/60 text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 focus-visible:border-emerald-500 focus-visible:ring-emerald-500/40 dark:border-emerald-400/60 dark:text-emerald-300 dark:bg-emerald-400/12 dark:hover:bg-emerald-400/20 dark:focus-visible:border-emerald-400 dark:focus-visible:ring-emerald-400/40"
-	                      : "")
+	                      ? "border-destructive text-destructive bg-destructive/10 hover:bg-destructive/15 hover:text-destructive focus-visible:border-destructive focus-visible:ring-destructive/20"
+	                      : "border-ring text-ring bg-transparent hover:bg-ring/10 hover:text-ring focus-visible:border-ring focus-visible:ring-ring/30")
 	                  }
 	                  data-testid="chat:temporary-toggle"
 	                  onClick={() => toggleTemporaryChat()}
@@ -5667,7 +5693,12 @@ export function HomeClient({
                 >
 		              <PromptInput
 		                accept="text/plain,text/markdown,text/csv,application/json,application/pdf,.txt,.md,.markdown,.csv,.json,.pdf"
-		                className="composer-scale bg-sidebar"
+		                className={
+                    "composer-scale bg-sidebar " +
+                    (isTemporaryChat
+                      ? "[&_[data-slot=input-group]]:!border-destructive [&_[data-slot=input-group]]:bg-destructive/5"
+                      : "")
+                  }
                   convertBlobUrlsToDataUrls={false}
                   maxFileSize={2_000_000}
                   maxFiles={3}
@@ -5813,13 +5844,13 @@ export function HomeClient({
                     </button>
                   )}
 
-	                <PromptInputSubmit
-	                  className="h-16 w-16 dark:text-white"
-	                  data-testid="composer:submit"
-	                  disabled={!canSend || !chatRequestBody}
-	                  status={status}
-	                  variant="default"
-	                />
+                  <PromptInputSubmit
+                    className="h-16 w-16 dark:text-white"
+                    data-testid="composer:submit"
+                    disabled={!canSend || !chatRequestBody}
+                    status={status}
+                    variant={isTemporaryChat ? "destructive" : "default"}
+                  />
                 </div>
 
                 <div className="mt-2 flex min-h-10 basis-full items-center justify-between gap-2 border-t px-2 pt-2 pb-3">

@@ -55,6 +55,8 @@ import {
 } from "@/lib/reasoning-effort";
 import {
   isOvNlErrorLikeOutput,
+  shouldContinueOvRecovery,
+  shouldRetryOvAutoRecovery,
 } from "@/lib/ov-nl-recovery";
 import {
   getWeatherForLocation,
@@ -107,6 +109,10 @@ export const maxDuration = 30;
 
 const REMCOCHAT_API_VERSION = "instruction-frame-v1";
 type StreamTextToolSet = NonNullable<Parameters<typeof streamText>[0]["tools"]>;
+type StreamTextModel = Parameters<typeof streamText>[0]["model"];
+type StreamTextMessages = NonNullable<Parameters<typeof streamText>[0]["messages"]>;
+type StreamTextProviderOptions = Parameters<typeof streamText>[0]["providerOptions"];
+const OV_FAST_PATH_RECOVERY_RETRIES = 1;
 
 function createDisabledToolBundle(): ToolBundle {
   return createToolBundle({ enabled: false, entries: [] });
@@ -180,6 +186,55 @@ function ovConstraintNoMatchQuestion(output: unknown): string {
     return `No exact match with your strict constraints. Should I relax this: ${suggested[0]}?`;
   }
   return "No exact match with your strict constraints. Which one constraint should I relax?";
+}
+
+function formatOvFastPathRecoveryPrompt(input: {
+  userText: string;
+  command: { action: string; args?: Record<string, unknown> };
+  lastOvOutput: unknown;
+  allowRetry: boolean;
+  retriesRemaining: number;
+}): string {
+  return [
+    "The previous ovNlGateway fast-path call needs recovery.",
+    input.userText ? `Original user request: ${input.userText}` : "",
+    "Previous ovNlGateway command:",
+    JSON.stringify(
+      {
+        action: input.command.action,
+        args: input.command.args ?? {},
+      },
+      null,
+      2
+    ),
+    "Previous ovNlGateway output:",
+    JSON.stringify(input.lastOvOutput, null, 2),
+    input.allowRetry
+      ? [
+          `You may retry ovNlGateway at most ${input.retriesRemaining} time if there is an obvious safe repair you can infer from the user's wording.`,
+          "Safe repair example: strip a leading 'station ' token from station names in from/to/station fields.",
+          "If no safe repair is obvious, do not call tools. Ask one concise clarification question in the user's language.",
+          "Do not use any tool other than ovNlGateway.",
+        ].join("\n")
+      : "Do not call any tools now. Ask one concise clarification question in the user's language.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function fastPathContinuationMessageMetadata(input?: RemcoChatMessageMetadata) {
+  return ({ part }: { part: TextStreamPart<StreamTextToolSet> }) => {
+    if (part.type === "start") return input;
+    if (part.type === "finish") {
+      return input
+        ? {
+            ...input,
+            usage: part.totalUsage,
+          }
+        : undefined;
+    }
+    return undefined;
+  };
 }
 
 function previousUserMessageText(
@@ -895,10 +950,24 @@ function uiOvNlResponse(input: {
   executeOvGateway: (input: unknown) => Promise<unknown>;
   messageMetadata?: RemcoChatMessageMetadata;
   headers?: HeadersInit;
+  recovery?: {
+    userText: string;
+    model: StreamTextModel;
+    system: string;
+    messages: StreamTextMessages;
+    providerOptions?: StreamTextProviderOptions;
+    sendReasoning: boolean;
+    temperature?: number;
+    ovTools: StreamTextToolSet;
+  };
 }) {
   const messageId = nanoid();
   const toolCallId = nanoid();
-  const stream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
+  const errorTextFromError = (err: unknown) =>
+    err instanceof Error && err.message.trim()
+      ? err.message
+      : "Failed to continue OV recovery.";
+  const baseStream = createUIMessageStream<UIMessage<RemcoChatMessageMetadata>>({
     generateId: nanoid,
     execute: async ({ writer }) => {
       writer.write({
@@ -926,6 +995,14 @@ function uiOvNlResponse(input: {
           output,
         });
         const noMatchQuestion = ovConstraintNoMatchQuestion(output);
+        const shouldContinue = Boolean(
+          input.recovery &&
+            shouldContinueOvRecovery({
+              finishReason: "tool-calls",
+              lastOvOutput: output,
+              hasTextDelta: Boolean(noMatchQuestion),
+            })
+        );
         if (noMatchQuestion) {
           writer.write({ type: "text-start", id: messageId });
           writer.write({
@@ -935,6 +1012,11 @@ function uiOvNlResponse(input: {
           });
           writer.write({ type: "text-end", id: messageId });
         }
+        writer.write({
+          type: "finish",
+          finishReason: shouldContinue ? "tool-calls" : "stop",
+          messageMetadata: input.messageMetadata,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to execute ovNlGateway.";
         writer.write({
@@ -949,13 +1031,97 @@ function uiOvNlResponse(input: {
           delta: `OV NL error: ${message}`,
         });
         writer.write({ type: "text-end", id: messageId });
+        writer.write({
+          type: "finish",
+          finishReason: "stop",
+          messageMetadata: input.messageMetadata,
+        });
       }
-      writer.write({
-        type: "finish",
-        finishReason: "stop",
-        messageMetadata: input.messageMetadata,
-      });
     },
+  });
+
+  if (!input.recovery) {
+    return createUIMessageStreamResponse({ stream: baseStream, headers: input.headers });
+  }
+  const recovery = input.recovery;
+
+  const stream = createUIMessageStreamWithFatalErrorFallback({
+    stream: createUIMessageStreamWithDeferredContinuation({
+      stream: baseStream,
+      collect: (inspectionStream) =>
+        collectUIMessageChunks(inspectionStream, {
+          isWebToolName,
+          captureChunks: false,
+          trackToolOutputsByName: ["ovNlGateway"],
+        }),
+      createContinuationStream: async (collected) => {
+        const ovOutputs = collected.toolOutputsByName.get("ovNlGateway") ?? [];
+        const lastOvOutput = ovOutputs.length > 0 ? ovOutputs[ovOutputs.length - 1] : null;
+        if (
+          !shouldContinueOvRecovery({
+            finishReason: collected.finishReason,
+            lastOvOutput,
+            hasTextDelta: collected.hasTextDelta,
+          })
+        ) {
+          return null;
+        }
+
+        const allowRetry = shouldRetryOvAutoRecovery({
+          lastOvOutput,
+          retriesRemaining: OV_FAST_PATH_RECOVERY_RETRIES,
+          hasTextDelta: collected.hasTextDelta,
+        });
+        const continuationText = formatOvFastPathRecoveryPrompt({
+          userText: recovery.userText,
+          command: input.command,
+          lastOvOutput,
+          allowRetry,
+          retriesRemaining: OV_FAST_PATH_RECOVERY_RETRIES,
+        });
+        const continuationMessages = recovery.messages.concat([
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: continuationText }],
+          },
+        ]);
+
+        const continued = streamText({
+          model: recovery.model,
+          system: recovery.system,
+          messages: continuationMessages,
+          ...(allowRetry ? { tools: recovery.ovTools, toolChoice: "auto" as const } : { toolChoice: "none" as const }),
+          ...(recovery.temperature !== undefined
+            ? { temperature: recovery.temperature }
+            : {}),
+          ...(recovery.providerOptions
+            ? { providerOptions: recovery.providerOptions }
+            : {}),
+          stopWhen: [stepCountIs(4)],
+        });
+
+        const continuedStream = continued.toUIMessageStream<
+          UIMessage<RemcoChatMessageMetadata>
+        >({
+          generateMessageId: nanoid,
+          messageMetadata: fastPathContinuationMessageMetadata(input.messageMetadata),
+          sendReasoning: recovery.sendReasoning,
+          onError: (err) =>
+            err instanceof Error && err.message.trim()
+              ? err.message
+              : "Failed to continue OV recovery.",
+        });
+        const safeContinuedStream = createUIMessageStreamWithToolErrorContinuation({
+          stream: continuedStream,
+          shouldContinue: () => false,
+          createContinuationStream: async () => null,
+        });
+        return stripUIMessageStream(safeContinuedStream, { dropStart: true });
+      },
+    }),
+    createMessageId: nanoid,
+    messageMetadata: input.messageMetadata,
+    errorTextFromError,
   });
 
   return createUIMessageStreamResponse({ stream, headers: input.headers });
@@ -971,6 +1137,15 @@ async function tryOvIntentFastPath(input: {
   messages: UIMessage<RemcoChatMessageMetadata>[];
   messageMetadata?: RemcoChatMessageMetadata;
   headers?: HeadersInit;
+  recovery?: {
+    model: StreamTextModel;
+    system: string;
+    messages: StreamTextMessages;
+    providerOptions?: StreamTextProviderOptions;
+    sendReasoning: boolean;
+    temperature?: number;
+    ovTools: StreamTextToolSet;
+  };
 }): Promise<Response | null> {
   if (!input.enabled) return null;
   if (!input.shouldTry) return null;
@@ -1029,6 +1204,18 @@ async function tryOvIntentFastPath(input: {
     executeOvGateway: input.executeOvGateway,
     messageMetadata: input.messageMetadata,
     headers: input.headers,
+    recovery: input.recovery
+      ? {
+          userText: input.text,
+          model: input.recovery.model,
+          system: input.recovery.system,
+          messages: input.recovery.messages,
+          providerOptions: input.recovery.providerOptions,
+          sendReasoning: input.recovery.sendReasoning,
+          temperature: input.recovery.temperature,
+          ovTools: input.recovery.ovTools,
+        }
+      : undefined,
   });
 }
 
@@ -2737,7 +2924,6 @@ export async function POST(req: Request) {
   const ovNlPolicy = computeOvNlRoutingPolicy({
     routedIntent,
     explicitSkillName: skillInvocation.explicitSkillName,
-    activatedSkillNames: effectiveChat.activatedSkillNames,
   });
 
   const systemParts: string[] = [
@@ -2908,6 +3094,20 @@ export async function POST(req: Request) {
       "x-remcochat-temporary": "0",
       "x-remcochat-profile-id": profile.id,
       "x-remcochat-chat-id": effectiveChat.id,
+    },
+    recovery: {
+      model: resolved.model,
+      system,
+      messages: modelMessages,
+      providerOptions,
+      sendReasoning: config.reasoning.exposeToClient,
+      temperature:
+        resolved.capabilities.temperature && !resolved.capabilities.reasoning
+          ? isRegenerate
+            ? 0.9
+            : 0
+          : undefined,
+      ovTools: ovNlTools.tools as StreamTextToolSet,
     },
   });
   if (ovFastPath) return ovFastPath;

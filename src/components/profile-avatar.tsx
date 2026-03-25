@@ -15,6 +15,7 @@ export function ProfileAvatar(props: {
   sizePx?: number;
   className?: string;
   title?: string;
+  showInitial?: boolean;
 }) {
   const sizePx = props.sizePx ?? 24;
   const position = props.position ?? { x: 50, y: 50 };
@@ -46,6 +47,7 @@ export function ProfileAvatar(props: {
   const trimmed = String(props.name ?? "").trim();
   const initial = trimmed ? trimmed[0]!.toUpperCase() : "?";
   const hue = hueFromString(trimmed || "?");
+  const showInitial = props.showInitial !== false;
 
   return (
     <div
@@ -60,7 +62,7 @@ export function ProfileAvatar(props: {
       }}
       title={title}
     >
-      {initial}
+      {showInitial ? initial : null}
     </div>
   );
 }

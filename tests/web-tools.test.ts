@@ -183,3 +183,34 @@ allowed_model_ids = ["grok-4"]
   assert.ok("exa_search" in tools);
   assert.ok(!("brave_search" in tools));
 });
+
+test("anthropic_messages gateway shim uses local search tools", () => {
+  const configPath = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "opencode"
+
+[app.web_tools]
+enabled = true
+search_provider = "exa"
+
+[providers.opencode]
+name = "OpenCode"
+api_key_env = "OPENCODE_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "anthropic/claude-haiku-4.5"
+allowed_model_ids = ["anthropic/claude-haiku-4.5"]
+`);
+
+  process.env.REMCOCHAT_CONFIG_PATH = configPath;
+  const { enabled, tools } = createWebTools({
+    providerId: "opencode",
+    modelType: "anthropic_messages",
+    providerModelId: "anthropic/claude-haiku-4.5",
+  });
+  assert.equal(enabled, true);
+  assert.ok("exa_search" in tools);
+  assert.ok(!("web_search" in tools));
+  assert.ok(!("web_fetch" in tools));
+});

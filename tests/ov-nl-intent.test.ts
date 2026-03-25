@@ -48,6 +48,15 @@ test("computeOvNlRoutingPolicy allows OV when explicitly invoked via skill", () 
   assert.equal(policy.toolAllowedForPrompt, true);
 });
 
+test("computeOvNlRoutingPolicy does not force OV from activated skill context alone", () => {
+  const policy = computeOvNlRoutingPolicy({
+    routedIntent: { intent: "none", confidence: 0.2 },
+  });
+  assert.equal(policy.skillForced, false);
+  assert.equal(policy.forceFastPath, false);
+  assert.equal(policy.toolAllowedForPrompt, undefined);
+});
+
 test("computeOvNlRoutingPolicy leaves prompt gating unset when router did not run", () => {
   const policy = computeOvNlRoutingPolicy({
     routedIntent: null,

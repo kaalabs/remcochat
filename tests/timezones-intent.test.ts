@@ -6,9 +6,12 @@ import {
 } from "../src/server/timezones-intent";
 
 test("isTimezonesUserQuery detects explicit timezone/time questions", () => {
-  assert.equal(isTimezonesUserQuery("What time is it in Tokyo right now?"), true);
+  assert.equal(
+    isTimezonesUserQuery("What is the current time in Almere, Tokyo, and New York?"),
+    true
+  );
   assert.equal(isTimezonesUserQuery("Convert 09:30 PST to CET"), true);
-  assert.equal(isTimezonesUserQuery("Hoe laat is het nu in Amsterdam?"), true);
+  assert.equal(isTimezonesUserQuery("Hoe laat is het in Amsterdam en Tokyo?"), true);
   assert.equal(isTimezonesUserQuery("tijdzones"), true);
 });
 
@@ -20,6 +23,16 @@ test("isTimezonesUserQuery ignores agenda scheduling prompts", () => {
 test("isCurrentDateTimeUserQuery detects date questions", () => {
   assert.equal(isCurrentDateTimeUserQuery("What's today's date?"), true);
   assert.equal(isCurrentDateTimeUserQuery("Welke dag is het vandaag?"), true);
+  assert.equal(isCurrentDateTimeUserQuery("What time is it in Tokyo right now?"), true);
+  assert.equal(isCurrentDateTimeUserQuery("Hoe laat is het nu in Amsterdam?"), true);
+});
+
+test("isCurrentDateTimeUserQuery excludes multi-location time comparisons", () => {
+  assert.equal(
+    isCurrentDateTimeUserQuery("What is the current time in Almere, Tokyo, and New York?"),
+    false
+  );
+  assert.equal(isCurrentDateTimeUserQuery("Convert 09:30 PST to CET"), false);
 });
 
 test("isCurrentDateTimeUserQuery ignores agenda scheduling prompts", () => {

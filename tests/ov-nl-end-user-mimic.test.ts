@@ -194,6 +194,19 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   process.env.NS_APP_SUBSCRIPTION_KEY = "test-key";
 }
 
+async function executePrompt(prompt: string) {
+  const routed = await routeOvNlCommand({ text: prompt });
+  assert.equal(routed.ok, true);
+  if (!routed.ok) return routed;
+
+  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
+  const tools = createOvNlTools({ request: req });
+  assert.equal(tools.enabled, true);
+
+  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
+  return ovNlGateway.execute({ action: routed.command.action, args: routed.command.args });
+}
+
 async function runPrompt(prompt: string) {
   const routed = await routeOvNlCommand({ text: prompt });
   assert.equal(routed.ok, true);
@@ -205,13 +218,27 @@ async function runPrompt(prompt: string) {
   assert.equal(intent?.hard?.directOnly, true);
   assert.equal(intent?.hard?.maxTransfers, 0);
 
-  const req = new Request("http://localhost/api/chat", { headers: { host: "localhost" } });
-  const tools = createOvNlTools({ request: req });
-  assert.equal(tools.enabled, true);
-
-  const ovNlGateway = (tools.tools as Record<string, { execute: (input: unknown) => Promise<unknown> }>).ovNlGateway;
-  return ovNlGateway.execute({ action: routed.command.action, args: routed.command.args });
+  return executePrompt(prompt);
 }
+
+test("end-user prompt with explicit 'station' prefixes still resolves both stations", async () => {
+  setupOvConfig();
+  mockFetchForPrompt({ includeDirect: true });
+
+  const output = (await executePrompt(
+    "ik wil vanmiddag met de trein van station almere muziekwijk naar station groningen. geef me treinopties."
+  )) as {
+    kind: string;
+    error?: { code?: string };
+    from?: { nameLong?: unknown };
+    to?: { nameLong?: unknown };
+  };
+
+  assert.equal(output.kind, "trips.search");
+  assert.equal(output.error?.code, undefined);
+  assert.equal(output.from?.nameLong, "Almere Muziekwijk");
+  assert.equal(output.to?.nameLong, "Groningen");
+});
 
 test("end-user prompt returns only direct trips when direct options exist", async () => {
   setupOvConfig();

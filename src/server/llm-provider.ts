@@ -235,6 +235,20 @@ async function resolveModelForProvider(
       };
     }
     case "anthropic_messages": {
+      if (
+        provider.id === "opencode" &&
+        provider.baseUrl.includes("ai-gateway.vercel.sh")
+      ) {
+        const gateway = getVercelGatewayClient(provider);
+        return {
+          providerId,
+          modelType,
+          modelId: resolvedModelId,
+          providerModelId,
+          capabilities,
+          model: gateway(providerModelId),
+        };
+      }
       const anthropic = getAnthropicCompatibleClient(provider);
       return {
         providerId,

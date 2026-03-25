@@ -2,11 +2,11 @@ import fs from "node:fs";
 import { getConfigFilePath, parseConfigToml, resetConfigCache } from "@/server/config";
 import { resetModelsDevCatalogCache } from "@/server/modelsdev-catalog";
 import {
+  isSupportedProviderModel,
   modelsdevProviderShowCached,
   modelsdevTimeoutMs,
   requireModelsDevProviderNpm,
   resetModelsdevProviderShowCache,
-  tryModelTypeFromNpm,
 } from "@/server/modelsdev";
 import {
   updateProviderAllowedModelIdsInToml,
@@ -32,6 +32,7 @@ function normalizeModelIdList(values: string[]): string[] {
 }
 
 async function getSupportedModelIdsForProvider(input: {
+  providerId: string;
   modelsdevProviderId: string;
 }): Promise<Set<string>> {
   const timeoutMs = modelsdevTimeoutMs();
@@ -41,7 +42,13 @@ async function getSupportedModelIdsForProvider(input: {
 
   for (const [modelId, raw] of Object.entries(show.models)) {
     const npm = String(raw.provider?.npm ?? providerNpm).trim() || providerNpm;
-    if (tryModelTypeFromNpm(npm)) {
+    if (
+      isSupportedProviderModel({
+        providerId: input.providerId,
+        modelId,
+        npm,
+      })
+    ) {
       supportedModelIds.add(modelId);
     }
   }
@@ -127,6 +134,7 @@ export async function updateProviderAllowedModelsInConfigToml(input: {
     throw new Error("allowedModelIds must not be empty.");
   }
   const supportedModelIds = await getSupportedModelIdsForProvider({
+    providerId: provider.id,
     modelsdevProviderId: provider.modelsdevProviderId,
   });
   assertModelIdsSupported({
@@ -202,6 +210,7 @@ export async function updateRouterModelInConfigToml(input: {
   }
 
   const supportedModelIds = await getSupportedModelIdsForProvider({
+    providerId: provider.id,
     modelsdevProviderId: provider.modelsdevProviderId,
   });
   assertModelIdsSupported({
@@ -265,6 +274,7 @@ export async function updateProviderDefaultModelInConfigToml(input: {
   }
 
   const supportedModelIds = await getSupportedModelIdsForProvider({
+    providerId: provider.id,
     modelsdevProviderId: provider.modelsdevProviderId,
   });
   assertModelIdsSupported({

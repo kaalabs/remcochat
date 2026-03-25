@@ -1,6 +1,5 @@
 import { webSearch as createRegistryExaSearchTool } from "@exalabs/ai-sdk";
-import { tool as createTool } from "ai";
-import { z } from "zod";
+import { jsonSchema, tool as createTool } from "ai";
 import { getConfig } from "@/server/config";
 
 type ExaSearchResult = {
@@ -30,6 +29,15 @@ function createStrictTool(config: any) {
   });
 }
 
+function createStrictObjectJsonSchema(properties: Record<string, unknown>) {
+  return jsonSchema({
+    type: "object",
+    additionalProperties: false,
+    properties: properties as any,
+    required: Object.keys(properties),
+  });
+}
+
 function toPositiveInteger(value: unknown, fallback: number, limits: { min: number; max: number }) {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -40,53 +48,66 @@ export function createExaSearchTool() {
   return createStrictTool({
     description:
       "Search the web with Exa and return content optimized for LLMs (highlights + capped full text).",
-    inputSchema: z
-      .object({
-        query: z.string().describe("The search query."),
-        num_results: z
-          .number()
-          .int()
-          .min(1)
-          .max(25)
-          .optional()
-          .describe("Number of results to return."),
-        type: z.enum(["instant", "neural", "fast", "auto", "deep"]).optional(),
-        livecrawl: z.enum(["never", "fallback", "preferred", "always"]).optional(),
-        livecrawl_timeout_ms: z
-          .number()
-          .int()
-          .min(1000)
-          .max(60_000)
-          .optional(),
-        text_max_characters: z
-          .number()
-          .int()
-          .min(1000)
-          .max(100_000)
-          .optional()
-          .describe("Max characters of full text to return per result."),
-        highlights_num_sentences: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional(),
-        highlights_per_url: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .optional(),
-        include_domains: z
-          .array(z.string())
-          .optional()
-          .describe("Restrict results to these domains."),
-        exclude_domains: z
-          .array(z.string())
-          .optional()
-          .describe("Exclude results from these domains."),
-      })
-      .strict(),
+    inputSchema: createStrictObjectJsonSchema({
+      query: {
+        type: "string",
+        description: "The search query.",
+      },
+      num_results: {
+        type: ["integer", "null"],
+        minimum: 1,
+        maximum: 25,
+        default: null,
+        description: "Number of results to return.",
+      },
+      type: {
+        type: ["string", "null"],
+        enum: ["instant", "neural", "fast", "auto", "deep", null],
+        default: null,
+      },
+      livecrawl: {
+        type: ["string", "null"],
+        enum: ["never", "fallback", "preferred", "always", null],
+        default: null,
+      },
+      livecrawl_timeout_ms: {
+        type: ["integer", "null"],
+        minimum: 1000,
+        maximum: 60_000,
+        default: null,
+      },
+      text_max_characters: {
+        type: ["integer", "null"],
+        minimum: 1000,
+        maximum: 100_000,
+        default: null,
+        description: "Max characters of full text to return per result.",
+      },
+      highlights_num_sentences: {
+        type: ["integer", "null"],
+        minimum: 1,
+        maximum: 10,
+        default: null,
+      },
+      highlights_per_url: {
+        type: ["integer", "null"],
+        minimum: 1,
+        maximum: 10,
+        default: null,
+      },
+      include_domains: {
+        type: ["array", "null"],
+        items: { type: "string" },
+        default: null,
+        description: "Restrict results to these domains.",
+      },
+      exclude_domains: {
+        type: ["array", "null"],
+        items: { type: "string" },
+        default: null,
+        description: "Exclude results from these domains.",
+      },
+    }),
     execute: async ({
       query,
       num_results,

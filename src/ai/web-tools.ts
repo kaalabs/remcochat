@@ -13,6 +13,26 @@ import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bu
 
 export type WebToolsResult = ToolBundle;
 
+function createLocalSearchBundle(searchProvider: "exa" | "brave") {
+  return createToolBundle({
+    enabled: true,
+    entries: [
+      defineToolEntry({
+        name: searchProvider === "brave" ? "brave_search" : "exa_search",
+        metadata: {
+          group: "web",
+          risk: "safe",
+          strict: true,
+        },
+        tool:
+          searchProvider === "brave"
+            ? createBraveSearchTool()
+            : createExaSearchTool(),
+      }),
+    ],
+  });
+}
+
 export function createWebTools(input: {
   providerId: string;
   modelType: ModelType;
@@ -119,48 +139,21 @@ export function createWebTools(input: {
       });
     }
     case "openai_compatible": {
-      const searchProvider = web.searchProvider;
-      return createToolBundle({
-        enabled: true,
-        entries: [
-          defineToolEntry({
-            name: searchProvider === "brave" ? "brave_search" : "exa_search",
-            metadata: {
-              group: "web",
-              risk: "safe",
-              strict: true,
-            },
-            tool:
-              searchProvider === "brave"
-                ? createBraveSearchTool()
-                : createExaSearchTool(),
-          }),
-        ],
-      });
+      return createLocalSearchBundle(web.searchProvider);
     }
     case "xai": {
       // Use local web-search tools for xAI to avoid deprecated Chat live-search
       // parameters while preserving RemcoChat's existing tool flow.
-      const searchProvider = web.searchProvider;
-      return createToolBundle({
-        enabled: true,
-        entries: [
-          defineToolEntry({
-            name: searchProvider === "brave" ? "brave_search" : "exa_search",
-            metadata: {
-              group: "web",
-              risk: "safe",
-              strict: true,
-            },
-            tool:
-              searchProvider === "brave"
-                ? createBraveSearchTool()
-                : createExaSearchTool(),
-          }),
-        ],
-      });
+      return createLocalSearchBundle(web.searchProvider);
     }
     case "anthropic_messages": {
+      if (input.providerModelId.startsWith("anthropic/")) {
+        // Gateway-routed Anthropic models are exposed as anthropic_messages in
+        // RemcoChat's catalog, but Anthropic-native provider-defined web tools
+        // attach beta headers the gateway path rejects. Keep web access via the
+        // local search tools instead.
+        return createLocalSearchBundle(web.searchProvider);
+      }
       const anthropic = getAnthropicProviderForProviderId(input.providerId);
       const allowedDomains =
         web.allowedDomains.length > 0 ? web.allowedDomains : undefined;
@@ -205,24 +198,7 @@ export function createWebTools(input: {
       // The Google adapter exposes provider-defined tools (google_search, url_context),
       // but RemcoChat always also supplies function tools. The AI SDK does not support
       // mixing these for Gemini, so we use local web-search tools here.
-      const searchProvider = web.searchProvider;
-      return createToolBundle({
-        enabled: true,
-        entries: [
-          defineToolEntry({
-            name: searchProvider === "brave" ? "brave_search" : "exa_search",
-            metadata: {
-              group: "web",
-              risk: "safe",
-              strict: true,
-            },
-            tool:
-              searchProvider === "brave"
-                ? createBraveSearchTool()
-                : createExaSearchTool(),
-          }),
-        ],
-      });
+      return createLocalSearchBundle(web.searchProvider);
     }
     default:
       return createToolBundle({ enabled: false, entries: [] });
