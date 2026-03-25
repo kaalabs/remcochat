@@ -216,6 +216,11 @@ export const enMessages = {
   "admin.providers.notice.updated": "Active provider updated.",
   "admin.providers.description":
     "Switching is global and persistent for this server instance. Existing chats keep their stored model ids; RemcoChat clamps them to the active provider’s allowed models.",
+  "admin.providers.badge.default": "Default",
+  "admin.providers.status.degraded": "Metadata unavailable",
+  "admin.providers.status.current_failed":
+    "Current provider \"{provider}\" failed to load. You can still switch to a different provider.",
+  "admin.providers.status.provider_failed": "Provider metadata unavailable: {error}",
   "admin.web_search.title": "Search the Web",
   "admin.web_search.description":
     "Select the web search provider used for openai_compatible and xai models.",
@@ -583,6 +588,7 @@ export const enMessages = {
   "error.profile.avatar_save_failed": "Failed to save profile photo.",
   "error.profile.delete_failed": "Failed to delete profile.",
   "error.admin.reset_failed": "Failed to reset.",
+  "error.admin.provider_switcher_load_failed": "Failed to load provider switcher.",
   "error.admin.providers_load_failed": "Failed to load providers.",
   "error.admin.switch_provider_failed": "Failed to switch provider.",
   "error.admin.models_inventory_load_failed": "Failed to load models inventory.",
@@ -809,6 +815,12 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "admin.providers.notice.updated": "Actieve provider bijgewerkt.",
   "admin.providers.description":
     "Wisselen is globaal en blijvend voor deze server-instantie. Bestaande chats behouden hun opgeslagen model-id’s; RemcoChat beperkt ze tot de toegestane modellen van de actieve provider.",
+  "admin.providers.badge.default": "Standaard",
+  "admin.providers.status.degraded": "Metadata niet beschikbaar",
+  "admin.providers.status.current_failed":
+    "De huidige provider \"{provider}\" kon niet worden geladen. Je kunt nog steeds naar een andere provider wisselen.",
+  "admin.providers.status.provider_failed":
+    "Providermetadata niet beschikbaar: {error}",
   "admin.web_search.title": "Zoeken op het Web",
   "admin.web_search.description":
     "Selecteer de webzoekprovider voor openai_compatible en xai modellen.",
@@ -1177,6 +1189,8 @@ export const nlMessages: Record<keyof typeof enMessages, string> = {
   "error.profile.avatar_save_failed": "Profielfoto opslaan mislukt.",
   "error.profile.delete_failed": "Profiel verwijderen mislukt.",
   "error.admin.reset_failed": "Reset mislukt.",
+  "error.admin.provider_switcher_load_failed":
+    "Providerwisselaar laden mislukt.",
   "error.admin.providers_load_failed": "Providers laden mislukt.",
   "error.admin.switch_provider_failed": "Provider wisselen mislukt.",
   "error.admin.models_inventory_load_failed": "Models inventory laden mislukt.",
