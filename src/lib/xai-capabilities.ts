@@ -24,6 +24,7 @@ const XAI_REASONING_UNSUPPORTED_MODEL_IDS = new Set<string>([
   "grok-2-image",
   "grok-2-image-latest",
   "grok-2-image-1212",
+  "grok-code-fast-1",
   "grok-beta",
   "grok-vision-beta",
 ]);
@@ -43,7 +44,6 @@ export function xaiReasoningEffortSupport(
   if (id.includes("reasoning")) return "supported";
 
   // Current xAI chat/reasoning model families with reasoning-effort support.
-  if (id === "grok-code-fast-1") return "supported";
   if (id.startsWith("grok-3-mini")) return "supported";
 
   // Explicitly unsupported models from current provider docs.

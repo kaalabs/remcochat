@@ -31,29 +31,82 @@ function normalizeModelIdList(values: string[]): string[] {
   return out;
 }
 
-async function assertSupportedModelsForProvider(input: {
+async function getSupportedModelIdsForProvider(input: {
   modelsdevProviderId: string;
-  modelIds: string[];
-}) {
+}): Promise<Set<string>> {
   const timeoutMs = modelsdevTimeoutMs();
   const show = await modelsdevProviderShowCached(input.modelsdevProviderId, timeoutMs);
   const providerNpm = requireModelsDevProviderNpm(input.modelsdevProviderId, show.provider);
+  const supportedModelIds = new Set<string>();
 
-  for (const modelId of input.modelIds) {
-    const raw = show.models[modelId];
-    if (!raw) {
-      throw new Error(
-        `modelsdev provider "${input.modelsdevProviderId}" does not include model "${modelId}"`
-      );
-    }
+  for (const [modelId, raw] of Object.entries(show.models)) {
     const npm = String(raw.provider?.npm ?? providerNpm).trim() || providerNpm;
-    const supported = Boolean(tryModelTypeFromNpm(npm));
-    if (!supported) {
+    if (tryModelTypeFromNpm(npm)) {
+      supportedModelIds.add(modelId);
+    }
+  }
+
+  return supportedModelIds;
+}
+
+function assertModelIdsSupported(input: {
+  providerId: string;
+  modelIds: string[];
+  supportedModelIds: Set<string>;
+}) {
+  for (const modelId of input.modelIds) {
+    if (!input.supportedModelIds.has(modelId)) {
       throw new Error(
-        `Model "${modelId}" is not supported by RemcoChat (unsupported adapter "${npm}").`
+        `modelsdev provider "${input.providerId}" does not include model "${modelId}"`
       );
     }
   }
+}
+
+function pickFallbackModelId(modelIds: string[]): string {
+  const fallback = modelIds[0];
+  if (!fallback) {
+    throw new Error("No supported models remain for this provider.");
+  }
+  return fallback;
+}
+
+export function reconcileProviderModelReferences(input: {
+  allowedModelIds: string[];
+  currentDefaultModelId: string;
+  currentRouterModelId?: string | null;
+  supportedModelIds: Iterable<string>;
+}): {
+  allowedModelIds: string[];
+  defaultModelId: string;
+  routerModelId: string | null;
+} {
+  const supportedModelIds = new Set(input.supportedModelIds);
+  const allowedModelIds = normalizeModelIdList(input.allowedModelIds);
+
+  if (allowedModelIds.length === 0) {
+    throw new Error("No supported models remain for this provider.");
+  }
+
+  const defaultModelId =
+    allowedModelIds.includes(input.currentDefaultModelId) &&
+    supportedModelIds.has(input.currentDefaultModelId)
+      ? input.currentDefaultModelId
+      : pickFallbackModelId(allowedModelIds);
+
+  const currentRouterModelId = String(input.currentRouterModelId ?? "").trim();
+  const routerModelId = currentRouterModelId
+    ? allowedModelIds.includes(currentRouterModelId) &&
+      supportedModelIds.has(currentRouterModelId)
+      ? currentRouterModelId
+      : defaultModelId
+    : null;
+
+  return {
+    allowedModelIds,
+    defaultModelId,
+    routerModelId,
+  };
 }
 
 export async function updateProviderAllowedModelsInConfigToml(input: {
@@ -73,31 +126,45 @@ export async function updateProviderAllowedModelsInConfigToml(input: {
   if (nextAllowed.length === 0) {
     throw new Error("allowedModelIds must not be empty.");
   }
-  if (!nextAllowed.includes(provider.defaultModelId)) {
-    throw new Error(
-      `allowedModelIds must include the provider default_model_id (${provider.defaultModelId}).`
+  const supportedModelIds = await getSupportedModelIdsForProvider({
+    modelsdevProviderId: provider.modelsdevProviderId,
+  });
+  assertModelIdsSupported({
+    providerId: provider.modelsdevProviderId,
+    modelIds: nextAllowed,
+    supportedModelIds,
+  });
+
+  const reconciled = reconcileProviderModelReferences({
+    allowedModelIds: nextAllowed,
+    currentDefaultModelId: provider.defaultModelId,
+    currentRouterModelId:
+      parsed.intentRouter && parsed.intentRouter.providerId === provider.id
+        ? parsed.intentRouter.modelId
+        : null,
+    supportedModelIds,
+  });
+
+  let updatedToml = updateProviderAllowedModelIdsInToml(
+    original,
+    provider.id,
+    reconciled.allowedModelIds
+  );
+  if (reconciled.defaultModelId !== provider.defaultModelId) {
+    updatedToml = updateProviderDefaultModelIdInToml(
+      updatedToml,
+      provider.id,
+      reconciled.defaultModelId
     );
   }
   if (
+    reconciled.routerModelId &&
     parsed.intentRouter &&
     parsed.intentRouter.providerId === provider.id &&
-    !nextAllowed.includes(parsed.intentRouter.modelId)
+    reconciled.routerModelId !== parsed.intentRouter.modelId
   ) {
-    throw new Error(
-      `allowedModelIds must include the router model_id (${parsed.intentRouter.modelId}) for provider "${provider.id}".`
-    );
+    updatedToml = updateRouterModelIdInToml(updatedToml, reconciled.routerModelId);
   }
-
-  await assertSupportedModelsForProvider({
-    modelsdevProviderId: provider.modelsdevProviderId,
-    modelIds: nextAllowed,
-  });
-
-  const updatedToml = updateProviderAllowedModelIdsInToml(
-    original,
-    provider.id,
-    nextAllowed
-  );
 
   // Fail-fast: ensure we are not about to write an invalid config.
   parseConfigToml(updatedToml);
@@ -134,28 +201,42 @@ export async function updateRouterModelInConfigToml(input: {
     throw new Error(`Router provider_id "${providerId}" is not present in providers.`);
   }
 
-  // Ensure the chosen router model is valid for this provider and adapter-supported.
-  await assertSupportedModelsForProvider({
+  const supportedModelIds = await getSupportedModelIdsForProvider({
     modelsdevProviderId: provider.modelsdevProviderId,
+  });
+  assertModelIdsSupported({
+    providerId: provider.modelsdevProviderId,
     modelIds: [modelId],
+    supportedModelIds,
   });
 
   // Router requires the model to be present in the provider allowlist; auto-include it.
-  const nextAllowed = normalizeModelIdList(provider.allowedModelIds.concat(modelId));
-  if (!nextAllowed.includes(provider.defaultModelId)) {
-    nextAllowed.push(provider.defaultModelId);
-    nextAllowed.sort((a, b) => a.localeCompare(b));
-  }
-
-  // Validate allowlist models (includes the new router model).
-  await assertSupportedModelsForProvider({
-    modelsdevProviderId: provider.modelsdevProviderId,
-    modelIds: nextAllowed,
+  const nextAllowed = normalizeModelIdList(
+    provider.allowedModelIds
+      .filter((candidate) => supportedModelIds.has(candidate))
+      .concat(modelId)
+  );
+  const reconciled = reconcileProviderModelReferences({
+    allowedModelIds: nextAllowed,
+    currentDefaultModelId: provider.defaultModelId,
+    currentRouterModelId: modelId,
+    supportedModelIds,
   });
 
   let updatedToml = updateRouterProviderIdInToml(original, providerId);
   updatedToml = updateRouterModelIdInToml(updatedToml, modelId);
-  updatedToml = updateProviderAllowedModelIdsInToml(updatedToml, provider.id, nextAllowed);
+  if (reconciled.defaultModelId !== provider.defaultModelId) {
+    updatedToml = updateProviderDefaultModelIdInToml(
+      updatedToml,
+      provider.id,
+      reconciled.defaultModelId
+    );
+  }
+  updatedToml = updateProviderAllowedModelIdsInToml(
+    updatedToml,
+    provider.id,
+    reconciled.allowedModelIds
+  );
 
   parseConfigToml(updatedToml);
 
@@ -183,32 +264,44 @@ export async function updateProviderDefaultModelInConfigToml(input: {
     throw new Error(`Unknown providerId: ${providerId}`);
   }
 
-  // Ensure the chosen default model is valid for this provider and adapter-supported.
-  await assertSupportedModelsForProvider({
+  const supportedModelIds = await getSupportedModelIdsForProvider({
     modelsdevProviderId: provider.modelsdevProviderId,
+  });
+  assertModelIdsSupported({
+    providerId: provider.modelsdevProviderId,
     modelIds: [defaultModelId],
+    supportedModelIds,
   });
 
-  // The config schema requires default_model_id to be in allowed_model_ids; auto-include it.
-  let nextAllowed = normalizeModelIdList(provider.allowedModelIds.concat(defaultModelId));
-
-  // Keep router requirement valid if it points at this provider.
-  if (
-    parsed.intentRouter &&
-    parsed.intentRouter.providerId === provider.id &&
-    !nextAllowed.includes(parsed.intentRouter.modelId)
-  ) {
-    nextAllowed = normalizeModelIdList(nextAllowed.concat(parsed.intentRouter.modelId));
-  }
-
-  // Validate allowlist models (includes the new default, plus router model if needed).
-  await assertSupportedModelsForProvider({
-    modelsdevProviderId: provider.modelsdevProviderId,
-    modelIds: nextAllowed,
+  const nextAllowed = normalizeModelIdList(
+    provider.allowedModelIds
+      .filter((candidate) => supportedModelIds.has(candidate))
+      .concat(defaultModelId)
+  );
+  const reconciled = reconcileProviderModelReferences({
+    allowedModelIds: nextAllowed,
+    currentDefaultModelId: defaultModelId,
+    currentRouterModelId:
+      parsed.intentRouter && parsed.intentRouter.providerId === provider.id
+        ? parsed.intentRouter.modelId
+        : null,
+    supportedModelIds,
   });
 
   let updatedToml = updateProviderDefaultModelIdInToml(original, provider.id, defaultModelId);
-  updatedToml = updateProviderAllowedModelIdsInToml(updatedToml, provider.id, nextAllowed);
+  updatedToml = updateProviderAllowedModelIdsInToml(
+    updatedToml,
+    provider.id,
+    reconciled.allowedModelIds
+  );
+  if (
+    reconciled.routerModelId &&
+    parsed.intentRouter &&
+    parsed.intentRouter.providerId === provider.id &&
+    reconciled.routerModelId !== parsed.intentRouter.modelId
+  ) {
+    updatedToml = updateRouterModelIdInToml(updatedToml, reconciled.routerModelId);
+  }
 
   parseConfigToml(updatedToml);
 

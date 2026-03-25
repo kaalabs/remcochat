@@ -66,21 +66,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const REMCOCHAT_LAN_ADMIN_TOKEN_LOCAL_KEY = "remcochat:lanAdminToken";
 const REMCOCHAT_LAN_ADMIN_TOKEN_SESSION_KEY = "remcochat:lanAdminToken:session";
 
-type ProvidersResponse = {
+type ProviderSwitcherResponse = {
+  loadedAt: string;
   defaultProviderId: string;
   activeProviderId: string;
   providers: Array<{
     id: string;
     name: string;
     defaultModelId: string;
-    models: Array<{
-      id: string;
-      type: string;
-      label: string;
-      description?: string;
-      capabilities?: ModelCapabilities;
-      contextWindow?: number;
-    }>;
+    active: boolean;
+    default: boolean;
+    status: "ready" | "degraded";
+    loadError: string | null;
   }>;
 };
 
@@ -381,7 +378,8 @@ export function AdminClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
-  const [providers, setProviders] = useState<ProvidersResponse | null>(null);
+  const [providerSwitcher, setProviderSwitcher] =
+    useState<ProviderSwitcherResponse | null>(null);
   const [activeDraft, setActiveDraft] = useState<string>("");
 
   const [inventoryLoading, setInventoryLoading] = useState(true);
@@ -475,6 +473,23 @@ export function AdminClient() {
   }, [readLanAdminToken]);
 
   const load = useCallback(async () => {
+    const res = await fetch("/api/admin/providers/switcher", {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        json?.error || t("error.admin.provider_switcher_load_failed"),
+      );
+    }
+    const data = (await res.json()) as ProviderSwitcherResponse;
+    setProviderSwitcher(data);
+    setActiveDraft(data.activeProviderId);
+  }, [t]);
+
+  const warmProvidersCatalog = useCallback(async () => {
     const res = await fetch("/api/providers", { cache: "no-store" });
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as {
@@ -482,9 +497,7 @@ export function AdminClient() {
       } | null;
       throw new Error(json?.error || t("error.admin.providers_load_failed"));
     }
-    const data = (await res.json()) as ProvidersResponse;
-    setProviders(data);
-    setActiveDraft(data.activeProviderId);
+    await res.json().catch(() => null);
   }, [t]);
 
   const fetchInventory = useCallback(async () => {
@@ -580,7 +593,7 @@ export function AdminClient() {
         setError(
           err instanceof Error
             ? err.message
-            : t("error.admin.providers_load_failed"),
+            : t("error.admin.provider_switcher_load_failed"),
         );
       })
       .finally(() => {
@@ -719,8 +732,13 @@ export function AdminClient() {
   }, [loadSkills, t]);
 
   const providerOptions = useMemo(() => {
-    return providers?.providers ?? [];
-  }, [providers]);
+    return providerSwitcher?.providers ?? [];
+  }, [providerSwitcher]);
+
+  const activeProviderOption = useMemo(() => {
+    const activeProviderId = providerSwitcher?.activeProviderId ?? activeDraft;
+    return providerOptions.find((provider) => provider.id === activeProviderId) ?? null;
+  }, [activeDraft, providerOptions, providerSwitcher]);
 
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
@@ -728,9 +746,9 @@ export function AdminClient() {
   const canSave =
     !loading &&
     !saving &&
-    providers != null &&
+    providerSwitcher != null &&
     activeDraft.trim().length > 0 &&
-    activeDraft !== providers.activeProviderId;
+    activeDraft !== providerSwitcher.activeProviderId;
 
   const exportAllData = () => {
     const a = document.createElement("a");
@@ -774,7 +792,7 @@ export function AdminClient() {
   };
 
   const save = async () => {
-    if (!providers) return;
+    if (!providerSwitcher) return;
     if (!activeDraft) return;
     if (saving) return;
 
@@ -795,6 +813,11 @@ export function AdminClient() {
         throw new Error(json?.error || t("error.admin.switch_provider_failed"));
       }
       await load();
+      llmAutoStartedRef.current = false;
+      await Promise.all([
+        warmProvidersCatalog().catch(() => null),
+        refreshInventory().catch(() => null),
+      ]);
       setSaveNotice(t("admin.providers.notice.updated"));
     } catch (err) {
       setError(
@@ -1156,7 +1179,7 @@ export function AdminClient() {
   );
 
   const startLlmReadiness = useCallback(async () => {
-    const providerIds = (providers?.providers ?? [])
+    const providerIds = (providerSwitcher?.providers ?? [])
       .map((p) => p.id)
       .filter(Boolean);
     if (providerIds.length === 0) return;
@@ -1194,7 +1217,7 @@ export function AdminClient() {
         [providerId]: nextState,
       }));
     });
-  }, [postReadinessRun, providers]);
+  }, [postReadinessRun, providerSwitcher]);
 
   const startWebSearchReadiness = useCallback(async () => {
     const cfg = webSearchConfig;
@@ -1357,10 +1380,10 @@ export function AdminClient() {
 
   useEffect(() => {
     if (llmAutoStartedRef.current) return;
-    if (!providers || providers.providers.length === 0) return;
+    if (!providerSwitcher || providerSwitcher.providers.length === 0) return;
     llmAutoStartedRef.current = true;
     startLlmReadiness().catch(() => {});
-  }, [providers, startLlmReadiness]);
+  }, [providerSwitcher, startLlmReadiness]);
 
   useEffect(() => {
     if (webSearchAutoStartedRef.current) return;
@@ -1579,13 +1602,23 @@ export function AdminClient() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>{t("admin.providers.title")}</CardTitle>
-              </CardHeader>
+                <CardHeader>
+                  <CardTitle>{t("admin.providers.title")}</CardTitle>
+                </CardHeader>
               <CardContent className="space-y-4">
+                <div className="text-sm text-muted-foreground">
+                  {t("admin.providers.description")}
+                </div>
                 {error ? (
                   <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {error}
+                  </div>
+                ) : null}
+                {activeProviderOption?.status === "degraded" ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {t("admin.providers.status.current_failed", {
+                      provider: activeProviderOption.name,
+                    })}
                   </div>
                 ) : null}
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
@@ -1597,7 +1630,7 @@ export function AdminClient() {
                       {t("admin.providers.active.label")}
                     </label>
                     <Select
-                      disabled={loading || saving}
+                      disabled={loading || saving || providerOptions.length === 0}
                       onValueChange={(value) => setActiveDraft(value)}
                       value={activeDraft}
                     >
@@ -1647,6 +1680,42 @@ export function AdminClient() {
                     testId="admin:provider-save"
                   />
                 </div>
+                {providerOptions.length > 0 ? (
+                  <div className="space-y-2">
+                    {providerOptions.map((provider) => (
+                      <div
+                        className="rounded-md border px-3 py-2"
+                        key={provider.id}
+                      >
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="font-medium">{provider.name}</span>
+                          {provider.active ? (
+                            <Badge variant="secondary">
+                              {t("common.active")}
+                            </Badge>
+                          ) : null}
+                          {provider.default ? (
+                            <Badge variant="outline">
+                              {t("admin.providers.badge.default")}
+                            </Badge>
+                          ) : null}
+                          {provider.status === "degraded" ? (
+                            <Badge variant="destructive">
+                              {t("admin.providers.status.degraded")}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {provider.loadError ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {t("admin.providers.status.provider_failed", {
+                              error: provider.loadError,
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
             <Card>
@@ -1965,7 +2034,7 @@ export function AdminClient() {
                           return hay.includes(query);
                         });
 
-                        const isActive = providers?.activeProviderId === p.id;
+                        const isActive = providerSwitcher?.activeProviderId === p.id;
 
                         return (
                           <details
