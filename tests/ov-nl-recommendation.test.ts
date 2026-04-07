@@ -1,18 +1,32 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { OvNlTripSummary } from "../src/domain/ov-nl/types";
 import { pickRecommendedTrip, pickRecommendedTripUidForSearch } from "../src/lib/ov-nl-recommendation";
 
-function trip(uid: string, overrides: Partial<any> = {}) {
+function trip(
+  uid: string,
+  overrides: Partial<OvNlTripSummary> = {},
+): OvNlTripSummary {
   return {
     uid,
+    status: "NORMAL",
+    source: "trips.search",
     optimal: false,
+    realtime: false,
     transfers: 0,
     plannedDurationMinutes: null,
     actualDurationMinutes: null,
+    departureName: "",
     departurePlannedDateTime: null,
     departureActualDateTime: null,
+    arrivalName: "",
     arrivalPlannedDateTime: null,
     arrivalActualDateTime: null,
+    primaryMessage: null,
+    messages: [],
+    ctxRecon: "",
+    routeId: null,
+    legs: [],
     ...overrides,
   };
 }

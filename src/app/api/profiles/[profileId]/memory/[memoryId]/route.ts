@@ -1,4 +1,4 @@
-import { deleteMemoryItem } from "@/server/memory";
+import { deleteMemoryItem } from "@/server/memory-service";
 
 export async function DELETE(
   _req: Request,
@@ -16,4 +16,3 @@ export async function DELETE(
     );
   }
 }
-

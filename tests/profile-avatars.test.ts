@@ -7,6 +7,7 @@ import { _resetConfigCacheForTests } from "../src/server/config";
 import { _resetDbForTests } from "../src/server/db";
 import { createProfile, deleteProfile, getProfile } from "../src/server/profiles";
 import {
+  buildProfileAvatar,
   deleteProfileAvatar,
   setProfileAvatar,
   updateProfileAvatarPosition,
@@ -149,3 +150,30 @@ test("profile avatars: deleting a profile removes its avatar file", async () => 
   assert.ok(!fs.existsSync(avatarFilePath));
 });
 
+test("profile avatars: buildProfileAvatar clamps stored positions and returns null when metadata is incomplete", () => {
+  assert.equal(
+    buildProfileAvatar({
+      mediaType: null,
+      sizeBytes: 123,
+      updatedAt: null,
+      posX: 10,
+      posY: 20,
+    }),
+    null,
+  );
+
+  const avatar = buildProfileAvatar({
+    mediaType: "image/png",
+    sizeBytes: 123,
+    updatedAt: "2026-03-26T00:00:00Z",
+    posX: 999,
+    posY: -20,
+  });
+
+  assert.deepEqual(avatar, {
+    mediaType: "image/png",
+    sizeBytes: 123,
+    updatedAt: "2026-03-26T00:00:00Z",
+    position: { x: 100, y: 0 },
+  });
+});

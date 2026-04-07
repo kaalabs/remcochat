@@ -1,5 +1,9 @@
 import { getProfile } from "@/server/profiles";
-import { listProfileLists, runListAction, type ListActionInput } from "@/server/lists";
+import {
+  listProfileLists,
+  runListAction,
+  type ListActionInput,
+} from "@/server/lists-service";
 
 const allowedActions = new Set<ListActionInput["action"]>([
   "show",

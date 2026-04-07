@@ -19,7 +19,7 @@ function runCheckEnv(opts: { cwd: string; env?: Record<string, string | undefine
 
   // Keep this environment intentionally minimal so the test doesn't pass/fail due
   // to the developer's shell state.
-  const env: Record<string, string> = {
+  const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
     USER: process.env.USER ?? "user",

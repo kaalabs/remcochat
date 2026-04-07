@@ -1,4 +1,4 @@
-import { deleteChat, updateChatForProfile } from "@/server/chats";
+import { deleteChat, getChatForViewer, updateChatForProfile } from "@/server/chats";
 
 export async function PATCH(
   req: Request,
@@ -18,12 +18,13 @@ export async function PATCH(
       return Response.json({ error: "Missing profileId." }, { status: 400 });
     }
 
-    const chat = updateChatForProfile(body.profileId, chatId, {
+    updateChatForProfile(body.profileId, chatId, {
       title: body.title,
       modelId: body.modelId,
       chatInstructions: body.chatInstructions,
       folderId: body.folderId,
     });
+    const chat = getChatForViewer(body.profileId, chatId);
     return Response.json({ chat });
   } catch (err) {
     return Response.json(

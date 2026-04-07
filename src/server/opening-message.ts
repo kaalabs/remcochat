@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import type { UiLanguage } from "@/lib/types";
+import type { UiLanguage } from "@/domain/profiles/types";
 import { getLanguageModelForActiveProvider } from "@/server/llm-provider";
 import { extractJsonObject } from "@/server/llm-json";
 

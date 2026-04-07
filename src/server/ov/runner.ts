@@ -1,4 +1,4 @@
-import type { OvNlToolAction, OvNlToolOutput } from "@/lib/types";
+import type { OvNlToolAction, OvNlToolOutput } from "@/domain/ov-nl/types";
 import { extractOvQueryFromUserText } from "@/server/ov/nlu";
 import { compileOvPlan } from "@/server/ov/planner";
 

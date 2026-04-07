@@ -1,4 +1,4 @@
-import type { OvNlTripLeg, OvNlTripSummary } from "./types";
+import type { OvNlTripLeg, OvNlTripSummary } from "@/domain/ov-nl/types";
 
 const DEFAULT_DELAY_THRESHOLD_MINUTES = 2;
 

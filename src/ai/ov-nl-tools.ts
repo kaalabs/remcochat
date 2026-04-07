@@ -1,4 +1,4 @@
-import { tool as createTool } from "ai";
+import { jsonSchema, tool as createTool } from "ai";
 import { z } from "zod";
 import { getConfig } from "@/server/config";
 import { logEvent } from "@/server/log";
@@ -41,9 +41,51 @@ import type {
   OvNlTripLeg,
   OvNlTripLegStop,
   OvNlTripSummary,
-} from "@/lib/types";
+} from "@/domain/ov-nl/types";
 
 export type OvNlGatewayToolsResult = ToolBundle;
+
+function createStrictObjectJsonSchema(properties: Record<string, unknown>) {
+  return jsonSchema({
+    type: "object",
+    additionalProperties: false,
+    properties: properties as any,
+    required: Object.keys(properties),
+  });
+}
+
+function nullableStringJsonProperty(maxLength: number) {
+  return {
+    type: ["string", "null"] as const,
+    maxLength,
+    default: null,
+  };
+}
+
+function nullableIntegerJsonProperty(minimum?: number, maximum?: number) {
+  return {
+    type: ["integer", "null"] as const,
+    ...(typeof minimum === "number" ? { minimum } : {}),
+    ...(typeof maximum === "number" ? { maximum } : {}),
+    default: null,
+  };
+}
+
+function nullableNumberJsonProperty(minimum?: number, maximum?: number) {
+  return {
+    type: ["number", "null"] as const,
+    ...(typeof minimum === "number" ? { minimum } : {}),
+    ...(typeof maximum === "number" ? { maximum } : {}),
+    default: null,
+  };
+}
+
+function nullableBooleanJsonProperty() {
+  return {
+    type: ["boolean", "null"] as const,
+    default: null,
+  };
+}
 
 const OV_NL_ACTIONS = [
   "stations.search",
@@ -353,6 +395,145 @@ const OvNlGatewayToolWireInputSchema = z
     args: OvNlGatewayToolWireArgsSchema.optional(),
   })
   .passthrough();
+
+const OvNlIntentHardWireJsonSchema = createStrictObjectJsonSchema({
+  directOnly: nullableBooleanJsonProperty(),
+  maxTransfers: nullableIntegerJsonProperty(0, 8),
+  maxDurationMinutes: nullableIntegerJsonProperty(1, 24 * 60),
+  departureAfter: nullableStringJsonProperty(64),
+  departureBefore: nullableStringJsonProperty(64),
+  arrivalAfter: nullableStringJsonProperty(64),
+  arrivalBefore: nullableStringJsonProperty(64),
+  includeModes: {
+    type: ["array", "null"] as const,
+    items: { type: "string", enum: OvNlIntentModeSchema.options },
+    maxItems: 8,
+    default: null,
+  },
+  excludeModes: {
+    type: ["array", "null"] as const,
+    items: { type: "string", enum: OvNlIntentModeSchema.options },
+    maxItems: 8,
+    default: null,
+  },
+  includeOperators: {
+    type: ["array", "null"] as const,
+    items: { type: "string", maxLength: 64 },
+    maxItems: 16,
+    default: null,
+  },
+  excludeOperators: {
+    type: ["array", "null"] as const,
+    items: { type: "string", maxLength: 64 },
+    maxItems: 16,
+    default: null,
+  },
+  includeTrainCategories: {
+    type: ["array", "null"] as const,
+    items: { type: "string", maxLength: 64 },
+    maxItems: 16,
+    default: null,
+  },
+  excludeTrainCategories: {
+    type: ["array", "null"] as const,
+    items: { type: "string", maxLength: 64 },
+    maxItems: 16,
+    default: null,
+  },
+  avoidStations: {
+    type: ["array", "null"] as const,
+    items: { type: "string", maxLength: 120 },
+    maxItems: 24,
+    default: null,
+  },
+  excludeCancelled: nullableBooleanJsonProperty(),
+  requireRealtime: nullableBooleanJsonProperty(),
+  platformEquals: nullableStringJsonProperty(32),
+  disruptionTypes: {
+    type: ["array", "null"] as const,
+    items: { type: "string", enum: OvNlDisruptionTypeSchema.options },
+    maxItems: 3,
+    default: null,
+  },
+  activeOnly: nullableBooleanJsonProperty(),
+});
+
+const OvNlIntentSoftWireJsonSchema = createStrictObjectJsonSchema({
+  rankBy: {
+    type: ["array", "null"] as const,
+    items: { type: "string", enum: OvNlIntentRankSchema.options },
+    maxItems: 6,
+    default: null,
+  },
+});
+
+const OvNlIntentWireJsonSchema = createStrictObjectJsonSchema({
+  hard: { anyOf: [OvNlIntentHardWireJsonSchema.jsonSchema, { type: "null" }], default: null },
+  soft: { anyOf: [OvNlIntentSoftWireJsonSchema.jsonSchema, { type: "null" }], default: null },
+});
+
+const OvNlGatewayToolWireJsonSchema = createStrictObjectJsonSchema({
+  action: {
+    type: "string",
+    enum: OvNlGatewayToolActionSchema.options,
+  },
+  args: {
+    anyOf: [
+      createStrictObjectJsonSchema({
+        query: nullableStringJsonProperty(120),
+        limit: nullableIntegerJsonProperty(1, 80),
+        countryCodes: {
+          type: ["array", "null"] as const,
+          items: { type: "string", maxLength: 8 },
+          maxItems: 8,
+          default: null,
+        },
+        latitude: nullableNumberJsonProperty(-90, 90),
+        longitude: nullableNumberJsonProperty(-180, 180),
+        lat: nullableNumberJsonProperty(-90, 90),
+        lng: nullableNumberJsonProperty(-180, 180),
+        station: nullableStringJsonProperty(120),
+        stationCode: nullableStringJsonProperty(32),
+        uicCode: nullableStringJsonProperty(32),
+        dateTime: nullableStringJsonProperty(64),
+        fromDateTime: nullableStringJsonProperty(64),
+        toDateTime: nullableStringJsonProperty(64),
+        fromTime: nullableStringJsonProperty(16),
+        toTime: nullableStringJsonProperty(16),
+        maxJourneys: nullableIntegerJsonProperty(1, 200),
+        lang: nullableStringJsonProperty(64),
+        from: nullableStringJsonProperty(120),
+        to: nullableStringJsonProperty(120),
+        via: nullableStringJsonProperty(120),
+        searchForArrival: nullableBooleanJsonProperty(),
+        date: nullableStringJsonProperty(64),
+        ctxRecon: nullableStringJsonProperty(OV_NL_CTX_RECON_MAX_LEN),
+        id: nullableStringJsonProperty(4000),
+        train: nullableIntegerJsonProperty(1, 99_999),
+        departureUicCode: nullableStringJsonProperty(32),
+        transferUicCode: nullableStringJsonProperty(32),
+        arrivalUicCode: nullableStringJsonProperty(32),
+        omitCrowdForecast: nullableBooleanJsonProperty(),
+        type: {
+          anyOf: [
+            { type: "string", enum: OvNlDisruptionTypeSchema.options },
+            {
+              type: "array",
+              items: { type: "string", enum: OvNlDisruptionTypeSchema.options },
+              maxItems: 3,
+            },
+            { type: "null" },
+          ],
+          default: null,
+        },
+        isActive: nullableBooleanJsonProperty(),
+        intent: { anyOf: [OvNlIntentWireJsonSchema.jsonSchema, { type: "null" }], default: null },
+      }).jsonSchema,
+      { type: "null" },
+    ],
+    default: null,
+  },
+});
 
 const OvNlGatewayToolValidatedInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("stations.search"), args: StationsSearchArgsSchema }).strict(),
@@ -4289,7 +4470,7 @@ export function createOvNlTools(input: { request: Request }): OvNlGatewayToolsRe
     strict: true,
     description:
       "Gateway for Dutch rail (NS) live travel information via NS Reisinformatie. Use this for stations, departure/arrival boards, trips between stations, journey details, and disruptions. Do NOT use this for walking/driving directions, general travel planning (flights/hotels/itineraries), or vague location phrases like 'my house'. If the user intent is unclear or required route/station details are missing, ask one concise clarification question instead of calling ovNlGateway.",
-    inputSchema: OvNlGatewayToolWireInputSchema,
+    inputSchema: OvNlGatewayToolWireJsonSchema,
     execute: async (toolInput): Promise<OvNlToolOutput> => {
       const action = asText((toolInput as { action?: unknown }).action) as OvNlToolAction;
       const rawArgs = (toolInput as { args?: unknown }).args;

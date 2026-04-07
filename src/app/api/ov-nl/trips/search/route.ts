@@ -1,5 +1,5 @@
 import { createOvNlTools } from "@/ai/ov-nl-tools";
-import type { OvNlToolOutput } from "@/lib/types";
+import type { OvNlToolOutput } from "@/domain/ov-nl/types";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -57,4 +57,3 @@ export async function POST(req: Request) {
 
   return Response.json(output, { headers: { "Cache-Control": "no-store" } });
 }
-

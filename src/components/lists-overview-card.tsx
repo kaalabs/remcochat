@@ -14,7 +14,7 @@ import {
 import type {
   ListsOverviewToolOutput,
   TaskListOverview,
-} from "@/lib/types";
+} from "@/domain/lists/types";
 import { ArrowRightCircle, ListChecks, ShoppingBasket, Users } from "lucide-react";
 
 type ListsOverviewCardProps = ListsOverviewToolOutput & {

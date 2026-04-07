@@ -1,4 +1,4 @@
-import { forkChatFromUserMessage } from "@/server/chats";
+import { forkChatFromUserMessage, getChatForViewer } from "@/server/chats";
 
 export async function POST(
   req: Request,
@@ -22,12 +22,13 @@ export async function POST(
   }
 
   try {
-    const chat = forkChatFromUserMessage({
+    const created = forkChatFromUserMessage({
       profileId: body.profileId,
       chatId,
       userMessageId: body.userMessageId,
       text: body.text,
     });
+    const chat = getChatForViewer(body.profileId, created.id);
     return Response.json({ chat }, { status: 201 });
   } catch (err) {
     return Response.json(
@@ -36,4 +37,3 @@ export async function POST(
     );
   }
 }
-

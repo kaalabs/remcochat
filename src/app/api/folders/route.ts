@@ -16,7 +16,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const folder = createFolder(body.profileId, { name: String(body.name ?? "") });
+    const created = createFolder(body.profileId, { name: String(body.name ?? "") });
+    const folder =
+      listAccessibleFolders(body.profileId).find((entry) => entry.id === created.id) ??
+      created;
     return Response.json({ folder }, { status: 201 });
   } catch (err) {
     return Response.json(

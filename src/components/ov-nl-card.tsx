@@ -8,7 +8,7 @@ import type {
   OvNlToolOutput,
   OvNlTripLeg,
   OvNlTripSummary,
-} from "@/lib/types";
+} from "@/domain/ov-nl/types";
 import { pickRecommendedTrip, pickRecommendedTripUidForSearch } from "@/lib/ov-nl-recommendation";
 import { tripHasLegDisruptions } from "@/lib/ov-nl-trip-disruption";
 import styles from "./ov-nl-card.module.css";

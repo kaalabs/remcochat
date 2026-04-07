@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import type { RemcoChatMessageMetadata } from "@/lib/types";
+import type { RemcoChatMessageMetadata } from "@/domain/chats/types";
 import {
   bindAttachmentToMessage,
   getAttachmentForProfile,

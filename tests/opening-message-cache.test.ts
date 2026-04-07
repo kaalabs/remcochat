@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { UiLanguage } from "../src/lib/types";
+import type { UiLanguage } from "../src/domain/profiles/types";
 import {
   mergeOpeningMessageNext,
   parseOpeningMessageCache,

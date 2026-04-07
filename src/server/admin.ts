@@ -1,9 +1,9 @@
 import { getDb } from "@/server/db";
 import { listProfiles } from "@/server/profiles";
 import { listChats, loadChatState } from "@/server/chats";
-import { listProfileMemory } from "@/server/memory";
-import { listProfileLists } from "@/server/lists";
-import { listProfileNotes } from "@/server/notes";
+import { listProfileMemory } from "@/server/memory-service";
+import { listProfileLists } from "@/server/lists-service";
+import { listProfileNotes } from "@/server/notes-service";
 import { listProfileAgendaItems } from "@/server/agenda";
 
 export function isAdminEnabled(): boolean {

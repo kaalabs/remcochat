@@ -1,4 +1,4 @@
-import type { OvNlTripSummary } from "./types";
+import type { OvNlTripSummary } from "@/domain/ov-nl/types";
 
 export function pickRecommendedTrip(trips: OvNlTripSummary[]): OvNlTripSummary | null {
   if (trips.length === 0) return null;

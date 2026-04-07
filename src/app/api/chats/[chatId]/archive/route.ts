@@ -1,4 +1,4 @@
-import { archiveChat, unarchiveChat } from "@/server/chats";
+import { archiveChat, getChatForViewer, unarchiveChat } from "@/server/chats";
 
 export async function POST(
   req: Request,
@@ -11,7 +11,8 @@ export async function POST(
   }
 
   try {
-    const chat = archiveChat(body.profileId, chatId);
+    archiveChat(body.profileId, chatId);
+    const chat = getChatForViewer(body.profileId, chatId);
     return Response.json({ chat });
   } catch (err) {
     return Response.json(
@@ -32,7 +33,8 @@ export async function DELETE(
   }
 
   try {
-    const chat = unarchiveChat(body.profileId, chatId);
+    unarchiveChat(body.profileId, chatId);
+    const chat = getChatForViewer(body.profileId, chatId);
     return Response.json({ chat });
   } catch (err) {
     return Response.json(
@@ -41,4 +43,3 @@ export async function DELETE(
     );
   }
 }
-

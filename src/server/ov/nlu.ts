@@ -3,7 +3,7 @@ import { getConfig } from "@/server/config";
 import { getLanguageModelForProvider } from "@/server/llm-provider";
 import { extractJsonObject } from "@/server/llm-json";
 import { extractRouteFromText, inferDateTimeHintFromText, inferDirectnessFromText } from "@/lib/ov-nl-route-heuristics";
-import type { OvNlToolOutput } from "@/lib/types";
+import type { OvNlToolOutput } from "@/domain/ov-nl/types";
 import { OvQueryV1Schema, type OvQueryV1 } from "@/server/ov/query-schema";
 
 export type OvNluResult =

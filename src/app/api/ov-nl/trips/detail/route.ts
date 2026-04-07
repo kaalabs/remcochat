@@ -1,6 +1,6 @@
 import { createOvNlTools } from "@/ai/ov-nl-tools";
+import type { OvNlToolOutput } from "@/domain/ov-nl/types";
 import { OV_NL_CTX_RECON_MAX_LEN } from "@/lib/ov-nl-constants";
-import type { OvNlToolOutput } from "@/lib/types";
 import { z } from "zod";
 
 export const runtime = "nodejs";

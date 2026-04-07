@@ -1,6 +1,6 @@
 import { getActiveProviderIdFromDb } from "@/server/app-settings";
 import { getConfig } from "@/server/config";
-import { getModelsDevCatalog } from "@/server/modelsdev-catalog";
+import { buildModelsInventory } from "@/server/models-inventory";
 
 export async function GET() {
   try {
@@ -12,29 +12,34 @@ export async function GET() {
         ? storedActiveProviderId
         : config.defaultProviderId;
 
-    const catalog = await getModelsDevCatalog();
+    const inventory = await buildModelsInventory();
 
     return Response.json({
       defaultProviderId: config.defaultProviderId,
       activeProviderId,
       webToolsEnabled: Boolean(config.webTools?.enabled),
       providers: config.providers.map((p) => {
-        const providerCatalog = catalog.providers[p.id];
-        if (!providerCatalog) {
+        const providerInventory = inventory.providers.find(
+          (provider) => provider.id === p.id
+        );
+        if (!providerInventory) {
           throw new Error(
-            `modelsdev catalog missing provider "${p.id}". Check config.toml and modelsdev output.`
+            `models inventory missing provider "${p.id}". Check config.toml and modelsdev output.`
           );
         }
+        const modelsById = new Map(
+          providerInventory.models.map((model) => [model.id, model])
+        );
 
         return {
           id: p.id,
           name: p.name,
           defaultModelId: p.defaultModelId,
-          models: providerCatalog.allowedModelIds.map((modelId) => {
-            const model = providerCatalog.models[modelId];
+          models: providerInventory.allowedModelIds.map((modelId) => {
+            const model = modelsById.get(modelId);
             if (!model) {
               throw new Error(
-                `modelsdev catalog missing model "${modelId}" for provider "${p.id}".`
+                `models inventory missing model "${modelId}" for provider "${p.id}".`
               );
             }
             return {
@@ -48,7 +53,7 @@ export async function GET() {
           }),
         };
       }),
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return Response.json(
       {

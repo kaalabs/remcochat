@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { TaskList, TaskListItem } from "@/lib/types";
+import type { TaskList, TaskListItem } from "@/domain/lists/types";
 import {
   CheckCircle2,
   Circle,

@@ -935,8 +935,9 @@ test.describe("hue-instant-control", () => {
     test.skip(!health?.ok, `Hue Gateway not reachable at ${HUE_HOST_BASE_URL}`);
 
     const expected = await getLightNamesForZone("Beneden");
-    test.skip(expected === null, "No zone found named Beneden.");
-    test.skip(expected.length === 0, "No lights found in zone Beneden.");
+    test.skip(!expected, "No zone found named Beneden.");
+    test.skip((expected?.length ?? 0) === 0, "No lights found in zone Beneden.");
+    if (expected === null || expected.length === 0) return;
 
     const modelId = await getToolsEnabledModelId(request);
     test.skip(!modelId, "No tools-enabled model found for active provider.");
@@ -993,6 +994,6 @@ test.describe("hue-instant-control", () => {
 
     const text = getUIMessageStreamText(chunks);
     expect(text).toContain("ok");
-    expect(text).toContain(expected[0] ?? "");
+    expect(text).toContain(expected[0]);
   });
 });

@@ -1,4 +1,7 @@
-import { createMemoryItem, listProfileMemory } from "@/server/memory";
+import {
+  createMemoryItem,
+  listProfileMemory,
+} from "@/server/memory-service";
 
 export async function GET(
   _req: Request,
@@ -29,4 +32,3 @@ export async function POST(
     );
   }
 }
-

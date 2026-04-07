@@ -63,7 +63,14 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
 
   const jsonSchema = await Promise.resolve(asSchema(hueGateway.inputSchema).jsonSchema);
   assert.equal(jsonSchema.type, "object");
-  assert.equal(jsonSchema.properties?.args?.type, "object");
+  const argsSchema =
+    jsonSchema.properties &&
+    typeof jsonSchema.properties === "object" &&
+    "args" in jsonSchema.properties
+      ? jsonSchema.properties.args
+      : null;
+  assert.ok(argsSchema && typeof argsSchema === "object");
+  assert.equal(argsSchema.type, "object");
 
   function* walkSchemaNodes(schema: any, at: string): Generator<[string, any]> {
     yield [at, schema];

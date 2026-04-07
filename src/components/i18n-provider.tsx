@@ -1,6 +1,6 @@
 "use client";
 
-import type { UiLanguage } from "@/lib/types";
+import type { UiLanguage } from "@/domain/profiles/types";
 import { localeForUiLanguage, type I18nKey, t as translate } from "@/lib/i18n";
 import {
   createContext,
@@ -70,4 +70,3 @@ export function useI18n(): I18nContextValue {
   }
   return ctx;
 }
-

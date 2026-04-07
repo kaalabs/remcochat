@@ -1,6 +1,6 @@
 import { loadChatState, saveChatState } from "@/server/chats";
 import type { UIMessage } from "ai";
-import type { RemcoChatMessageMetadata } from "@/lib/types";
+import type { RemcoChatMessageMetadata } from "@/domain/chats/types";
 
 export async function GET(
   _req: Request,

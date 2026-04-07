@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ToolStreamError } from "../src/server/ui-stream";
-import { shouldFinalizeAfterToolOnlyRun } from "../src/app/api/chat/route";
+import { shouldFinalizeAfterToolOnlyRun } from "../src/server/chat/helpers";
 
 test("shouldFinalizeAfterToolOnlyRun: triggers when stream stops after tool-only run", () => {
   const toolOutputsByName = new Map<string, unknown[]>();

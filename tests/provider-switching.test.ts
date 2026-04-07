@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RemcoChatConfig } from "../src/server/config";
+import type { ModelsDevProviderShowResponse } from "../src/server/modelsdev";
 import { buildProviderSwitcher } from "../src/server/provider-switching";
 
 function createTestConfig(): RemcoChatConfig {
@@ -69,7 +70,11 @@ test("buildProviderSwitcher returns configured providers when one metadata probe
     config: createTestConfig(),
     storedActiveProviderId: "broken",
     timeoutMs: 1000,
-    probeProviderMetadata: async (providerId) => {
+    probeProviderMetadata: async (
+      providerId,
+      _timeoutMs,
+    ): Promise<ModelsDevProviderShowResponse> => {
+      void _timeoutMs;
       if (providerId === "broken") {
         throw new Error("connect ETIMEDOUT");
       }
@@ -124,7 +129,11 @@ test("buildProviderSwitcher falls back to the default provider and flags config 
     config: createTestConfig(),
     storedActiveProviderId: "missing-provider",
     timeoutMs: 1000,
-    probeProviderMetadata: async (providerId) => {
+    probeProviderMetadata: async (
+      providerId,
+      _timeoutMs,
+    ): Promise<ModelsDevProviderShowResponse> => {
+      void _timeoutMs;
       if (providerId === "broken") {
         return {
           provider: {

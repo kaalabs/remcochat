@@ -75,11 +75,12 @@ test("createUIMessageStreamWithToolErrorContinuation appends continuation stream
   assert.equal(output[8].type, "text-delta");
   assert.equal(output[8].delta, "after");
 
-  assert.ok(receivedErrors);
-  assert.equal(receivedErrors?.length, 1);
-  assert.equal(receivedErrors?.[0]?.toolName, "displayNotes");
-  assert.equal(receivedErrors?.[0]?.stage, "output");
-  assert.equal(receivedErrors?.[0]?.errorText, "boom");
+  assert.notEqual(receivedErrors, null);
+  const errors = receivedErrors!;
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0]?.toolName, "displayNotes");
+  assert.equal(errors[0]?.stage, "output");
+  assert.equal(errors[0]?.errorText, "boom");
 });
 
 test("createUIMessageStreamWithToolErrorContinuation does not continue when no tool errors occurred", async () => {
@@ -181,7 +182,7 @@ test("stripUIMessage* helpers prevent duplicate assistant messages when stitchin
   );
 
   const finalById = new Map<string, unknown>();
-  for await (const msg of readUIMessageStream({ stream: stitched as ReadableStream<Chunk> })) {
+  for await (const msg of readUIMessageStream({ stream: stitched as any })) {
     const candidate = msg as { id?: unknown };
     if (typeof candidate.id === "string") finalById.set(candidate.id, msg);
   }

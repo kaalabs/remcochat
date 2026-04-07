@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getConfig } from "@/server/config";
 import { getLanguageModelForProvider } from "@/server/llm-provider";
 import { extractJsonObject } from "@/server/llm-json";
-import type { OvNlIntent, OvNlToolAction, OvNlToolOutput } from "@/lib/types";
+import type { OvNlIntent, OvNlToolAction, OvNlToolOutput } from "@/domain/ov-nl/types";
 import {
   applyTripsTextHeuristicsToArgs,
   extractRouteFromText,

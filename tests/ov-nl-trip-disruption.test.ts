@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { OvNlTripLeg, OvNlTripSummary } from "../src/lib/types";
+import type { OvNlTripLeg, OvNlTripSummary } from "../src/domain/ov-nl/types";
 import { legHasDisruption, tripHasLegDisruptions } from "../src/lib/ov-nl-trip-disruption";
 
 function makeLeg(overrides?: Partial<OvNlTripLeg>): OvNlTripLeg {
@@ -94,4 +94,3 @@ test("tripHasLegDisruptions returns true for cancelled status even without leg s
 test("tripHasLegDisruptions returns false when no legs have disruption signals", () => {
   assert.equal(tripHasLegDisruptions(makeTrip()), false);
 });
-

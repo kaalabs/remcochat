@@ -1,5 +1,4 @@
-import type { OvNlIntent } from "@/lib/types";
-import type { OvNlToolAction } from "@/lib/types";
+import type { OvNlIntent, OvNlToolAction } from "@/domain/ov-nl/types";
 import { OvQueryV1Schema, type OvQueryV1 } from "@/server/ov/query-schema";
 
 export type OvPlanV1 = {

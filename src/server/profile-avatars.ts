@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import type { ProfileAvatar } from "@/domain/profiles/types";
 import { getDb } from "@/server/db";
 import { getConfig } from "@/server/config";
 import { requireLocalPathAllowed } from "@/server/local-access";
@@ -9,12 +10,7 @@ import {
   MAX_PROFILE_AVATAR_SIZE_BYTES,
 } from "@/lib/profile-avatar-constraints";
 
-export type ProfileAvatar = {
-  mediaType: string;
-  sizeBytes: number;
-  updatedAt: string;
-  position: { x: number; y: number };
-};
+export type { ProfileAvatar } from "@/domain/profiles/types";
 
 const DEFAULT_POSITION = { x: 50, y: 50 };
 const MAX_AVATAR_SIZE_BYTES = MAX_PROFILE_AVATAR_SIZE_BYTES;
@@ -68,6 +64,28 @@ export function normalizeAvatarPosition(input: unknown): { x: number; y: number 
   return { x, y };
 }
 
+export function buildProfileAvatar(input: {
+  mediaType: unknown;
+  sizeBytes: unknown;
+  updatedAt: unknown;
+  posX: unknown;
+  posY: unknown;
+}): ProfileAvatar | null {
+  const mediaType = input.mediaType ? String(input.mediaType) : "";
+  const updatedAt = input.updatedAt ? String(input.updatedAt) : "";
+  if (!mediaType || !updatedAt) return null;
+
+  return {
+    mediaType,
+    sizeBytes: Number(input.sizeBytes ?? 0),
+    updatedAt,
+    position: normalizeAvatarPosition({
+      x: input.posX ?? DEFAULT_POSITION.x,
+      y: input.posY ?? DEFAULT_POSITION.y,
+    }),
+  };
+}
+
 function assertProfileExists(profileId: string) {
   const id = String(profileId ?? "").trim();
   if (!id) throw new Error("Missing profileId.");
@@ -101,19 +119,13 @@ export function getProfileAvatar(profileId: string): ProfileAvatar | null {
 
   if (!row) throw new Error("Profile not found.");
 
-  const mediaType = row.avatar_media_type ? String(row.avatar_media_type) : "";
-  const updatedAt = row.avatar_updated_at ? String(row.avatar_updated_at) : "";
-  if (!mediaType || !updatedAt) return null;
-
-  return {
-    mediaType,
-    sizeBytes: Number(row.avatar_size_bytes ?? 0),
-    updatedAt,
-    position: {
-      x: clampPct(Number(row.avatar_pos_x ?? DEFAULT_POSITION.x)),
-      y: clampPct(Number(row.avatar_pos_y ?? DEFAULT_POSITION.y)),
-    },
-  };
+  return buildProfileAvatar({
+    mediaType: row.avatar_media_type,
+    sizeBytes: row.avatar_size_bytes,
+    updatedAt: row.avatar_updated_at,
+    posX: row.avatar_pos_x,
+    posY: row.avatar_pos_y,
+  });
 }
 
 export async function readProfileAvatarFile(profileId: string): Promise<{

@@ -1,5 +1,5 @@
 import { HomeClient } from "@/app/home-client";
-import { createChat, listChats } from "@/server/chats";
+import { getHomePageInitialChats } from "@/app/home-page-initial-chats";
 import { listProfiles } from "@/server/profiles";
 import { isAdminEnabled } from "@/server/admin";
 import { getConfig } from "@/server/config";
@@ -25,14 +25,7 @@ export default async function Home() {
   const initialActiveProfileId = profiles.some((p) => p.id === storedProfileId)
     ? storedProfileId
     : defaultProfileId;
-
-  const chats = initialActiveProfileId ? listChats(initialActiveProfileId) : [];
-  const initialChats =
-    chats.length > 0 && chats[0]
-      ? chats
-      : initialActiveProfileId
-        ? [createChat({ profileId: initialActiveProfileId })]
-        : [];
+  const initialChats = getHomePageInitialChats(initialActiveProfileId);
 
   return (
     <HomeClient

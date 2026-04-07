@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useI18n } from "@/components/i18n-provider";
-import type { AgendaItem, AgendaToolOutput } from "@/lib/types";
+import type { AgendaItem, AgendaToolOutput } from "@/domain/agenda/types";
 import { CalendarDays, Share2, User, Users } from "lucide-react";
 
 type AgendaCardProps = {

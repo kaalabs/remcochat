@@ -1,5 +1,9 @@
 import { getProfile } from "@/server/profiles";
-import { listProfileNotes, runNoteAction, type NoteActionInput } from "@/server/notes";
+import {
+  listProfileNotes,
+  runNoteAction,
+  type NoteActionInput,
+} from "@/server/notes-service";
 
 const allowedActions = new Set<NoteActionInput["action"]>([
   "show",

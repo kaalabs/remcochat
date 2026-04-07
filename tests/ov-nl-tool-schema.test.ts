@@ -67,8 +67,19 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
     (rootSchema.properties as Record<string, unknown> | undefined)?.args as
       | Record<string, unknown>
       | undefined
-  )?.type;
-  assert.equal(argsSchema, "object");
+  );
+  assert.ok(argsSchema && typeof argsSchema === "object" && !Array.isArray(argsSchema));
+  const argsHasObjectBranch =
+    argsSchema.type === "object" ||
+    (Array.isArray(argsSchema.anyOf) &&
+      argsSchema.anyOf.some(
+        (branch) =>
+          branch &&
+          typeof branch === "object" &&
+          !Array.isArray(branch) &&
+          (branch as Record<string, unknown>).type === "object"
+      ));
+  assert.equal(argsHasObjectBranch, true);
 
   function* walkSchemaNodes(schema: unknown, at: string): Generator<[string, unknown]> {
     yield [at, schema];
@@ -109,6 +120,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   }
 
   const emptyNodes: string[] = [];
+  const incompleteRequiredNodes: string[] = [];
   for (const [at, node] of walkSchemaNodes(jsonSchema, "$")) {
     if (
       node &&
@@ -118,9 +130,27 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
     ) {
       emptyNodes.push(at);
     }
+
+    if (
+      node &&
+      typeof node === "object" &&
+      !Array.isArray(node) &&
+      node.properties &&
+      typeof node.properties === "object" &&
+      !Array.isArray(node.properties)
+    ) {
+      const propertyKeys = Object.keys(node.properties as Record<string, unknown>).sort();
+      const required = Array.isArray((node as { required?: unknown }).required)
+        ? [...((node as { required: string[] }).required)].sort()
+        : [];
+      if (propertyKeys.join("\n") !== required.join("\n")) {
+        incompleteRequiredNodes.push(at);
+      }
+    }
   }
 
   assert.deepEqual(emptyNodes, []);
+  assert.deepEqual(incompleteRequiredNodes, []);
 });
 
 test("ovNlGateway wire input schema accepts over-specified args payload", () => {

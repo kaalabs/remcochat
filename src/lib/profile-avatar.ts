@@ -1,4 +1,4 @@
-import type { Profile } from "@/lib/types";
+import type { Profile } from "@/domain/profiles/types";
 
 export function getProfileAvatarSrc(profile: Pick<Profile, "id" | "avatar">) {
   if (!profile.avatar) return null;
@@ -6,4 +6,3 @@ export function getProfileAvatarSrc(profile: Pick<Profile, "id" | "avatar">) {
   const v = encodeURIComponent(profile.avatar.updatedAt);
   return `/api/profiles/${profileId}/avatar?v=${v}`;
 }
-

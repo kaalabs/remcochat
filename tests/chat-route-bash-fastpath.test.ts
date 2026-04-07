@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   extractExplicitBashCommand,
   shouldAllowDirectBashFastPath,
-} from "../src/app/api/chat/route";
+} from "../src/server/chat/helpers";
 
 test("extractExplicitBashCommand: accepts explicit /bash command", () => {
   assert.equal(extractExplicitBashCommand("/bash npm test"), "npm test");

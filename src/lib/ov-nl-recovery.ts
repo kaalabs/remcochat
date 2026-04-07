@@ -1,4 +1,4 @@
-import type { OvNlErrorCode, OvNlToolOutput } from "@/lib/types";
+import type { OvNlErrorCode, OvNlToolOutput } from "@/domain/ov-nl/types";
 
 type OvNlErrorLikeOutput = Extract<
   OvNlToolOutput,

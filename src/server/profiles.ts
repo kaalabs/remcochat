@@ -1,10 +1,10 @@
-import type { Profile, UiLanguage } from "@/lib/types";
+import type { Profile, UiLanguage } from "@/domain/profiles/types";
 import { normalizeUiLanguage } from "@/lib/i18n";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
 import { getActiveProviderConfig } from "@/server/model-registry";
 import { deleteAttachmentsForProfile } from "@/server/attachments";
-import { deleteProfileAvatar } from "@/server/profile-avatars";
+import { buildProfileAvatar, deleteProfileAvatar } from "@/server/profile-avatars";
 
 type ProfileRow = {
   id: string;
@@ -37,24 +37,13 @@ function rowToProfile(row: ProfileRow): Profile {
     customInstructionsRevision: Number(row.custom_instructions_revision ?? 1),
     memoryEnabled: Boolean(row.memory_enabled),
     uiLanguage: normalizeUiLanguage(row.ui_language, "en"),
-    avatar:
-      row.avatar_media_type && row.avatar_updated_at
-        ? {
-            mediaType: String(row.avatar_media_type),
-            sizeBytes: Number(row.avatar_size_bytes ?? 0),
-            updatedAt: String(row.avatar_updated_at),
-            position: {
-              x: (() => {
-                const v = Number(row.avatar_pos_x ?? 50);
-                return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 50;
-              })(),
-              y: (() => {
-                const v = Number(row.avatar_pos_y ?? 50);
-                return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 50;
-              })(),
-            },
-          }
-        : null,
+    avatar: buildProfileAvatar({
+      mediaType: row.avatar_media_type,
+      sizeBytes: row.avatar_size_bytes,
+      updatedAt: row.avatar_updated_at,
+      posX: row.avatar_pos_x,
+      posY: row.avatar_pos_y,
+    }),
   };
 }
 

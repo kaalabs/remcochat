@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { NotesToolOutput, QuickNote } from "@/domain/notes/types";
 import { splitNoteContent } from "@/lib/notes";
-import type { NotesToolOutput, QuickNote } from "@/lib/types";
 import { PenLine, Trash2 } from "lucide-react";
 
 type NotesCardProps = NotesToolOutput & {
   profileId: string;
+  sourceKey?: string;
 };
 
 type NotesState = NotesToolOutput & {
@@ -30,6 +31,24 @@ function normalizeOutput(output: NotesToolOutput): NotesState {
     totalCount: Number(output.totalCount ?? 0),
     limit: Number(output.limit ?? 0) || 6,
   };
+}
+
+export function createNotesCardSnapshotKey(input: {
+  limit?: number;
+  notes?: QuickNote[];
+  sourceKey: string;
+  totalCount?: number;
+}) {
+  return JSON.stringify({
+    sourceKey: input.sourceKey,
+    limit: Number(input.limit ?? 0) || 6,
+    totalCount: Number(input.totalCount ?? 0),
+    notes: (Array.isArray(input.notes) ? input.notes : []).map((note) => [
+      note.id,
+      note.updatedAt,
+      note.content,
+    ]),
+  });
 }
 
 function formatTimestamp(locale: string, value: string) {
@@ -45,22 +64,43 @@ function formatTimestamp(locale: string, value: string) {
 
 export function NotesCard(props: NotesCardProps) {
   const { locale, t } = useI18n();
-  const [state, setState] = useState<NotesState>(() => normalizeOutput(props));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const notesProp = props.notes;
   const totalCountProp = props.totalCount;
   const limitProp = props.limit;
-  useEffect(() => {
-    setState(
+  const sourceKey = props.sourceKey ?? "notes-card";
+  const upstreamState = useMemo(
+    () =>
       normalizeOutput({
         notes: notesProp,
         totalCount: totalCountProp,
         limit: limitProp,
-      })
-    );
-  }, [limitProp, notesProp, totalCountProp]);
+      }),
+    [limitProp, notesProp, totalCountProp]
+  );
+  const upstreamSnapshotKey = useMemo(
+    () =>
+      createNotesCardSnapshotKey({
+        sourceKey,
+        notes: upstreamState.notes,
+        totalCount: upstreamState.totalCount,
+        limit: upstreamState.limit,
+      }),
+    [sourceKey, upstreamState]
+  );
+  const [state, setState] = useState<NotesState>(() => upstreamState);
+  const lastAppliedUpstreamSnapshotKeyRef = useRef(upstreamSnapshotKey);
+
+  useEffect(() => {
+    if (upstreamSnapshotKey === lastAppliedUpstreamSnapshotKeyRef.current) {
+      return;
+    }
+
+    lastAppliedUpstreamSnapshotKeyRef.current = upstreamSnapshotKey;
+    setState(upstreamState);
+  }, [upstreamSnapshotKey, upstreamState]);
 
   const notes = state.notes;
   const noteCount = state.totalCount || notes.length;

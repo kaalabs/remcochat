@@ -1,4 +1,4 @@
-import type { UiLanguage } from "@/lib/types";
+import type { UiLanguage } from "@/domain/profiles/types";
 
 export type I18nKey =
   | keyof typeof enMessages;

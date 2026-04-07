@@ -58,7 +58,7 @@ afterEach(() => {
   else process.env.REMCOCHAT_DB_PATH = ORIGINAL_DB_PATH;
 });
 
-test("chat pins: pinned chats sort above unpinned for the viewer profile", () => {
+test("chat pins: pinned chats sort above unpinned for the viewer profile", async () => {
   process.env.REMCOCHAT_DB_PATH = makeTempPath("remcochat-db", ".sqlite");
   process.env.REMCOCHAT_CONFIG_PATH = writeTempConfigToml();
   _resetDbForTests();
@@ -66,6 +66,7 @@ test("chat pins: pinned chats sort above unpinned for the viewer profile", () =>
 
   const profile = createProfile({ name: "P1" });
   const older = createChat({ profileId: profile.id, title: "Older" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
   const newer = createChat({ profileId: profile.id, title: "Newer" });
 
   const before = listAccessibleChats(profile.id).filter((c) => !c.archivedAt);
@@ -112,4 +113,3 @@ test("chat pins: pinning is per-profile (does not affect other viewers)", () => 
   const viewerAfter = listAccessibleChats(p2.id).find((c) => c.id === chat.id);
   assert.ok(typeof viewerAfter?.pinnedAt === "string" && viewerAfter!.pinnedAt);
 });
-
