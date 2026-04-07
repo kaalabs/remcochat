@@ -2,6 +2,10 @@
 
 This document describes **how RemcoChat implements “bash tools”**: the architecture, dependencies, security posture, and configuration knobs.
 
+Current local-dev/E2E status:
+- Use local Docker `sandboxd` for bash execution.
+- Do not use the legacy Vercel bash sandbox path for current development or merge validation.
+
 The “bash tools” feature exposes a small tool surface area to the model:
 - `bash`: run a shell command inside an isolated sandbox
 - `readFile`: read a file inside the sandbox workspace
@@ -32,9 +36,9 @@ The implementation is intentionally **defense-in-depth**:
   - the standard `bash-tool` toolkit (bash/readFile/writeFile), and
   - a custom **streaming** `bash` tool that yields incremental output for the UI.
 
-3) **Execution backend (one of two providers)**
-- **Vercel Sandbox provider**: `@vercel/sandbox` microVMs.
-- **Docker sandboxd provider**: local orchestrator + per-session Docker containers.
+3) **Execution backend**
+- **Docker sandboxd provider**: local orchestrator + per-session Docker containers used for current local dev/E2E.
+- **Legacy Vercel provider**: `@vercel/sandbox` microVMs kept only as a compatibility path in code.
 
 4) **UI tool rendering** (`src/components/bash-tool-card.tsx`, used from `src/app/home-client.tsx`)
 - Renders the `tool-bash`, `tool-readFile`, and `tool-writeFile` parts as “tool cards”.
@@ -108,7 +112,7 @@ Important: sandbox persistence is per RemcoChat server process. A server restart
 
 ## 4) Provider backends
 
-### 4.1 Vercel Sandbox provider (`@vercel/sandbox`)
+### 4.1 Legacy Vercel provider (`@vercel/sandbox`)
 
 Creation (`src/ai/bash-tools.ts`):
 - `Sandbox.create(...)` is called with:
@@ -296,7 +300,7 @@ Required enablement / auth:
 - `REMCOCHAT_ENABLE_BASH_TOOL=1` (hard kill-switch)
 - `REMCOCHAT_ADMIN_TOKEN=...` (required for `access="lan"`; also used for sandboxd auth in the Docker compose stack)
 
-Vercel Sandbox credentials (when provider is `vercel`):
+Legacy Vercel Sandbox credentials (only when explicitly using `provider="vercel"`):
 - Preferred in local dev (checked by scripts): `VERCEL_OIDC_TOKEN=...`
 - Alternative credentials passed directly by RemcoChat when present:
   - `VERCEL_TOKEN` (or `VERCEL_API_KEY`)

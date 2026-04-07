@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { skipUnlessOpencodeApiKey } from "./requirements";
 import {
   getUIMessageStreamErrors,
+  getToolStdoutByName,
   parseUIMessageStreamChunks,
 } from "./ui-message-stream";
 
@@ -40,25 +41,6 @@ async function getToolsEnabledModelId(request: import("@playwright/test").APIReq
     toolEnabled[0]?.id ??
     ""
   );
-}
-
-function extractBashStdout(chunks: ReturnType<typeof parseUIMessageStreamChunks>) {
-  const isRecord = (value: unknown): value is Record<string, unknown> => {
-    return Boolean(value && typeof value === "object");
-  };
-
-  return chunks
-    .filter((c) => String(c.toolName ?? "") === "bash")
-    .map((c) => {
-      const type = String(c.type ?? "");
-      if (type !== "tool-output-available" && type !== "tool-result") return "";
-
-      const payload = c.output ?? c.result ?? c.toolOutput ?? c.toolResult;
-      if (!isRecord(payload)) return "";
-      return typeof payload.stdout === "string" ? payload.stdout : "";
-    })
-    .filter(Boolean)
-    .join("\n");
 }
 
 test("Skills script runs in Vercel Sandbox (optional)", async ({ request }) => {
@@ -106,7 +88,7 @@ test("Skills script runs in Vercel Sandbox (optional)", async ({ request }) => {
   const chunks = parseUIMessageStreamChunks(await chatRes.body());
   expect(getUIMessageStreamErrors(chunks)).toEqual([]);
 
-  expect(extractBashStdout(chunks)).toContain("REMCOCHAT_SKILLS_SCRIPT_OK");
+  expect(getToolStdoutByName(chunks, "bash")).toContain("REMCOCHAT_SKILLS_SCRIPT_OK");
 });
 
 function isDockerAvailable(): boolean {
@@ -241,7 +223,7 @@ test("Skills script runs in Docker sandboxd (optional)", async ({ request }) => 
 
     const chunks = parseUIMessageStreamChunks(await chatRes.body());
     expect(getUIMessageStreamErrors(chunks)).toEqual([]);
-    expect(extractBashStdout(chunks)).toContain("REMCOCHAT_SKILLS_SCRIPT_OK");
+    expect(getToolStdoutByName(chunks, "bash")).toContain("REMCOCHAT_SKILLS_SCRIPT_OK");
   } finally {
     await stopSandboxd(proc);
   }

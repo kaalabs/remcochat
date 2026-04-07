@@ -1,4 +1,4 @@
-import { tool as createTool } from "ai";
+import { jsonSchema, tool as createTool } from "ai";
 import { z } from "zod";
 import { setTimeout as delay } from "node:timers/promises";
 import { getConfig } from "@/server/config";
@@ -9,7 +9,82 @@ import { createToolBundle, defineToolEntry, type ToolBundle } from "@/ai/tool-bu
 
 export type HueGatewayToolsResult = ToolBundle;
 
-const HueGatewayToolActionSchema = z.enum([
+function createStrictObjectJsonSchema(properties: Record<string, unknown>): any {
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: properties as any,
+    required: Object.keys(properties),
+  };
+}
+
+function nullableStringJsonProperty(maxLength?: number, pattern?: string) {
+  return {
+    type: ["string", "null"] as const,
+    ...(typeof maxLength === "number" ? { maxLength } : {}),
+    ...(pattern ? { pattern } : {}),
+    default: null,
+  };
+}
+
+function nullableNumberJsonProperty(minimum?: number, maximum?: number) {
+  return {
+    type: ["number", "null"] as const,
+    ...(typeof minimum === "number" ? { minimum } : {}),
+    ...(typeof maximum === "number" ? { maximum } : {}),
+    default: null,
+  };
+}
+
+function nullableIntegerJsonProperty(minimum?: number, maximum?: number) {
+  return {
+    type: ["integer", "null"] as const,
+    ...(typeof minimum === "number" ? { minimum } : {}),
+    ...(typeof maximum === "number" ? { maximum } : {}),
+    default: null,
+  };
+}
+
+function nullableBooleanJsonProperty() {
+  return {
+    type: ["boolean", "null"] as const,
+    default: null,
+  };
+}
+
+function nullableEnumJsonProperty(values: readonly string[]) {
+  return {
+    type: ["string", "null"] as const,
+    enum: [...values, null],
+    default: null,
+  };
+}
+
+function nullableObjectJsonProperty(schema: Record<string, unknown>) {
+  return {
+    ...schema,
+    type: ["object", "null"] as const,
+    default: null,
+  };
+}
+
+function nullableArrayJsonProperty(
+  items: unknown,
+  options: {
+    minItems?: number;
+    maxItems?: number;
+  } = {},
+) {
+  return {
+    type: ["array", "null"] as const,
+    items: items as any,
+    ...(typeof options.minItems === "number" ? { minItems: options.minItems } : {}),
+    ...(typeof options.maxItems === "number" ? { maxItems: options.maxItems } : {}),
+    default: null,
+  };
+}
+
+const HUE_GATEWAY_TOOL_ACTIONS = [
   "inventory.snapshot",
   "room.set",
   "zone.set",
@@ -19,7 +94,25 @@ const HueGatewayToolActionSchema = z.enum([
   "resolve.by_name",
   "clipv2.request",
   "actions.batch",
-]);
+ ] as const;
+
+const HUE_GATEWAY_MATCH_MODES = [
+  "exact",
+  "case_insensitive",
+  "normalized",
+  "fuzzy",
+] as const;
+
+const HUE_GATEWAY_VERIFY_MODES = [
+  "none",
+  "poll",
+  "sse",
+  "poll_then_sse",
+] as const;
+
+const HUE_GATEWAY_METHODS = ["GET", "HEAD", "OPTIONS"] as const;
+
+const HueGatewayToolActionSchema = z.enum(HUE_GATEWAY_TOOL_ACTIONS);
 
 const SAFE_MATCH_DEFAULTS = {
   mode: "normalized",
@@ -36,7 +129,7 @@ const VERIFY_DEFAULTS_POLL = {
 
 const MatchOptionsSchema = z
   .object({
-    mode: z.enum(["exact", "case_insensitive", "normalized", "fuzzy"]).optional(),
+    mode: z.enum(HUE_GATEWAY_MATCH_MODES).optional(),
     minConfidence: z.number().min(0).max(1).optional(),
     minGap: z.number().min(0).max(1).optional(),
     maxCandidates: z.number().int().min(1).max(50).optional(),
@@ -45,7 +138,7 @@ const MatchOptionsSchema = z
 
 const VerifyOptionsSchema = z
   .object({
-    mode: z.enum(["none", "poll", "sse", "poll_then_sse"]).optional(),
+    mode: z.enum(HUE_GATEWAY_VERIFY_MODES).optional(),
     timeoutMs: z.number().int().min(0).optional(),
     pollIntervalMs: z.number().int().min(1).optional(),
     tolerances: z
@@ -90,7 +183,7 @@ const ResolveByNameArgsSchema = z
 
 const ClipV2RequestArgsSchema = z
   .object({
-    method: z.enum(["GET", "HEAD", "OPTIONS"]),
+    method: z.enum(HUE_GATEWAY_METHODS),
     path: z
       .string()
       .min(1)
@@ -185,6 +278,37 @@ const HueGatewayToolWireBatchStepActionSchema = z.enum([
   "clipv2.request",
 ]);
 
+const HueGatewayMatchOptionsWireJsonSchema = createStrictObjectJsonSchema({
+  mode: nullableEnumJsonProperty(HUE_GATEWAY_MATCH_MODES),
+  minConfidence: nullableNumberJsonProperty(0, 1),
+  minGap: nullableNumberJsonProperty(0, 1),
+  maxCandidates: nullableIntegerJsonProperty(1, 50),
+});
+
+const HueGatewayVerifyTolerancesWireJsonSchema = createStrictObjectJsonSchema({
+  brightness: nullableNumberJsonProperty(0),
+  colorTempK: nullableIntegerJsonProperty(0),
+});
+
+const HueGatewayVerifyOptionsWireJsonSchema = createStrictObjectJsonSchema({
+  mode: nullableEnumJsonProperty(HUE_GATEWAY_VERIFY_MODES),
+  timeoutMs: nullableIntegerJsonProperty(0),
+  pollIntervalMs: nullableIntegerJsonProperty(1),
+  tolerances: nullableObjectJsonProperty(HueGatewayVerifyTolerancesWireJsonSchema),
+});
+
+const HueGatewayXYColorWireJsonSchema = createStrictObjectJsonSchema({
+  x: nullableNumberJsonProperty(),
+  y: nullableNumberJsonProperty(),
+});
+
+const HueGatewayLightStateWireJsonSchema = createStrictObjectJsonSchema({
+  on: nullableBooleanJsonProperty(),
+  brightness: nullableNumberJsonProperty(0, 100),
+  colorTempK: nullableIntegerJsonProperty(1),
+  xy: nullableObjectJsonProperty(HueGatewayXYColorWireJsonSchema),
+});
+
 // NOTE: Some tool-calling providers reject JSON Schemas containing "empty schema"
 // nodes like `{}` (which Zod emits for `z.unknown()` / `z.any()`), even though
 // that is valid JSON Schema. The `ai` SDK also forces `additionalProperties:false`
@@ -221,6 +345,24 @@ const HueGatewayToolWireBatchStepArgsSchema = z
   })
   .strict();
 
+const HueGatewayToolWireBatchStepArgsJsonSchema = createStrictObjectJsonSchema({
+  ifRevision: nullableIntegerJsonProperty(0),
+  rtype: nullableStringJsonProperty(),
+  rid: nullableStringJsonProperty(),
+  name: nullableStringJsonProperty(),
+  roomRid: nullableStringJsonProperty(),
+  roomName: nullableStringJsonProperty(),
+  zoneRid: nullableStringJsonProperty(),
+  zoneName: nullableStringJsonProperty(),
+  dryRun: nullableBooleanJsonProperty(),
+  match: nullableObjectJsonProperty(HueGatewayMatchOptionsWireJsonSchema),
+  state: nullableObjectJsonProperty(HueGatewayLightStateWireJsonSchema),
+  verify: nullableObjectJsonProperty(HueGatewayVerifyOptionsWireJsonSchema),
+  method: nullableEnumJsonProperty(HUE_GATEWAY_METHODS),
+  path: nullableStringJsonProperty(undefined, "^/clip/v2/.*"),
+  retry: nullableBooleanJsonProperty(),
+});
+
 const HueGatewayToolWireArgsSchema = HueGatewayToolWireBatchStepArgsSchema.extend({
   continueOnError: z.boolean().optional(),
   actions: z
@@ -236,12 +378,51 @@ const HueGatewayToolWireArgsSchema = HueGatewayToolWireBatchStepArgsSchema.exten
     .optional(),
 }).strict();
 
+const HueGatewayToolWireArgsJsonSchema = createStrictObjectJsonSchema({
+  ifRevision: nullableIntegerJsonProperty(0),
+  rtype: nullableStringJsonProperty(),
+  rid: nullableStringJsonProperty(),
+  name: nullableStringJsonProperty(),
+  roomRid: nullableStringJsonProperty(),
+  roomName: nullableStringJsonProperty(),
+  zoneRid: nullableStringJsonProperty(),
+  zoneName: nullableStringJsonProperty(),
+  dryRun: nullableBooleanJsonProperty(),
+  match: nullableObjectJsonProperty(HueGatewayMatchOptionsWireJsonSchema),
+  state: nullableObjectJsonProperty(HueGatewayLightStateWireJsonSchema),
+  verify: nullableObjectJsonProperty(HueGatewayVerifyOptionsWireJsonSchema),
+  method: nullableEnumJsonProperty(HUE_GATEWAY_METHODS),
+  path: nullableStringJsonProperty(undefined, "^/clip/v2/.*"),
+  retry: nullableBooleanJsonProperty(),
+  continueOnError: nullableBooleanJsonProperty(),
+  actions: nullableArrayJsonProperty(
+    createStrictObjectJsonSchema({
+      action: {
+        type: "string",
+        enum: [...HueGatewayToolWireBatchStepActionSchema.options],
+      },
+      args: nullableObjectJsonProperty(HueGatewayToolWireBatchStepArgsJsonSchema),
+    }),
+    { minItems: 1 },
+  ),
+});
+
 const HueGatewayToolWireInputSchema = z
   .object({
     action: HueGatewayToolActionSchema,
     args: HueGatewayToolWireArgsSchema.optional(),
   })
   .strict();
+
+const HueGatewayToolWireInputJsonSchema = jsonSchema(
+  createStrictObjectJsonSchema({
+    action: {
+      type: "string",
+      enum: [...HUE_GATEWAY_TOOL_ACTIONS],
+    },
+    args: nullableObjectJsonProperty(HueGatewayToolWireArgsJsonSchema),
+  }),
+);
 
 const HueGatewayToolValidatedInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("inventory.snapshot"), args: InventorySnapshotArgsSchema }).strict(),
@@ -265,8 +446,27 @@ function applyVerifyDefaultForLowLevel(verify: unknown | undefined): unknown {
   return { mode: "none" };
 }
 
+function stripNullsDeep(value: unknown): unknown {
+  if (value === null) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripNullsDeep(item))
+      .filter((item) => item !== undefined);
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalized = stripNullsDeep(child);
+    if (normalized !== undefined) out[key] = normalized;
+  }
+  return out;
+}
+
 function applyDefaults(action: string, args: unknown): unknown {
-  if (!args || typeof args !== "object") return args;
+  if (!args || typeof args !== "object") {
+    return action === "inventory.snapshot" ? {} : args;
+  }
   const obj = args as Record<string, unknown>;
 
   if (action === "resolve.by_name") {
@@ -401,14 +601,14 @@ export function createHueGatewayTools(input: {
     strict: true,
     description:
       "Execute a Hue Gateway API v2 action via POST /v2/actions with deterministic correlation/idempotency keys and safe defaults (match/verify).",
-    inputSchema: HueGatewayToolWireInputSchema,
+    inputSchema: HueGatewayToolWireInputJsonSchema,
     execute: async (toolInput) => {
       const turnUserMessageId = String(input.turnUserMessageId ?? "").trim() || "unknown";
       const turnKey = input.isTemporary
         ? `${String(input.temporarySessionId ?? "").trim() || "tmp"}:${turnUserMessageId}`
         : `${String(input.chatId ?? "").trim() || "chat"}:${turnUserMessageId}`;
 
-      const wire = HueGatewayToolWireInputSchema.safeParse(toolInput);
+      const wire = HueGatewayToolWireInputSchema.safeParse(stripNullsDeep(toolInput));
       if (!wire.success) {
         return {
           status: 0,

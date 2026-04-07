@@ -4,6 +4,7 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   getUIMessageStreamErrors,
+  getToolStdoutByName,
   parseUIMessageStreamChunks,
 } from "./ui-message-stream";
 
@@ -54,25 +55,7 @@ test("Bash tools run a command in Vercel Sandbox", async ({ request }) => {
   const chunks = parseUIMessageStreamChunks(await chatRes.body());
   expect(getUIMessageStreamErrors(chunks)).toEqual([]);
 
-  const isRecord = (value: unknown): value is Record<string, unknown> => {
-    return Boolean(value && typeof value === "object");
-  };
-
-  const stdout = chunks
-    .filter((c) => String(c.toolName ?? "") === "bash")
-    .map((c) => {
-      const type = String(c.type ?? "");
-      if (type !== "tool-output-available" && type !== "tool-result") return "";
-
-      const payload =
-        c.output ?? c.result ?? c.toolOutput ?? c.toolResult;
-      if (!isRecord(payload)) return "";
-
-      return typeof payload.stdout === "string" ? payload.stdout : "";
-    })
-    .filter(Boolean)
-    .join("\n");
-
+  const stdout = getToolStdoutByName(chunks, "bash");
   expect(stdout).toContain("REMCOCHAT_BASH_E2E_OK");
 });
 
@@ -202,24 +185,7 @@ test("Bash tools run a command in Docker sandboxd", async ({ request }) => {
     const chunks = parseUIMessageStreamChunks(await chatRes.body());
     expect(getUIMessageStreamErrors(chunks)).toEqual([]);
 
-    const isRecord = (value: unknown): value is Record<string, unknown> => {
-      return Boolean(value && typeof value === "object");
-    };
-
-    const stdout = chunks
-      .filter((c) => String(c.toolName ?? "") === "bash")
-      .map((c) => {
-        const type = String(c.type ?? "");
-        if (type !== "tool-output-available" && type !== "tool-result") return "";
-
-        const payload = c.output ?? c.result ?? c.toolOutput ?? c.toolResult;
-        if (!isRecord(payload)) return "";
-
-        return typeof payload.stdout === "string" ? payload.stdout : "";
-      })
-      .filter(Boolean)
-      .join("\n");
-
+    const stdout = getToolStdoutByName(chunks, "bash");
     expect(stdout).toContain("REMCOCHAT_BASH_DOCKER_E2E_OK");
   } finally {
     await stopSandboxd(proc);

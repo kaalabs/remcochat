@@ -70,7 +70,33 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
       ? jsonSchema.properties.args
       : null;
   assert.ok(argsSchema && typeof argsSchema === "object");
-  assert.equal(argsSchema.type, "object");
+  assert.deepEqual(argsSchema.type, ["object", "null"]);
+  const matchSchema =
+    argsSchema.properties &&
+    typeof argsSchema.properties === "object" &&
+    "match" in argsSchema.properties
+      ? argsSchema.properties.match
+      : null;
+  assert.ok(matchSchema && typeof matchSchema === "object");
+  assert.deepEqual(
+    Array.isArray((matchSchema as any).required)
+      ? [...(matchSchema as any).required].sort()
+      : null,
+    ["maxCandidates", "minConfidence", "minGap", "mode"].sort(),
+  );
+  const verifySchema =
+    argsSchema.properties &&
+    typeof argsSchema.properties === "object" &&
+    "verify" in argsSchema.properties
+      ? argsSchema.properties.verify
+      : null;
+  assert.ok(verifySchema && typeof verifySchema === "object");
+  assert.deepEqual(
+    Array.isArray((verifySchema as any).required)
+      ? [...(verifySchema as any).required].sort()
+      : null,
+    ["mode", "pollIntervalMs", "timeoutMs", "tolerances"].sort(),
+  );
 
   function* walkSchemaNodes(schema: any, at: string): Generator<[string, any]> {
     yield [at, schema];

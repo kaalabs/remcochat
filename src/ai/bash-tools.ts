@@ -12,6 +12,7 @@ import {
 import type { RemcoChatConfig } from "@/server/config";
 import { getConfig } from "@/server/config";
 import { requireLocalPathAllowed } from "@/server/local-access";
+import { shouldRequirePrivilegedToolApproval } from "@/server/tool-approval";
 import { tool as createTool } from "ai";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -916,14 +917,15 @@ function createStreamingBashTool(input: {
   cfg: NonNullable<RemcoChatConfig["bashTools"]>;
   destination: string;
   description: string;
+  needsApproval: boolean;
 }) {
-  const { sessionKey, cfg, destination, description } = input;
+  const { sessionKey, cfg, destination, description, needsApproval } = input;
   return createStrictTool({
     description,
     inputSchema: z.object({
       command: z.string().describe("The bash command to execute"),
     }).strict(),
-    needsApproval: true,
+    ...(needsApproval ? { needsApproval: true } : {}),
     execute: async function* (
       { command: originalCommand }: any,
       options: any,
@@ -1182,6 +1184,7 @@ export async function createBashTools(input: {
   try {
     prewarmSandboxEntry(input.sessionKey, cfg);
     const { createBashTool } = await loadBashTool();
+    const needsApproval = shouldRequirePrivilegedToolApproval(input.request);
 
     const destination = "/vercel/sandbox/workspace";
     const maxOutputLength = Math.max(cfg.maxStdoutChars, cfg.maxStderrChars);
@@ -1217,6 +1220,7 @@ export async function createBashTools(input: {
       sessionKey: input.sessionKey,
       cfg,
       destination,
+      needsApproval,
       description:
         typeof tools.bash?.description === "string"
           ? tools.bash.description
@@ -1233,7 +1237,7 @@ export async function createBashTools(input: {
     );
     const writeFileTool = withToolOverrides(
       tools.writeFile as Record<string, unknown> | undefined,
-      { strict: true, needsApproval: true },
+      { strict: true, needsApproval: needsApproval ? true : undefined },
     );
 
     return createToolBundle({
@@ -1256,12 +1260,12 @@ export async function createBashTools(input: {
           ? [
               defineToolEntry({
                 name: "writeFile",
-              metadata: {
-                group: "sandbox",
-                risk: "approval",
-                needsApproval: true,
-                strict: true,
-              },
+                metadata: {
+                  group: "sandbox",
+                  risk: "approval",
+                  ...(needsApproval ? { needsApproval: true } : {}),
+                  strict: true,
+                },
                 tool: writeFileTool,
               }),
             ]
@@ -1271,7 +1275,7 @@ export async function createBashTools(input: {
           metadata: {
             group: "sandbox",
             risk: "approval",
-            needsApproval: true,
+            ...(needsApproval ? { needsApproval: true } : {}),
             strict: true,
           },
           tool: streamingBash,

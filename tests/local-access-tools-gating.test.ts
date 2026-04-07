@@ -120,7 +120,7 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   assert.equal(Object.prototype.hasOwnProperty.call(res.tools, "obsidian"), false);
 });
 
-test("local execution tools carry approval metadata", () => {
+test("local execution tools do not require approval for localhost requests", () => {
   process.env.REMCOCHAT_CONFIG_PATH = writeTempConfigToml(`
 version = 2
 
@@ -147,10 +147,47 @@ allowed_model_ids = ["openai/gpt-4o-mini"]
   });
   const res = createLocalAccessTools({ request: req });
 
-  assert.equal(res.metadataByName.localExec?.needsApproval, true);
-  assert.equal(res.metadataByName.obsidian?.needsApproval, true);
+  assert.equal(res.metadataByName.localExec?.needsApproval, undefined);
+  assert.equal(res.metadataByName.obsidian?.needsApproval, undefined);
   assert.equal(res.metadataByName.localReadFile?.needsApproval, undefined);
   assert.equal(res.metadataByName.localExec?.executionOwner, "server");
   assert.equal(res.metadataByName.obsidian?.executionOwner, "server");
   assert.equal(res.metadataByName.localReadFile?.executionOwner, "server");
+});
+
+test("local execution tools do not require approval for admin-token LAN requests", () => {
+  process.env.REMCOCHAT_CONFIG_PATH = writeTempConfigToml(`
+version = 2
+
+[app]
+default_provider_id = "vercel"
+
+[app.local_access]
+enabled = true
+allowed_commands = ["obsidian"]
+allowed_directories = ["."]
+
+[providers.vercel]
+name = "Vercel AI Gateway"
+api_key_env = "VERCEL_AI_GATEWAY_API_KEY"
+base_url = "https://ai-gateway.vercel.sh/v3/ai"
+default_model_id = "openai/gpt-4o-mini"
+allowed_model_ids = ["openai/gpt-4o-mini"]
+`);
+
+  process.env.REMCOCHAT_ADMIN_TOKEN = "test-lan-admin-token";
+  _resetConfigCacheForTests();
+
+  const req = new Request("http://example.com/api/chat", {
+    headers: {
+      host: "example.com",
+      "x-remcochat-admin-token": "test-lan-admin-token",
+    },
+  });
+  const res = createLocalAccessTools({ request: req });
+
+  assert.equal(res.enabled, true);
+  assert.equal(res.metadataByName.localExec?.needsApproval, undefined);
+  assert.equal(res.metadataByName.obsidian?.needsApproval, undefined);
+  assert.equal(res.metadataByName.localReadFile?.needsApproval, undefined);
 });

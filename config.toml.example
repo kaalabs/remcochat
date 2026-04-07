@@ -95,7 +95,8 @@ timeout_ms = 30000
 max_stdout_chars = 200000
 max_stderr_chars = 20000
 
-# Bash tools (Vercel Sandbox) are disabled by default.
+# Bash tools are disabled by default.
+# Local dev/E2E should use Docker sandboxd.
 # Enabling them requires BOTH:
 # - config: app.bash_tools.enabled = true
 # - env: REMCOCHAT_ENABLE_BASH_TOOL=1
@@ -103,12 +104,12 @@ max_stderr_chars = 20000
 # - access="localhost": tools are available for localhost requests only.
 # - access="lan": tools are available ONLY when the request includes the admin token.
 #   Set env REMCOCHAT_ADMIN_TOKEN and send it on every /api/chat request via x-remcochat-admin-token.
-# - provider="vercel": requires Vercel Sandbox credentials (see attachments section above).
 # - provider="docker": requires sandboxd running and docker.orchestrator_url configured.
+# - provider="vercel": legacy compatibility path only; do not use it for current local dev/E2E.
 # - seed.mode="git" requires seed.git_url; seed.mode="upload" requires project_root.
 [app.bash_tools]
 enabled = false
-provider = "vercel"  # "vercel" | "docker"
+provider = "docker"  # "docker" (current local-dev path) | "vercel" (legacy)
 access = "localhost" # "localhost" | "lan"
 project_root = ""    # required if seed.mode="upload"
 max_stdout_chars = 12000
@@ -118,8 +119,8 @@ max_concurrent_sandboxes = 2
 idle_ttl_ms = 900000 # 15 minutes
 
 [app.bash_tools.sandbox]
-runtime = "node22" # vercel: "node22" | "python3.13"; docker: "node24" | "python3.13"
-ports = [3000] # Vercel: exposed as public URLs; Docker: published via sandboxd (max 4). Use [] to disable.
+runtime = "node24" # docker: "node24" | "python3.13"; legacy vercel: "node22" | "python3.13"
+ports = [3000] # Docker: published via sandboxd (max 4). Legacy vercel used public URLs.
 vcpus = 2
 timeout_ms = 900000
 
