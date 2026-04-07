@@ -21,6 +21,13 @@ function makeTempPath(prefix: string, ext: string) {
   );
 }
 
+function formatUtcDateOffset(daysFromToday: number) {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + daysFromToday);
+  return date.toISOString().slice(0, 10);
+}
+
 function writeTempConfigToml() {
   const filePath = makeTempPath("remcochat-config", ".toml");
   fs.writeFileSync(
@@ -61,11 +68,12 @@ test("agenda service manages create, match-based update, list, and delete", () =
   _resetConfigCacheForTests();
 
   const profile = createProfile({ name: "Planner" });
+  const scheduledDate = formatUtcDateOffset(2);
 
   const created = runAgendaAction(profile.id, {
     action: "create",
     description: "  Team sync  ",
-    date: "2026-04-02",
+    date: scheduledDate,
     time: "09:30",
     durationMinutes: 45,
     timezone: "UTC",
@@ -74,7 +82,7 @@ test("agenda service manages create, match-based update, list, and delete", () =
   assert.equal(created.action, "create");
   assert.equal(created.item?.description, "Team sync");
   assert.equal(created.item?.timezone, "UTC");
-  assert.equal(created.item?.localDate, "2026-04-02");
+  assert.equal(created.item?.localDate, scheduledDate);
   assert.equal(created.item?.localTime, "09:30");
 
   const listed = runAgendaAction(profile.id, {
@@ -90,7 +98,7 @@ test("agenda service manages create, match-based update, list, and delete", () =
     action: "update",
     match: {
       description: "team sync",
-      date: "2026-04-02",
+      date: scheduledDate,
       time: "09:30",
     },
     patch: {
