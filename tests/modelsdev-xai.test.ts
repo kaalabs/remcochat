@@ -29,3 +29,22 @@ test("modelsdev support filter respects curated E2E provider model lists", () =>
     false
   );
 });
+
+test("modelsdev support filter does not apply E2E curation to production OpenCode models", () => {
+  assert.equal(
+    isSupportedProviderModel({
+      providerId: "opencode",
+      modelId: "gpt-5.4",
+      npm: "@ai-sdk/openai",
+    }),
+    true
+  );
+  assert.equal(
+    isSupportedProviderModel({
+      providerId: "opencode",
+      modelId: "kimi-k2.5",
+      npm: "@ai-sdk/openai-compatible",
+    }),
+    true
+  );
+});

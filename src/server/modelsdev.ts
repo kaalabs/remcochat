@@ -10,7 +10,6 @@ const execFileAsync = promisify(execFile);
 const STABLE_PROVIDER_MODEL_IDS: Record<string, readonly string[]> = {
   e2e_alt: ["gpt-4.1-mini", "gpt-5.2", "gpt-5.2-codex", "gpt-5-nano"],
   e2e_compat: ["gpt-4.1-mini"],
-  opencode: ["anthropic/claude-haiku-4.5"],
 };
 
 const providerShowCache = new Map<
