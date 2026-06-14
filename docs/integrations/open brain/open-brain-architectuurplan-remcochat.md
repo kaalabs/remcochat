@@ -759,9 +759,9 @@ Kort samengevat:
 
 [^promptkit]: Nate B. Jones, *Open Brain: Companion Prompts*. Vijf workflowlagen: Memory Migration, Second Brain Migration, Open Brain Spark, Quick Capture Templates en Weekly Review. <https://promptkit.natebjones.com/20260224_uq1_promptkit_1>
 
-[^remcochat-readme]: RemcoChat README. Beschrijft RemcoChat als minimale chat-UI voor local/home network gebruik, met lokale SQLite-opslag, skills, server tools en trusted-machine/LAN-model. <https://raw.githubusercontent.com/kaalabs/remcochat/main/README.md>
+[^remcochat-readme]: RemcoChat README. Beschrijft RemcoChat als minimale chat-UI voor local/home network gebruik, met lokale SQLite-opslag, skills, server tools en trusted-machine/LAN-model. <https://codeberg.org/remcokortekaas/remcochat/raw/main/README.md>
 
-[^remcochat-config]: RemcoChat voorbeeldconfiguratie. Laat providerconfiguratie zien via `base_url`, `api_key_env`, `allowed_model_ids`, lokale access controls en tooling-/gatewaystructuur. <https://raw.githubusercontent.com/kaalabs/remcochat/main/config.toml.example>
+[^remcochat-config]: RemcoChat voorbeeldconfiguratie. Laat providerconfiguratie zien via `base_url`, `api_key_env`, `allowed_model_ids`, lokale access controls en tooling-/gatewaystructuur. <https://codeberg.org/remcokortekaas/remcochat/raw/main/config.toml.example>
 
 [^openapi]: OpenAPI Initiative, *OpenAPI Specification 3.2.0*. Machineleesbare specificatie voor HTTP-API-contracten. <https://spec.openapis.org/oas/v3.2.0.html>
 

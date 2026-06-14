@@ -1,5 +1,9 @@
 # RemcoChat
 
+> **Note:** This project has migrated from GitHub to Codeberg.
+> Canonical location: https://codeberg.org/remcokortekaas/remcochat
+> The GitHub location is now archived and read-only.
+
 Minimal ChatGPT-like chat UI for local / home network use (**no built-in auth**).
 
 - Next.js app + local SQLite database.
